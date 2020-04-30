@@ -1,0 +1,34 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>netcoreapp3.1</TargetFramework>
+<!--        <FsLexToolPath>bin\$(Configuration)\netcoreapp3.1</FsLexToolPath>-->
+<!--        <FsYaccToolPath>bin\$(Configuration)\netcoreapp3.1</FsYaccToolPath>-->
+    </PropertyGroup>
+
+    <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+      <DebugType>full</DebugType>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <FsYacc Include="Parser.fsy">
+            <OtherFlags>--module Parser</OtherFlags>
+        </FsYacc>
+        <FsLex Include="Lexer.fsl">
+            <OtherFlags>--module Lexer --unicode</OtherFlags>
+        </FsLex>
+        <Compile Include="Prelude.fs" />
+<!--        <Compile Include="Runtime.fs" />-->
+        <Compile Include="Parser.fs" />
+        <Compile Include="Lexer.fs" />
+        <Compile Include="ParseExtension.fs" />
+        <Compile Include="Program.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="FsLexYacc" Version="10.0.0" />
+      <PackageReference Include="FsLexYacc.Runtime" Version="10.0.0" />
+    </ItemGroup>
+<!--    <Import Project="FsLexYacc.Build.Tasks\FsLexYacc.targets" />-->
+</Project>

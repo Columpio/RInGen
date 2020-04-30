@@ -1,0 +1,32 @@
+﻿%{
+open FLispy.Prelude
+%}
+
+%start start
+
+%token <int> Int
+%token <string> Str
+%token <string> Sym
+%token EOF LPAREN RPAREN QUOTE MATCH
+
+%type <ParseExpression> start
+
+%%
+
+start: expr     { $1 }
+
+expr: Int       { PNumber($1) }
+    | Sym       { PSymbol($1) }
+    | LPAREN MATCH expr LPAREN match_case_list RPAREN RPAREN { PMatch($3, $5) }
+    | LPAREN list RPAREN { PList($2) }
+
+pattern: Sym { PSymbol($1) }
+    | LPAREN list RPAREN { PList($2) }
+
+match_case: LPAREN pattern expr RPAREN { ($2, $3) }
+
+match_case_list: match_case match_case_list { $1 :: $2 }
+    | { [] }
+
+list: expr list { $1 :: $2 }
+    |           { [] }
