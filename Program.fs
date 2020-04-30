@@ -36,24 +36,25 @@ let walk_through (directory : string) postfix transform =
 let generate_clauses directory postfix transform =
     let mutable files = 0
     let mutable successful = 0
+    let mutable total_generated = 0
     let mapFile (src : string) dst =
         if src.EndsWith(".smt2") then
 //            printfn "Transforming: %s" src
             files <- files + 1
             let exprs = parse_file src
             try
-                let exprs' = transform exprs
-                let lines = List.map toString exprs'
-                File.WriteAllLines(dst, lines)
+                let newTests = transform exprs
+                for testIndex, newTest in List.indexed newTests do
+                    let lines = List.map toString newTest
+                    let path = Path.ChangeExtension(dst, sprintf ".%d.smt2" testIndex)
+                    File.WriteAllLines(path, lines)
+                    total_generated <- total_generated + 1
                 successful <- successful + 1
-            with e ->
-//                if e.Message.StartsWith("not supported expr:") then
-//                if e.Message.StartsWith("Can't obtain clauses from:") then
-//                else
-                    printfn "Exception in %s: %O" src e.Message
+            with e -> printfn "Exception in %s: %O" src e.Message
     walk_through directory postfix mapFile
-    printfn "All files:  %d" files
-    printfn "Successful: %d" successful
+    printfn "All files:       %d" files
+    printfn "Successful:      %d" successful
+    printfn "Total generated: %d" total_generated
 
 [<EntryPoint>]
 let main args =
@@ -69,6 +70,7 @@ let main args =
         printfn ""
         file |> to_cvc4 |> printExprs
 //        file |> parseToTerms comm_to_clauses |> List.concat |> printExprs
-    else generate_clauses dirname ".cvc4" to_cvc4
-
+    else
+        generate_clauses dirname ".cvc4" to_cvc4
+        generate_clauses dirname "" exprsToSetOfCHCSystems
     0

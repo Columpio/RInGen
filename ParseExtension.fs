@@ -187,6 +187,8 @@ let parseToTerms command_mapper exprs =
     let comms, _ = List.mapFold toComm elementaryOperations exprs
     comms
 
+let mapThird f = List.map (fun (v, a, r) -> v, a, f r)
+
 let rec private expr_to_clauses typer env = function
     | Ite(i, t, e) ->
         let i = expr_to_clauses typer env i
@@ -225,8 +227,6 @@ let rec private expr_to_clauses typer env = function
             expr_to_clauses typer env body
             |> List.map (fun (vars', assumptions, body) -> vars @ vars', pat_match::assumptions, body)
         List.collect handle_case cases
-    | Or cases -> List.collect (expr_to_clauses typer env) cases
-    | And exprs -> product typer env exprs |> List.map (fun (v, a, rs) -> v, a, And rs)
     | Let(bindings, body) ->
         let rec handle_bindings env = function
             | [] -> expr_to_clauses typer env body
@@ -242,8 +242,11 @@ let rec private expr_to_clauses typer env = function
                     return id :: vb @ vr, (equal varTerm rb) :: ab @ ar, rr
                 }
         handle_bindings env bindings
-    | Not e -> expr_to_clauses typer env e |> List.map (fun (v, a, r) -> v, a, Not r)
-    | e -> failwithf "not supported expr: %O" e
+    | Not e -> mapInside typer env e Not
+    | Or cases -> product typer env cases |> mapThird Or
+    | And exprs -> product typer env exprs |> mapThird And
+    | Forall(vars, e) -> mapInside typer env e (fun e -> Forall(vars, e))
+    | Exists(vars, e) -> mapInside typer env e (fun e -> Exists(vars, e))
 and product typer env args =
     let combine2 arg st =
         let arg = expr_to_clauses typer env arg
@@ -253,6 +256,7 @@ and product typer env args =
             return v' @ v, a' @ a, r' :: r
         }
     List.foldBack combine2 args [[], [], []]
+and mapInside typer env e constructor = expr_to_clauses typer env e |> mapThird constructor
 
 let definition_to_clauses typer (name, vars, sort, body) =
     let sign = Operation.makeOperationSortsFromVars vars sort
@@ -274,15 +278,17 @@ let comm_to_clauses typer = function
     | DeclareConst _
     | DeclareFun _
     | DeclareDatatypes _
-    | DeclareDatatype _ as c -> [c]
+    | DeclareDatatype _ as c -> [[c]]
     | DefineFun df
-    | DefineFunRec df -> definition_to_clauses typer df
-    | DefineFunsRec dfs -> List.collect (definition_to_clauses typer) dfs
+    | DefineFunRec df -> definition_to_clauses typer df |> List.map List.singleton
+    | DefineFunsRec dfs -> List.collect (definition_to_clauses typer) dfs |> List.map List.singleton
     | Assert query ->
-        match expr_to_clauses typer Map.empty query with
-        | [vars, assumptions, body] -> [Assert(Forall(vars, hence (And assumptions) body))]
-        | clauses -> failwithf "Assertion generated too many clauses: %O" clauses
+        expr_to_clauses typer Map.empty query
+        |> List.map (fun (vars, assumptions, body) -> Assert(Forall(vars, hence (And assumptions) body)))
+        |> List.singleton
     | c -> failwithf "Can't obtain clauses from: %O" c
+
+let exprsToSetOfCHCSystems = parseToTerms comm_to_clauses >> List.concat >> List.product
 
 let private adt_df_to_sorted (typename, constructors) =
     let parse_constructor (name, args) = DeclareFun(name, List.map snd args, typename)
@@ -300,7 +306,6 @@ let to_sorts = function
     | e -> [e]
 
 let to_cvc4 exprs =
-    let clauses = exprs |> parseToTerms comm_to_clauses |> List.concat
-    let sorted = clauses |> List.collect to_sorts
+    let setOfCHCSystems = exprsToSetOfCHCSystems exprs
     let set_logic_all = SetLogic "ALL"
-    set_logic_all::sorted
+    setOfCHCSystems |> List.map (fun chcSystem -> set_logic_all :: List.collect to_sorts chcSystem)

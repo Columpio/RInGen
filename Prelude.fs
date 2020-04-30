@@ -28,12 +28,20 @@ type ListCollectBuilder =
     member __.Return(value) = [value]
 let collector = ListCollectBuilder()
 
-let inline join s (xs : string list) = System.String.Join(s, xs)
+let inline join s (xs : string seq) = System.String.Join(s, xs)
 let inline fst3 (a, _, _) = a
 let inline snd3 (_, a, _) = a
 let inline thd3 (_, _, a) = a
 
 let inline toString x = x.ToString()
+
+module List =
+    let product xss =
+        let rec product xss k =
+            match xss with
+            | [] -> k [[]]
+            | xs::xss -> product xss (fun yss -> List.collect (fun ys -> List.map (fun x -> x :: ys) xs) yss |> k)
+        product xss id
 
 type ParseExpression =
     | PNumber of int

@@ -24,6 +24,7 @@
         <Compile Include="Lexer.fs" />
         <Compile Include="ParseExtension.fs" />
         <Compile Include="Program.fs" />
+        <Compile Include="Solvers.fs" />
     </ItemGroup>
 
     <ItemGroup>
