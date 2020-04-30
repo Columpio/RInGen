@@ -51,7 +51,8 @@ type constant =
     override x.ToString() =
         match x with
         | Number i -> toString i
-        | Bool b -> toString b
+        | Bool true -> "true"
+        | Bool false -> "false"
 type sorted_var = symbol * sort
 type operation =
     | ElementaryOperation of string * sort list

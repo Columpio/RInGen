@@ -48,7 +48,7 @@ let generate_clauses directory postfix transform =
                 successful <- successful + 1
             with e ->
 //                if e.Message.StartsWith("not supported expr:") then
-                if e.Message.StartsWith("Can't obtain clauses from:") then
+//                if e.Message.StartsWith("Can't obtain clauses from:") then
 //                else
                     printfn "Exception in %s: %O" src e.Message
     walk_through directory postfix mapFile
@@ -60,11 +60,13 @@ let main args =
     if Array.length args <> 1 then
         failwith "Invalid number of arguments"
     let dirname = Array.item 0 args
-    if true then
-//    if false then
-        let file = "/home/columpio/Desktop/benchmarks/false/imperative_Apa.smt2" |> parse_file
+//    if true then
+    if false then
+        let file = "/home/columpio/Desktop/benchmarks/prod/prop_47.smt2" |> parse_file
         let printExprs file =
             file |> List.map toString |> join "\n" |> printfn "%s"
+        file |> parseToTerms (fun _ -> id) |> printExprs
+        printfn ""
         file |> to_cvc4 |> printExprs
 //        file |> parseToTerms comm_to_clauses |> List.concat |> printExprs
     else generate_clauses dirname ".cvc4" to_cvc4

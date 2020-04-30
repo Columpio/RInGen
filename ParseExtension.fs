@@ -22,14 +22,35 @@ let private elementaryOperations =
         "div", ["Int"; "Int"; "Int"]
         "=>", ["Bool"; "Bool"; "Bool"]
     ]
-    let ops = List.map (fun ((op, sign) as os) -> op, ElementaryOperation(os)) ops
+    let ops = List.map (fun ((op, _) as os) -> op, ElementaryOperation(os)) ops
     Map.ofList ops
 let private hence = let f = Map.find "=>" elementaryOperations in fun t1 t2 -> Apply(f, [t1; t2])
 let private equal = let f = Map.find "=" elementaryOperations in fun t1 t2 -> Apply(f, [t1; t2])
 
-let typeOfOp = function
-    | ElementaryOperation(_, s)
-    | UserDefinedOperation(_, s) -> List.last s
+module private Operation =
+    let argumentTypes = function
+        | ElementaryOperation(_, _::s)
+        | UserDefinedOperation(_, _::s) -> s
+        | _ -> __unreachable__()
+
+    let private returnTypeOfSignature = List.head
+    let returnType = function
+        | ElementaryOperation(_, s)
+        | UserDefinedOperation(_, s) -> returnTypeOfSignature s
+    
+    let makeOperationSortsFromTypes sorts retSort = retSort :: sorts
+    let makeOperationSortsFromVars vars retSort = makeOperationSortsFromTypes (List.map snd vars) retSort
+    let makeUserOperationFromVars name vars retSort = UserDefinedOperation(name, makeOperationSortsFromVars vars retSort)
+    let makeUserOperationFromSorts name artSorts retSort = UserDefinedOperation(name, makeOperationSortsFromTypes artSorts retSort)
+    let makeElementaryOperationFromVars name vars retSort = ElementaryOperation(name, makeOperationSortsFromVars vars retSort)
+    let makeElementaryOperationFromSorts name artSorts retSort = ElementaryOperation(name, makeOperationSortsFromTypes artSorts retSort)
+
+    let generateReturnArgument sign =
+        let retType = returnTypeOfSignature sign
+        let retArg = gensym (), retType
+        let retVar = Ident retArg
+        retArg, retVar
+
 let rec typeOf = function
     | Constant(Number _) -> "Int"
     | Forall _
@@ -39,7 +60,7 @@ let rec typeOf = function
     | Not _
     | Constant(Bool _) -> "Bool"
     | Ident(_, t) -> t
-    | Apply(op, _) -> typeOfOp op
+    | Apply(op, _) -> Operation.returnType op
     | Match(_, ((_, t)::_))
     | Ite(_, t, _)
     | Let(_, t) -> typeOf t
@@ -47,15 +68,9 @@ let rec typeOf = function
 
 let private to_sorted_vars = List.map (function PList [PSymbol v; PSymbol s] -> v, s | _ -> __unreachable__())
 let private to_var_binding = List.map (function PList [PSymbol v; t] -> v, t | _ -> __unreachable__())
-let private obtain_sort vars retSort = List.map snd vars @ [retSort]
 let private extend_env env vars = List.fold (fun typer (v, s) -> Map.add v s typer) env vars
 let private create_env = extend_env Map.empty
-let sort_of_operation = function
-    | ElementaryOperation(_, s)
-    | UserDefinedOperation(_, s) -> s
-let addUserOperation typer name sorts = Map.add name (UserDefinedOperation(name, sorts)) typer
-let addElementaryOperation typer name sorts = Map.add name (ElementaryOperation(name, sorts)) typer
-let private tryTypeCheck f typer = Option.bind (sort_of_operation >> List.tryLast) (Map.tryFind f typer)
+let private tryTypeCheck f typer = Option.map Operation.returnType (Map.tryFind f typer)
 let private getOperation f typer =
     match Map.tryFind f typer with
     | Some r -> r
@@ -115,7 +130,7 @@ let rec private toExpr ((typer, env) as te) = function
             match pat with
             | PList (PSymbol constr::cargs) ->
                 let op = getOperation constr typer
-                let cargs, env = List.mapFold extendEnvironment env (List.zip cargs (butLast <| sort_of_operation op))
+                let cargs, env = List.mapFold extendEnvironment env (List.zip cargs (Operation.argumentTypes op))
                 Apply(op, cargs), toExpr (typer, env) body
             | _ ->
                 let v, env = extendEnvironment env (pat, typ)
@@ -127,7 +142,7 @@ let parseToTerms command_mapper exprs =
     let toComm typer e =
         let define_fun name vars sort body constr =
             let vars = to_sorted_vars vars
-            let typer = addUserOperation typer name (obtain_sort vars sort)
+            let typer = Map.add name (Operation.makeUserOperationFromVars name vars sort) typer
             let env = create_env vars
             let body = toExpr (typer, env) body
             constr(name, vars, sort, body), typer
@@ -135,8 +150,8 @@ let parseToTerms command_mapper exprs =
             let handle_constr typer = function
                 | PList (PSymbol fname::vars) ->
                     let vars = to_sorted_vars vars
-                    let typer = List.fold (fun typer (pr, s) -> addElementaryOperation typer pr [adtname; s]) typer vars
-                    let typer = addElementaryOperation typer fname (obtain_sort vars adtname)
+                    let typer = List.fold (fun typer (pr, s) -> Map.add pr (Operation.makeElementaryOperationFromSorts pr [adtname] s) typer) typer vars
+                    let typer = Map.add fname (Operation.makeElementaryOperationFromVars fname vars adtname) typer
                     (fname, vars), typer
                 | _ -> __unreachable__()
             List.mapFold handle_constr typer constrs
@@ -148,7 +163,7 @@ let parseToTerms command_mapper exprs =
                 define_fun name vars sort body DefineFunRec
             | PList [PSymbol "define-funs-rec"; PList signs; PList bodies] ->
                 let signs = signs |> List.map (function PList [PSymbol name; PList vars; PSymbol sort] -> name, to_sorted_vars vars, sort | _ -> __unreachable__())
-                let typer = List.fold (fun typer (name, vars, sort) -> addUserOperation typer name (obtain_sort vars sort)) typer signs
+                let typer = List.fold (fun typer (name, vars, sort) -> Map.add name (Operation.makeUserOperationFromVars name vars sort) typer) typer signs
                 let fs = List.map2 (fun body (name, vars, sort) -> name, vars, sort, toExpr (typer, create_env vars) body) bodies signs
                 DefineFunsRec fs, typer
             | PList [PSymbol "declare-datatype"; PSymbol adtname; PList constrs] ->
@@ -163,19 +178,14 @@ let parseToTerms command_mapper exprs =
                 Assert(toExpr (typer, Map.empty) expr), typer
             | PList [PSymbol "declare-sort"; PSymbol sort; PNumber 0] -> DeclareSort(sort), typer
             | PList [PSymbol "declare-const"; PSymbol name; PSymbol sort] ->
-                DeclareConst(name, sort), addUserOperation typer name [sort]
+                DeclareConst(name, sort), Map.add name (Operation.makeUserOperationFromSorts name [] sort) typer
             | PList [PSymbol "declare-fun"; PSymbol name; PList argTypes; PSymbol sort] ->
                 let argTypes = argTypes |> List.map (function PSymbol t -> t | _ -> __unreachable__())
-                DeclareFun(name, argTypes, sort), addUserOperation typer name (argTypes @ [sort])
+                DeclareFun(name, argTypes, sort), Map.add name (Operation.makeUserOperationFromSorts name argTypes sort) typer
             | e -> failwithf "%O" e
-        command_mapper typer comm
+        command_mapper typer comm, typer
     let comms, _ = List.mapFold toComm elementaryOperations exprs
     comms
-
-//    member x.AssumptionsToBody(assumptions, retExpr) =
-//        match retArg with
-//        | Some (retArg, _) -> (equal retArg retExpr) :: assumptions
-//        | None -> retExpr :: assumptions
 
 let rec private expr_to_clauses typer env = function
     | Ite(i, t, e) ->
@@ -194,16 +204,11 @@ let rec private expr_to_clauses typer env = function
         let app =
             match op with
             | ElementaryOperation _ -> fallback_apply
-            | UserDefinedOperation(name, sign) ->
-                let op' = getOperation name typer
-                if op = op'
-                then fallback_apply
-                else
-                    let retArg = gensym (), List.last sign
-                    let retVar = Ident retArg
-                    fun (vars, assumptions, args) ->
-                    let expr = Apply(op', retVar::args)
-                    (retArg::vars), (expr::assumptions), retVar
+            | UserDefinedOperation(_, sign) ->
+                let retArg, retVar = Operation.generateReturnArgument sign
+                fun (vars, assumptions, args) ->
+                let expr = Apply(op, retVar::args)
+                (retArg::vars), (expr::assumptions), retVar
         List.map app args
     | Constant _
     | Ident _ as e -> [[], [], e]
@@ -237,6 +242,7 @@ let rec private expr_to_clauses typer env = function
                     return id :: vb @ vr, (equal varTerm rb) :: ab @ ar, rr
                 }
         handle_bindings env bindings
+    | Not e -> expr_to_clauses typer env e |> List.map (fun (v, a, r) -> v, a, Not r)
     | e -> failwithf "not supported expr: %O" e
 and product typer env args =
     let combine2 arg st =
@@ -248,38 +254,19 @@ and product typer env args =
         }
     List.foldBack combine2 args [[], [], []]
 
-let functionToRelationInTyper typer (name, vars, sort, body) =
-    match sort with
-    | "Bool" -> typer
-    | _ -> addUserOperation typer name (sort :: List.map snd vars @ ["Bool"])
-
-let definition_to_clauses typer ((name, vars, sort, body) as df) =
-    match sort with
-    | "Bool" ->
-        let sign = List.map snd vars
-        let env = create_env vars
-        let app = Apply(getOperation name typer, List.map Ident vars)
-        let handle_clause (clvars, assumptions, retExpr) =
-            Assert(Forall(vars @ clvars, hence (And (retExpr :: assumptions)) app))
-        let bodies =
-            expr_to_clauses typer env body
-            |> List.map handle_clause
-        DeclareFun(name, sign, "Bool")::bodies, typer
-    | _ ->
-        let sign = sort :: List.map snd vars
-        let retArgName = gensym ()
-        let retArg = (retArgName, sort)
-        let vars = retArg :: vars
-        let env = create_env vars
-        let retArg = Ident retArg
-        let app = Apply(getOperation name typer, List.map Ident vars)
-        let handle_clause (clvars, assumptions, retExpr) =
-            let body = equal retArg retExpr :: assumptions
-            Assert(Forall(vars @ clvars, hence (And body) app))
-        let bodies =
-            expr_to_clauses typer env body
-            |> List.map handle_clause
-        DeclareFun(name, sign, "Bool")::bodies, typer
+let definition_to_clauses typer (name, vars, sort, body) =
+    let sign = Operation.makeOperationSortsFromVars vars sort
+    let retArg, retVar = Operation.generateReturnArgument sign
+    let vars = retArg :: vars
+    let env = create_env vars
+    let app = Apply(getOperation name typer, List.map Ident vars)
+    let handle_clause (clvars, assumptions, retExpr) =
+        let body = equal retVar retExpr :: assumptions
+        Assert(Forall(vars @ clvars, hence (And body) app))
+    let bodies =
+        expr_to_clauses typer env body
+        |> List.map handle_clause
+    DeclareFun(name, sign, "Bool")::bodies
 
 let comm_to_clauses typer = function
     | CheckSat
@@ -287,16 +274,13 @@ let comm_to_clauses typer = function
     | DeclareConst _
     | DeclareFun _
     | DeclareDatatypes _
-    | DeclareDatatype _ as c -> [c], typer
+    | DeclareDatatype _ as c -> [c]
     | DefineFun df
-    | DefineFunRec df -> definition_to_clauses (functionToRelationInTyper typer df) df
-    | DefineFunsRec dfs ->
-        let typer = List.fold functionToRelationInTyper typer dfs
-        List.foldBack (fun df (clauses, typer) -> let cls', typer = definition_to_clauses typer df in cls' @ clauses, typer) dfs ([], typer)
-    | Assert(Not(Forall(vars, body))) ->
-        let env = create_env vars
-        match expr_to_clauses typer env body with
-        | [vars', assumptions, body] -> [Assert(Not(Forall(vars @ vars', And (body :: assumptions))))], typer
+    | DefineFunRec df -> definition_to_clauses typer df
+    | DefineFunsRec dfs -> List.collect (definition_to_clauses typer) dfs
+    | Assert query ->
+        match expr_to_clauses typer Map.empty query with
+        | [vars, assumptions, body] -> [Assert(Forall(vars, hence (And assumptions) body))]
         | clauses -> failwithf "Assertion generated too many clauses: %O" clauses
     | c -> failwithf "Can't obtain clauses from: %O" c
 
