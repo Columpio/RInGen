@@ -23,8 +23,8 @@
         <Compile Include="Parser.fs" />
         <Compile Include="Lexer.fs" />
         <Compile Include="ParseExtension.fs" />
-        <Compile Include="Program.fs" />
         <Compile Include="Solvers.fs" />
+        <Compile Include="Program.fs" />
     </ItemGroup>
 
     <ItemGroup>

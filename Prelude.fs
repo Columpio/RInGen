@@ -105,6 +105,7 @@ type function_def = symbol * sorted_var list * sort * term
 type command =
     | Assert of term
     | CheckSat
+    | GetInfo of string
     | SetLogic of string
     | DeclareDatatype of symbol * (symbol * sorted_var list) list
     | DeclareDatatypes of (symbol * (symbol * sorted_var list) list) list
@@ -121,6 +122,7 @@ type command =
         match x with
         | Assert t -> sprintf "(assert %O)" t
         | CheckSat -> "(check-sat)"
+        | GetInfo s -> sprintf "(get-info %s)" s
         | SetLogic l -> sprintf "(set-logic %s)" l
         | DeclareConst(name, sort) -> sprintf "(declare-const %O %O)" name sort
         | DeclareSort sort -> sprintf "(declare-sort %O 0)" sort

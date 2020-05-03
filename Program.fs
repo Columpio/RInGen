@@ -3,6 +3,7 @@
 open System
 open System.IO
 open FLispy.ParseExtension
+open FLispy.Solvers
 open Lexer
 
 let parse_file filename =
@@ -30,8 +31,9 @@ let walk_through (directory : string) postfix transform =
             let name = Path.GetFileName(folder)
             let dest = Path.Combine(destFolder, name)
             walk folder dest
-    let name' = Path.ChangeExtension(Path.GetDirectoryName(directory), postfix+".clauses")
+    let name' = Path.ChangeExtension(Path.GetDirectoryName(directory), postfix)
     walk directory name'
+    name'
 
 let generate_clauses directory postfix transform =
     let mutable files = 0
@@ -51,10 +53,11 @@ let generate_clauses directory postfix transform =
                     total_generated <- total_generated + 1
                 successful <- successful + 1
             with e -> printfn "Exception in %s: %O" src e.Message
-    walk_through directory postfix mapFile
+    let output_directory = walk_through directory postfix mapFile
     printfn "All files:       %d" files
     printfn "Successful:      %d" successful
     printfn "Total generated: %d" total_generated
+    output_directory
 
 [<EntryPoint>]
 let main args =
@@ -63,14 +66,17 @@ let main args =
     let dirname = Array.item 0 args
 //    if true then
     if false then
-        let file = "/home/columpio/Desktop/benchmarks/prod/prop_47.smt2" |> parse_file
+        let file = "/home/columpio/Desktop/benchmarks/tip2015/list_elem.smt2" |> parse_file
         let printExprs file =
             file |> List.map toString |> join "\n" |> printfn "%s"
         file |> parseToTerms (fun _ -> id) |> printExprs
         printfn ""
-        file |> to_cvc4 |> printExprs
+        file |> to_cvc4 |> List.head |> printExprs
 //        file |> parseToTerms comm_to_clauses |> List.concat |> printExprs
     else
-        generate_clauses dirname ".cvc4" to_cvc4
-        generate_clauses dirname "" exprsToSetOfCHCSystems
+        let cvc4 = CVC4FiniteSolver()
+        let cvc_dir = generate_clauses dirname ".cvc4" to_cvc4
+        ()
+//        walk_through cvc_dir ".cvc4answers" (fun src _ -> cvc4.SolveWithTime(src) |> printfn "%s %O" src) |> ignore
+//        generate_clauses dirname ".clauses" exprsToSetOfCHCSystems |> ignore
     0
