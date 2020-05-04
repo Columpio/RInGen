@@ -1,78 +1,143 @@
 module FLispy.ParseExtension
+open FLispy.Operations
+open FLispy.PropagateNot
 
-open System.Collections.Generic
+module IntToNat =
+    let private nat_sort = gensymp "Nat"
+    let private Z_constr = gensymp "Z"
+    let private S_constr = gensymp "S"
+    let private unS_constr = gensymp "unS"
+    let private S_op = Operation.makeElementaryOperationFromSorts S_constr [nat_sort] nat_sort
+    let private Z = Ident(Z_constr, nat_sort)
+    let private S t = Apply(S_op, [t])
+    let sort s = if s = "Int" then nat_sort else s
+    let sort_list = List.map sort
+    let sorted_var (v, t) = v, sort t
+    let sorted_var_list = List.map sorted_var
+    let constructor (c, ts) = c, sorted_var_list ts
+    let constructor_list = List.map constructor
+    let definition (name, args, ret, body) = name, sorted_var_list args, sort ret, body
 
-let gensymp =
-    let symbols = Dictionary<string, int>()
-    fun prefix ->
-        let counter = ref 0
-        if symbols.TryGetValue(prefix, counter) then
-            symbols.[prefix] <- !counter + 1
-        else
-            symbols.Add(prefix, 1)
-        sprintf "%s@%d" prefix !counter
+    let rec int_to_nat n = if n <= 0 then Z else S (int_to_nat (n - 1))
 
-let gensym () = gensymp "x"
+    module private V =
+        let x = gensymp "x"
+        let y = gensymp "y"
+        let r = gensymp "r"
+        let z = gensymp "z"
+        let xvar = (x, nat_sort)
+        let yvar = (y, nat_sort)
+        let rvar = (r, nat_sort)
+        let zvar = (z, nat_sort)
+        let xid = Ident xvar
+        let yid = Ident yvar
+        let rid = Ident rvar
+        let zid = Ident zvar
 
-let private elementaryOperations =
-    let ops = [
-        "=", ["*dummy-type*"; "*dummy-type*"; "Bool"]
-        "distinct", ["*dummy-type*"; "*dummy-type*"; "Bool"]
-        ">", ["Int"; "Int"; "Bool"]
-        "<", ["Int"; "Int"; "Bool"]
-        "<=", ["Int"; "Int"; "Bool"]
-        ">=", ["Int"; "Int"; "Bool"]
-        "+", ["Int"; "Int"; "Int"]
-        "-", ["Int"; "Int"; "Int"]
-        "*", ["Int"; "Int"; "Int"]
-        "mod", ["Int"; "Int"; "Int"]
-        "div", ["Int"; "Int"; "Int"]
-        "=>", ["Bool"; "Bool"; "Bool"]
+    let private nat_datatype = DeclareDatatype(nat_sort, [Z_constr, []; S_constr, [unS_constr, nat_sort]])
+    let private add_name = gensymp "add"
+    let private add_sorts = Operation.makeOperationSortsFromTypes [nat_sort; nat_sort] nat_sort
+    let private add_op = ElementaryOperation(add_name, Operation.makeOperationSortsFromTypes add_sorts "Bool")
+    let private add_app x y r = Operation.makeApp add_op [x; y] r
+    let private add_decl =
+        [
+            DeclareFun(add_name, add_sorts, "Bool")
+            Assert(Forall([V.yvar], hence [] (add_app Z V.yid V.yid)))
+            Assert(Forall([V.xvar; V.yvar; V.rvar], hence [add_app V.xid V.yid V.rid] (add_app (S V.xid) V.yid (S V.rid))))
+        ]
+    let private minus_name = gensymp "minus"
+    let private minus_sorts = add_sorts
+    let private minus_op = ElementaryOperation(minus_name, Operation.makeOperationSortsFromTypes minus_sorts "Bool")
+    let private minus_app x y r = Operation.makeApp minus_op [x; y] r
+    let private minus_decl =
+        [
+            DeclareFun(minus_name, minus_sorts, "Bool")
+            Assert(Forall([V.yvar], hence [] (minus_app Z V.yid Z)))
+            Assert(Forall([V.xvar; V.yvar; V.rvar], hence [minus_app V.xid V.yid V.rid] (minus_app (S V.xid) V.yid (S V.rid))))
+        ]
+    let private le_name = gensymp "le"
+    let private le_sorts = [nat_sort; nat_sort]
+    let private le_op = ElementaryOperation(le_name, Operation.makeOperationSortsFromTypes le_sorts "Bool")
+    let private le_app x y = Apply(le_op, [x; y])
+    let private le_decl =
+        [
+            DeclareFun(le_name, le_sorts, "Bool")
+            Assert(Forall([V.yvar], hence [] (le_app Z V.yid)))
+            Assert(Forall([V.xvar; V.yvar], hence [le_app V.xid V.yid] (le_app (S V.xid) (S V.yid))))
+        ]
+    let private ge_name = gensymp "ge"
+    let private ge_sorts = [nat_sort; nat_sort]
+    let private ge_op = ElementaryOperation(ge_name, Operation.makeOperationSortsFromTypes ge_sorts "Bool")
+    let private ge_app x y = Apply(ge_op, [x; y])
+    let private ge_decl =
+        [
+            DeclareFun(ge_name, ge_sorts, "Bool")
+            Assert(Forall([V.yvar], hence [] (ge_app V.yid Z)))
+            Assert(Forall([V.xvar; V.yvar], hence [ge_app V.xid V.yid] (ge_app (S V.xid) (S V.yid))))
+        ]
+    let private lt_name = gensymp "lt"
+    let private lt_sorts = [nat_sort; nat_sort]
+    let private lt_op = ElementaryOperation(lt_name, Operation.makeOperationSortsFromTypes lt_sorts "Bool")
+    let private lt_app x y = Apply(lt_op, [x; y])
+    let private lt_decl =
+        [
+            DeclareFun(lt_name, lt_sorts, "Bool")
+            Assert(Forall([V.yvar], hence [] (lt_app Z (S V.yid))))
+            Assert(Forall([V.xvar; V.yvar], hence [lt_app V.xid V.yid] (lt_app (S V.xid) (S V.yid))))
+        ]
+    let private gt_name = gensymp "gt"
+    let private gt_sorts = [nat_sort; nat_sort]
+    let private gt_op = ElementaryOperation(gt_name, Operation.makeOperationSortsFromTypes gt_sorts "Bool")
+    let private gt_app x y = Apply(gt_op, [x; y])
+    let private gt_decl =
+        [
+            DeclareFun(gt_name, gt_sorts, "Bool")
+            Assert(Forall([V.yvar], hence [] (gt_app (S V.yid) Z)))
+            Assert(Forall([V.xvar; V.yvar], hence [gt_app V.xid V.yid] (gt_app (S V.xid) (S V.yid))))
+        ]
+    let private mult_name = gensymp "mult"
+    let private mult_sorts = Operation.makeOperationSortsFromTypes [nat_sort; nat_sort] nat_sort
+    let private mult_op = ElementaryOperation(mult_name, Operation.makeOperationSortsFromTypes mult_sorts "Bool")
+    let private mult_app x y r = Operation.makeApp mult_op [x; y] r
+    let private mult_decl =
+        [
+            DeclareFun(mult_name, mult_sorts, "Bool")
+            Assert(Forall([V.yvar], hence [] (mult_app Z V.yid Z)))
+            Assert(Forall([V.xvar; V.yvar; V.rvar; V.zvar], hence [mult_app V.xid V.yid V.rid; add_app V.rid V.yid V.zid] (mult_app (S V.xid) V.yid V.zid)))
+        ]
+    let private div_name = gensymp "div"
+    let private div_sorts = Operation.makeOperationSortsFromTypes [nat_sort; nat_sort] nat_sort
+    let private div_op = ElementaryOperation(div_name, Operation.makeOperationSortsFromTypes div_sorts "Bool")
+    let private div_app x y r = Operation.makeApp div_op [x; y] r
+    let private div_decl =
+        [
+            DeclareFun(div_name, div_sorts, "Bool")
+            Assert(Forall([V.xvar; V.yvar], hence [lt_app V.xid V.yid] (div_app V.xid V.yid Z)))
+            Assert(Forall([V.xvar; V.yvar; V.rvar; V.zvar], hence [ge_app V.xid V.yid; minus_app V.xid V.yid V.zid; div_app V.zid V.yid V.rid] (div_app V.xid V.yid (S V.rid))))
+        ]
+    let private mod_name = gensymp "mod"
+    let private mod_sorts = Operation.makeOperationSortsFromTypes [nat_sort; nat_sort] nat_sort
+    let private mod_op = ElementaryOperation(mod_name, Operation.makeOperationSortsFromTypes mod_sorts "Bool")
+    let private mod_app x y r = Operation.makeApp mod_op [x; y] r
+    let private mod_decl =
+        [
+            DeclareFun(mod_name, mod_sorts, "Bool")
+            Assert(Forall([V.xvar; V.yvar], hence [lt_app V.xid V.yid] (mod_app V.xid V.yid V.xid)))
+            Assert(Forall([V.xvar; V.yvar; V.rvar; V.zvar], hence [ge_app V.xid V.yid; minus_app V.xid V.yid V.zid; mod_app V.zid V.yid V.rid] (mod_app V.xid V.yid V.rid)))
+        ]
+
+    let substitutions = Map.ofList [
+        "+", (add_op, true)
+        "-", (minus_op, true)
+        "*", (mult_op, true)
+        "div", (div_op, true)
+        "mod", (mod_op, true)
+        "<=", (le_op, false)
+        ">=", (ge_op, false)
+        "<", (gt_op, false)
+        ">", (lt_op, false)
     ]
-    let ops = List.map (fun ((op, _) as os) -> op, ElementaryOperation(os)) ops
-    Map.ofList ops
-let private hence = let f = Map.find "=>" elementaryOperations in fun ts t -> if List.isEmpty ts then t else Apply(f, [And ts; t])
-let private equal = let f = Map.find "=" elementaryOperations in fun t1 t2 -> Apply(f, [t1; t2])
-let private forall vars e = if List.isEmpty vars then e else Forall(vars, e)
-
-module private Operation =
-    let argumentTypes = function
-        | ElementaryOperation(_, _::s)
-        | UserDefinedOperation(_, _::s) -> s
-        | _ -> __unreachable__()
-
-    let private returnTypeOfSignature = List.head
-    let returnType = function
-        | ElementaryOperation(_, s)
-        | UserDefinedOperation(_, s) -> returnTypeOfSignature s
-
-    let makeOperationSortsFromTypes sorts retSort = retSort :: sorts
-    let makeOperationSortsFromVars vars retSort = makeOperationSortsFromTypes (List.map snd vars) retSort
-    let makeUserOperationFromVars name vars retSort = UserDefinedOperation(name, makeOperationSortsFromVars vars retSort)
-    let makeUserOperationFromSorts name argSorts retSort = UserDefinedOperation(name, makeOperationSortsFromTypes argSorts retSort)
-    let makeElementaryOperationFromVars name vars retSort = ElementaryOperation(name, makeOperationSortsFromVars vars retSort)
-    let makeElementaryOperationFromSorts name argSorts retSort = ElementaryOperation(name, makeOperationSortsFromTypes argSorts retSort)
-
-    let generateReturnArgument sign =
-        let retType = returnTypeOfSignature sign
-        let retArg = gensym (), retType
-        let retVar = Ident retArg
-        retArg, retVar
-
-let rec typeOf = function
-    | Constant(Number _) -> "Int"
-    | Forall _
-    | Exists _
-    | And _
-    | Or _
-    | Not _
-    | Constant(Bool _) -> "Bool"
-    | Ident(_, t) -> t
-    | Apply(op, _) -> Operation.returnType op
-    | Match(_, ((_, t)::_))
-    | Ite(_, t, _)
-    | Let(_, t) -> typeOf t
-    | Match(_, []) -> __unreachable__()
+    let declarations = nat_datatype :: add_decl @ minus_decl @ le_decl @ ge_decl @ lt_decl @ gt_decl @ mult_decl @ div_decl @ mod_decl
 
 let private to_sorted_vars = List.map (function PList [PSymbol v; PSymbol s] -> v, s | _ -> __unreachable__())
 let private to_var_binding = List.map (function PList [PSymbol v; t] -> v, t | _ -> __unreachable__())
@@ -193,7 +258,7 @@ let rec private toExpr ((typer, env) as te) = function
         Match(t, cases)
 
 let parseToTerms command_mapper exprs =
-    let toComm typer e =
+    let toComm (typer, diseqs) e =
         let define_fun name vars sort body constr =
             let vars = to_sorted_vars vars
             let typer = Map.add name (Operation.makeUserOperationFromVars name vars sort) typer
@@ -236,100 +301,115 @@ let parseToTerms command_mapper exprs =
             | PList [PSymbol "declare-fun"; PSymbol name; PList argTypes; PSymbol sort] ->
                 let argTypes = argTypes |> List.map (function PSymbol t -> t | _ -> __unreachable__())
                 DeclareFun(name, argTypes, sort), Map.add name (Operation.makeUserOperationFromSorts name argTypes sort) typer
+            | PList [PSymbol "set-logic"; PSymbol name] -> SetLogic(name), typer
             | e -> failwithf "%O" e
-        command_mapper typer comm, typer
-    let comms, _ = List.mapFold toComm elementaryOperations exprs
+        let preamb, comm, diseqs = PropagateNot.propagateNot typer diseqs comm
+        command_mapper typer comm @ List.map List.singleton preamb, (typer, diseqs)
+    let comms, _ = List.mapFold toComm (elementaryOperations, Diseq.empty) exprs
     comms
 
 let mapThird f = List.map (fun (v, a, r) -> v, a, f r)
 
-let rec private expr_to_clauses typer env = function
-    | Ident(name, _) as e when Map.containsKey name typer ->
-        match Map.find name typer with
-        | UserDefinedOperation _ as op ->
-            expr_to_clauses typer env (Apply(op, []))
-        | ElementaryOperation _ -> [[], [], e]
-    | Constant _ as e -> [[], [], e]
-    | Ident(name, sort) -> [[], [], Ident <| VarEnv.get env (name, sort)]
-    | Apply(op, args) ->
-        let args = product typer env args
-        let fallback_apply (v, a, rs) = v, a, Apply(op, rs)
-        let app =
-            match op with
-            | ElementaryOperation _ -> fallback_apply
-            | UserDefinedOperation(_, sign) ->
-                let retArg, retVar = Operation.generateReturnArgument sign
-                fun (vars, assumptions, args) ->
-                let expr = Apply(op, retVar::args)
-                (retArg::vars), (expr::assumptions), retVar
-        List.map app args
-    | Not e -> expr_to_clauses typer env e |> mapThird Not
-    | Or cases -> product typer env cases |> mapThird Or
-    | And exprs -> product typer env exprs |> mapThird And
-    | Forall(vars, e) -> mapInsideQuantifier typer env vars e Forall
-    | Exists(vars, e) -> mapInsideQuantifier typer env vars e Exists
-    | Ite(i, t, e) ->
-        let i = expr_to_clauses typer env i
-        let t = expr_to_clauses typer env t
-        let e = expr_to_clauses typer env e
-        collector {
-            let! ivars, iassumptions, iretExpr = i
-            let! tvars, tassumptions, tretExpr = t
-            let! evars, eassumptions, eretExpr = e
-            return ivars @ tvars @ evars, iassumptions @ tassumptions @ eassumptions, Ite(iretExpr, tretExpr, eretExpr)
-        }
-    | Match(t, cases) ->
-        let rec get_free_vars = function
-            | Apply(_, ts) -> List.collect get_free_vars ts
-            | Ident(name, _) when Map.containsKey name typer -> []
-            | Ident(v, t) -> [v, t]
-            | _ -> __unreachable__()
-        let handle_case (pattern, body) =
-            let vars = get_free_vars pattern
-            let vars, env = VarEnv.extend env vars
-            expr_to_clauses typer env body
-            |> List.map (fun (vars', assumptions, body) -> pattern, vars @ vars', assumptions, body)
-        let t = expr_to_clauses typer env t
-        let cases = List.collect handle_case cases
-        collector {
-            let! tvars, tassumptions, tretExpr = t
-            let! pattern, brvars, brassumptions, brretExpr = cases
-            let pat_match = equal tretExpr pattern
-            return tvars @ brvars, pat_match :: tassumptions @ brassumptions, brretExpr
-        }
-    | Let(bindings, body) ->
-        let rec handle_bindings env = function
-            | [] -> expr_to_clauses typer env body
-            | (var, body)::bindings ->
-                let typ = typeOf body
-                let body_clauses = expr_to_clauses typer env body
-                let id, env = VarEnv.extendOne env (var, typ)
-                let varTerm = Ident id
-                let rest = handle_bindings env bindings
-                collector {
-                    let! vb, ab, rb = body_clauses
-                    let! vr, ar, rr = rest
-                    return id :: vb @ vr, (equal varTerm rb) :: ab @ ar, rr
-                }
-        handle_bindings env bindings
-and product typer env args =
-    let combine2 arg st =
-        let arg = expr_to_clauses typer env arg
-        collector {
-            let! v, a, r = st
-            let! v', a', r' = arg
-            return v' @ v, a' @ a, r' :: r
-        }
-    List.foldBack combine2 args [[], [], []]
-and mapInsideQuantifier typer env vars e constructor =
-    let vars, env = VarEnv.extend env vars
-    expr_to_clauses typer env e
-    |> List.map (fun (vars', assumptions, result) -> [], [], constructor(vars, forall vars' (hence assumptions result)))
+let private apply_with_new_return_arg op sign =
+    let retArg, retVar = Operation.generateReturnArgument (IntToNat.sort_list sign)
+    fun (vars, assumptions, args) ->
+    let expr = Operation.makeApp op args retVar
+    (retArg::vars), (expr::assumptions), retVar
 
-let relational_declaration name argSorts sort =
+let private fallback_apply op (v, a, rs) = v, a, Apply(op, rs)
+
+let private expr_to_clauses map_user_operation typer env command =
+    let rec expr_to_clauses typer env = function
+        | Ident(name, _) as e when Map.containsKey name typer ->
+            match Map.find name typer with
+            | UserDefinedOperation _ as op ->
+                expr_to_clauses typer env (Apply(op, []))
+            | ElementaryOperation _ -> [[], [], e]
+        | Constant(Number n) -> [[], [], IntToNat.int_to_nat n]
+        | Constant _ as e -> [[], [], e]
+        | Ident(name, sort) -> [[], [], Ident <| VarEnv.get env (name, IntToNat.sort sort)]
+        | Apply(op, args) ->
+            let args = product typer env args
+            let app =
+                match op with
+                | ElementaryOperation(name, sign) ->
+                    match Map.tryFind name IntToNat.substitutions with
+                    | Some(op, true) -> apply_with_new_return_arg op sign
+                    | Some(op, false) -> fallback_apply op
+                    | None -> fallback_apply op
+                | UserDefinedOperation(_, sign) -> map_user_operation op sign
+            List.map app args
+        | Not e -> expr_to_clauses typer env e |> mapThird Not
+        | Or cases -> product typer env cases |> mapThird Or
+        | And exprs -> product typer env exprs |> mapThird And
+        | Forall(vars, e) -> mapInsideQuantifier typer env vars e Forall
+        | Exists(vars, e) -> mapInsideQuantifier typer env vars e Exists
+        | Ite(i, t, e) ->
+            let i = expr_to_clauses typer env i
+            let t = expr_to_clauses typer env t
+            let e = expr_to_clauses typer env e
+            collector {
+                let! ivars, iassumptions, iretExpr = i
+                let! tvars, tassumptions, tretExpr = t
+                let! evars, eassumptions, eretExpr = e
+                return ivars @ tvars @ evars, iassumptions @ tassumptions @ eassumptions, Ite(iretExpr, tretExpr, eretExpr)
+            }
+        | Match(t, cases) ->
+            let rec get_free_vars = function
+                | Apply(_, ts) -> List.collect get_free_vars ts
+                | Ident(name, _) when Map.containsKey name typer -> []
+                | Ident(v, t) -> [v, t]
+                | _ -> __unreachable__()
+            let handle_case (pattern, body) =
+                let vars = get_free_vars pattern
+                let vars, env = VarEnv.extend env (IntToNat.sorted_var_list vars)
+                expr_to_clauses typer env body
+                |> List.map (fun (vars', assumptions, body) -> pattern, vars @ vars', assumptions, body)
+            let t = expr_to_clauses typer env t
+            let cases = List.collect handle_case cases
+            collector {
+                let! tvars, tassumptions, tretExpr = t
+                let! pattern, brvars, brassumptions, brretExpr = cases
+                let pat_match = equal tretExpr pattern
+                return tvars @ brvars, pat_match :: tassumptions @ brassumptions, brretExpr
+            }
+        | Let(bindings, body) ->
+            let rec handle_bindings env = function
+                | [] -> expr_to_clauses typer env body
+                | (var, body)::bindings ->
+                    let typ = typeOf body
+                    let body_clauses = expr_to_clauses typer env body
+                    let id, env = VarEnv.extendOne env (IntToNat.sorted_var (var, typ))
+                    let varTerm = Ident id
+                    let rest = handle_bindings env bindings
+                    collector {
+                        let! vb, ab, rb = body_clauses
+                        let! vr, ar, rr = rest
+                        return id :: vb @ vr, (equal varTerm rb) :: ab @ ar, rr
+                    }
+            handle_bindings env bindings
+    and product typer env args =
+        let combine2 arg st =
+            let arg = expr_to_clauses typer env arg
+            collector {
+                let! v, a, r = st
+                let! v', a', r' = arg
+                return v' @ v, a' @ a, r' :: r
+            }
+        List.foldBack combine2 args [[], [], []]
+    and mapInsideQuantifier typer env vars e constructor =
+        let vars, env = VarEnv.extend env (IntToNat.sorted_var_list vars)
+        expr_to_clauses typer env e
+        |> List.map (fun (vars', assumptions, result) -> [], [], constructor(vars, forall vars' (hence assumptions result)))
+    expr_to_clauses typer env command
+
+let private clauses_expr_to_clauses = expr_to_clauses (fun op _ -> fallback_apply op)
+let private function_expr_to_clauses = expr_to_clauses apply_with_new_return_arg
+
+let private relational_declaration name argSorts sort =
     DeclareFun(name, Operation.makeOperationSortsFromTypes argSorts sort, "Bool")
 
-let definition_to_clauses typer (name, vars, sort, body) =
+let private definition_to_clauses typer (name, vars, sort, body) =
     let sign = Operation.makeOperationSortsFromVars vars sort
     let retArg, retVar = Operation.generateReturnArgument sign
     let vars = retArg :: vars
@@ -339,23 +419,28 @@ let definition_to_clauses typer (name, vars, sort, body) =
         let body = equal retVar retExpr :: assumptions
         Assert(Forall(vars @ clvars, hence body app))
     let bodies =
-        expr_to_clauses typer env body
+        function_expr_to_clauses typer env body
         |> List.map handle_clause
     DeclareFun(name, sign, "Bool"), bodies
 
-let comm_to_clauses typer = function
+let private comm_to_clauses declaration expr_to_clauses typer = function
+    | SetLogic _
     | CheckSat
-    | DeclareSort _
-    | DeclareDatatypes _
-    | DeclareDatatype _ as c -> [[c]]
-    | DeclareConst(name, sort) -> [[relational_declaration name [] sort]]
-    | DeclareFun(name, argSorts, sort) -> [[relational_declaration name argSorts sort]]
+    | DeclareSort _ as c -> [[c]]
+    | DeclareDatatypes dfs ->
+        let names, constrs = List.unzip dfs
+        let constrs = constrs |> List.map IntToNat.constructor_list
+        [[DeclareDatatypes(List.zip names constrs)]]
+    | DeclareDatatype(name, cs) -> [[DeclareDatatype(name, IntToNat.constructor_list cs)]]
+    | DeclareConst(name, sort) -> [[declaration (fun (n, _, s) -> DeclareConst(n, s)) name [] (IntToNat.sort sort)]]
+    | DeclareFun(name, argSorts, sort) -> [[declaration DeclareFun name (IntToNat.sort_list argSorts) (IntToNat.sort sort)]]
     | DefineFun df
     | DefineFunRec df ->
+        let df = IntToNat.definition df
         let dec, bodies = definition_to_clauses typer df
         dec :: bodies |> List.map List.singleton
     | DefineFunsRec dfs ->
-        let decs, bodies = List.map (definition_to_clauses typer) dfs |> List.unzip
+        let decs, bodies = List.map (IntToNat.definition >> definition_to_clauses typer) dfs |> List.unzip
         decs @ List.concat bodies |> List.map List.singleton
     | Assert query ->
         expr_to_clauses typer VarEnv.empty query
@@ -363,7 +448,10 @@ let comm_to_clauses typer = function
         |> List.singleton
     | c -> failwithf "Can't obtain clauses from: %O" c
 
-let exprsToSetOfCHCSystems = parseToTerms comm_to_clauses >> List.concat >> List.product
+let clauses_to_clauses = comm_to_clauses (fun constr name argSorts sort -> constr(name, argSorts, sort)) clauses_expr_to_clauses
+let functions_to_clauses = comm_to_clauses (fun _ -> relational_declaration) function_expr_to_clauses
+
+let exprsToSetOfCHCSystems to_clauses = parseToTerms to_clauses >> List.concat >> List.product >> List.map (List.append Diseq.preambula)
 
 let private adt_df_to_sorted (typename, constructors) =
     let parse_constructor (name, args) = DeclareFun(name, List.map snd args, typename)
@@ -380,8 +468,11 @@ let to_sorts = function
         decsort :: decfuns
     | e -> [e]
 
-let to_cvc4 exprs =
-    let setOfCHCSystems = exprsToSetOfCHCSystems exprs
+let to_cvc4 to_clauses exprs =
+    let setOfCHCSystems = exprsToSetOfCHCSystems to_clauses exprs
     let set_logic_all = SetLogic "ALL"
     let get_info = GetInfo ":reason-unknown"
-    setOfCHCSystems |> List.map (fun chcSystem -> set_logic_all :: List.collect to_sorts chcSystem @ [get_info])
+    setOfCHCSystems
+    |> List.map (fun chcSystem -> List.collect to_sorts chcSystem @ [get_info])
+    |> List.map (fun chcSystem -> chcSystem |> List.filter (function SetLogic _ -> false | _ -> true))
+    |> List.map (fun chcSystem -> set_logic_all :: chcSystem)

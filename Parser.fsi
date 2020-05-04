@@ -6,6 +6,7 @@ type token =
   | RPAREN
   | QUOTE
   | MATCH
+  | COMMENT
   | Sym of (string)
   | Str of (string)
   | Int of (int)
@@ -15,6 +16,7 @@ type tokenId =
     | TOKEN_RPAREN
     | TOKEN_QUOTE
     | TOKEN_MATCH
+    | TOKEN_COMMENT
     | TOKEN_Sym
     | TOKEN_Str
     | TOKEN_Int

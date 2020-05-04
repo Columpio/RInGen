@@ -43,11 +43,23 @@ module List =
             | xs::xss -> product xss (fun yss -> List.collect (fun ys -> List.map (fun x -> x :: ys) xs) yss |> k)
         product xss id
 
+module Seq =
+    let rec nondiag = function
+        | [] -> Seq.empty
+        | x::xs ->
+            seq {
+                yield! Seq.map (fun y -> x, y) xs
+                yield! Seq.map (fun y -> y, x) xs
+                yield! nondiag xs
+            }
+
+
 type ParseExpression =
     | PNumber of int
     | PSymbol of string
     | PList of ParseExpression list
     | PMatch of ParseExpression * (ParseExpression * ParseExpression) list
+    | PComment
 
 type symbol = string
 type ident = symbol
@@ -142,3 +154,5 @@ type command =
             let signs = signs |> List.map (fun (name, vars, sort) -> sprintf "(%O (%s) %O)" name (sorted_var_to_string vars) sort) |> join " "
             let bodies = bodies |> List.map toString |> join " "
             sprintf "(define-funs-rec (%s) (%s))" signs bodies
+let truee = Constant(Bool true)
+let falsee = Constant(Bool false)

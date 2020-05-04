@@ -22,6 +22,8 @@
 <!--        <Compile Include="Runtime.fs" />-->
         <Compile Include="Parser.fs" />
         <Compile Include="Lexer.fs" />
+        <Compile Include="Operations.fs" />
+        <Compile Include="PropagateNot.fs" />
         <Compile Include="ParseExtension.fs" />
         <Compile Include="Solvers.fs" />
         <Compile Include="Program.fs" />

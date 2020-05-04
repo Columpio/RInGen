@@ -49,22 +49,31 @@ type ISolver() =
         | UNKNOWN _ when time = MSECONDS_TIMEOUT -> TIMELIMIT, time
         | _ -> result, time
 
+let private split (s : string) = s.Split(Environment.NewLine.ToCharArray()) |> List.ofArray
+
 type CVC4FiniteSolver () =
     inherit ISolver()
 
     override x.SetupProcess pi filename =
         pi.FileName <- "cvc4"
-//        pi.Arguments <- sprintf "--finite-model-find %s"filename
         pi.Arguments <- sprintf "--finite-model-find --tlimit=%d %s" MSECONDS_TIMEOUT filename
-//        pi.FileName <- "/bin/bash"
-//        pi.Arguments <- sprintf "-c \"ls %s\"" filename
-//        pi.Arguments <- sprintf "cvc4 --finite-model-find %s" filename
 
     override x.InterpretResult raw_output =
-        let output = raw_output.Split(Environment.NewLine.ToCharArray()) |> List.ofArray
+        let output = split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
         | line::_ when line = "sat" -> SAT
         | line::_ when line = "unsat" -> UNSAT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
+        | _ -> UNKNOWN raw_output
+
+type EldaricaSolver () =
+    inherit ISolver()
+    override x.SetupProcess pi filename =
+        pi.FileName <- "eld"
+        pi.Arguments <- sprintf "-horn -hsmt -t:%d %s" SECONDS_TIMEOUT filename
+
+    override x.InterpretResult raw_output =
+        let output = split raw_output
+        match output with
         | _ -> UNKNOWN raw_output
