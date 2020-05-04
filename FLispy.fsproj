@@ -23,6 +23,11 @@
         <Compile Include="Parser.fs" />
         <Compile Include="Lexer.fs" />
         <Compile Include="Operations.fs" />
+        <Compile Include="VarEnv.fs" />
+        <Compile Include="Typer.fs" />
+        <Compile Include="ParseToTerms.fs" />
+        <Compile Include="IntToNat.fs" />
+        <Compile Include="UnfoldDeclarations.fs" />
         <Compile Include="PropagateNot.fs" />
         <Compile Include="ParseExtension.fs" />
         <Compile Include="Solvers.fs" />

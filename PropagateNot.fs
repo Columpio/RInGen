@@ -1,5 +1,6 @@
 module FLispy.PropagateNot
 open FLispy.Operations
+open FLispy.Typer
 
 let private generateDiseqHeader diseqs name =
     let diseq_name = gensymp ("diseq" + name)
@@ -54,6 +55,7 @@ let propagateNot typer diseqs =
         | Not e -> pushNot e
         | And es -> es |> List.map propNotExpr |> And
         | Or es -> es |> List.map propNotExpr |> Or
+        | Hence(t1, t2) -> Hence(propNotExpr t1, propNotExpr t2)
         | Apply(op, ts) when op = distinct_op -> diseq ts
         | Ite(i, t, e) -> Ite(propNotExpr i, propNotExpr t, propNotExpr e)
         | Let(asns, body) -> Let(List.map (fun (s, e) -> s, propNotExpr e) asns, propNotExpr body)
@@ -67,6 +69,7 @@ let propagateNot typer diseqs =
         | Not e -> propNotExpr e
         | And es -> es |> List.map pushNot |> Or
         | Or es -> es |> List.map pushNot |> And
+        | Hence _ -> __unreachable__()
         | Apply(op, ts) when op = equal_op -> diseq ts
         | Ite(i, t, e) -> Ite(propNotExpr i, pushNot t, pushNot e)
         | Let(asns, body) -> Let(List.map (fun (s, e) -> s, propNotExpr e) asns, pushNot body)
@@ -84,21 +87,21 @@ let propagateNot typer diseqs =
     | CheckSat
     | DeclareFun _
     | DeclareSort _
-    | SetLogic _ as c -> [], c, diseqs
+    | SetLogic _ as c -> [c], diseqs
     | DeclareDatatype(name, cs) as c ->
         let diseq_op, diseqs, diseq_decl = generateDiseqHeader diseqs name
         let body = generateDiseqBody typer diseq_op diseqs cs name
-        diseq_decl::body, c, diseqs
+        c :: diseq_decl::body, diseqs
     | DeclareDatatypes dts as c ->
         let names, css = List.unzip dts
         let diseq_stuff, diseqs = List.mapFold (fun diseqs name -> let op, diseqs, decl = generateDiseqHeader diseqs name in (op, decl), diseqs) diseqs names
         let ops, decls = List.unzip diseq_stuff
         let diseq_bodies = List.map3 (fun name op cs -> generateDiseqBody typer op diseqs cs name) names ops css |> List.concat
-        decls @ diseq_bodies, c, diseqs
-    | Assert e -> [], Assert <| propNotExpr e, diseqs
-    | DefineFun df -> [], DefineFun <| propDefinition df, diseqs
-    | DefineFunRec df -> [], DefineFunRec <| propDefinition df, diseqs
-    | DefineFunsRec dfs -> [], dfs |> List.map propDefinition |> DefineFunsRec, diseqs
+        c :: decls @ diseq_bodies, diseqs
+    | Assert e -> [Assert <| propNotExpr e], diseqs
+    | DefineFun df -> [DefineFun <| propDefinition df], diseqs
+    | DefineFunRec df -> [DefineFunRec <| propDefinition df], diseqs
+    | DefineFunsRec dfs -> [dfs |> List.map propDefinition |> DefineFunsRec], diseqs
 
 module private Bool =
     let private diseqName = gensymp "diseqBool"
@@ -113,3 +116,5 @@ module private Bool =
 module Diseq =
     let empty = Map.ofList ["Bool", Bool.diseqOp]
     let preambula = Bool.diseqDeclaration
+
+let propagateAllNots = typerFold propagateNot Diseq.empty >> List.concat

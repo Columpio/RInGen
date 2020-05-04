@@ -1,5 +1,6 @@
 [<AutoOpen>]
 module FLispy.Prelude
+open System.IO
 
 let __notImplemented__() = failwith "Not implemented!"
 let __unreachable__() = failwith "Unreachable!"
@@ -93,6 +94,7 @@ type term =
     | And of term list
     | Or of term list
     | Not of term
+    | Hence of term * term
     override x.ToString() =
         let list_to_string = List.map toString >> join " "
         let sorted_vars_to_string = List.map (fun (v, e) -> sprintf "(%O %O)" v e) >> join " "
@@ -113,6 +115,7 @@ type term =
         | And xs -> sprintf "(and %s)" (list_to_string xs)
         | Or xs -> sprintf "(or %s)" (list_to_string xs)
         | Not x -> sprintf "(not %O)" x
+        | Hence(i, t) -> sprintf "(=> %O %O)" i t
 type function_def = symbol * sorted_var list * sort * term
 type command =
     | Assert of term
@@ -140,7 +143,7 @@ type command =
         | DeclareSort sort -> sprintf "(declare-sort %O 0)" sort
         | DeclareFun(name, args, ret) -> sprintf "(declare-fun %O (%s) %O)" name (args |> List.map toString |> join " ") ret
         | DeclareDatatype(name, constrs) ->
-            sprintf "(declare-datatype %O (%s))" name (constrs_to_string constrs)
+            sprintf "(declare-datatype %O %s)" name (constrs_to_string constrs)
         | DeclareDatatypes dts ->
             let sorts, decs = List.unzip dts
             let sorts = sorts |> List.map (sprintf "(%O 0)") |> join " "
@@ -156,3 +159,20 @@ type command =
             sprintf "(define-funs-rec (%s) (%s))" signs bodies
 let truee = Constant(Bool true)
 let falsee = Constant(Bool false)
+
+
+let walk_through (directory : string) postfix transform =
+    let rec walk sourceFolder destFolder =
+        if not <| Directory.Exists(destFolder) then
+            Directory.CreateDirectory(destFolder) |> ignore
+        for file in Directory.GetFiles(sourceFolder) do
+            let name = Path.GetFileName(file)
+            let dest = Path.Combine(destFolder, name)
+            transform file dest
+        for folder in Directory.GetDirectories(sourceFolder) do
+            let name = Path.GetFileName(folder)
+            let dest = Path.Combine(destFolder, name)
+            walk folder dest
+    let name' = directory + postfix
+    walk directory name'
+    name'

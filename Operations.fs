@@ -56,34 +56,20 @@ let elementaryOperations =
         "*", ["Int"; "Int"; "Int"]
         "mod", ["Int"; "Int"; "Int"]
         "div", ["Int"; "Int"; "Int"]
-        "=>", ["Bool"; "Bool"; "Bool"]
     ]
     let ops = List.map (fun ((op, _) as os) -> op, ElementaryOperation(os)) ops
     Map.ofList ops
 let distinct_op = Map.find "distinct" elementaryOperations
 let equal_op = Map.find "=" elementaryOperations
 
-let hence =
-    let f = Map.find "=>" elementaryOperations
-    fun ts t ->
-        match ts with
-        | [] -> t
-        | [ts] -> Apply(f, [ts; t])
-        | _ -> Apply(f, [And ts; t])
+let henceOrNot ts t =
+    match ts with
+    | [] -> t
+    | _ -> Or (List.map Not ts @ [t])
+let hence ts t =
+    match ts with
+    | [] -> t
+    | [ts] -> Hence(ts, t)
+    | _ -> Hence(And ts, t)
 let equal t1 t2 = Apply(equal_op, [t1; t2])
 let forall vars e = if List.isEmpty vars then e else Forall(vars, e)
-
-let rec typeOf = function
-    | Constant(Number _) -> "Int"
-    | Forall _
-    | Exists _
-    | And _
-    | Or _
-    | Not _
-    | Constant(Bool _) -> "Bool"
-    | Ident(_, t) -> t
-    | Apply(op, _) -> Operation.returnType op
-    | Match(_, ((_, t)::_))
-    | Ite(_, t, _)
-    | Let(_, t) -> typeOf t
-    | Match(_, []) -> __unreachable__()
