@@ -4,7 +4,7 @@ open System.Diagnostics
 open System
 open Lexer
 
-let SECONDS_TIMEOUT = 3 // 5 * 60
+let SECONDS_TIMEOUT = 5 * 60
 let MSECONDS_TIMEOUT = SECONDS_TIMEOUT * 1000
 
 type SolverResult = SAT | UNSAT | ERROR of string | UNKNOWN of string | TIMELIMIT

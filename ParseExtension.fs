@@ -40,9 +40,18 @@ let rec private expr_to_clauses typer env = function
     | Not e -> expr_to_clauses typer env e |> mapThird Not
     | Or cases -> product typer env cases |> mapThird Or
     | And exprs -> product typer env exprs |> mapThird And
-    | Forall(vars, e) -> mapInsideQuantifier typer env vars e Forall
-    | Exists(vars, e) -> mapInsideQuantifier typer env vars e Exists
-    | Hence _ -> __unreachable__()
+    | Forall _
+    | Exists _ -> __unreachable__()
+//    | Forall(vars, e) -> mapInsideQuantifier typer env vars e Forall
+//    | Exists(vars, e) -> mapInsideQuantifier typer env vars e Exists
+    | Hence(cond, body) ->
+        let cond = expr_to_clauses typer env cond
+        let body = expr_to_clauses typer env body
+        collector {
+            let! cvars, cassumptions, cretExpr = cond
+            let! bvars, bassumptions, bretExpr = body
+            return cvars @ bvars, cretExpr :: cassumptions @ bassumptions, bretExpr
+        }
     | Ite(i, t, e) ->
         let i = expr_to_clauses typer env i
         let t = expr_to_clauses typer env t
@@ -170,27 +179,9 @@ let private functionToClauses assert_map typer = function
     | DefineFunsRec dfs ->
         let decs, bodies = List.map (IntToNat.definition >> definition_to_clauses typer) dfs |> List.unzip
         decs @ List.concat bodies |> List.map List.singleton
-    | Assert (And lemmas) ->
-        let product args =
-            let combine2 arg st =
-                collector {
-                    let! v, a, r = st
-                    let! v', a', r' = arg
-                    return v' @ v, a' @ a, r' :: r
-                }
-            List.foldBack combine2 args [[], [], []]
-        let handle_lemma = function
-            | Forall(vars, body) ->
-                let vars, env = VarEnv.createFresh vars
-                vars, expr_to_clauses typer env body
-            | _ -> __unreachable__()
-        let vars, bodies = lemmas |> List.map handle_lemma |> List.unzip
-        let qvars = List.concat vars
-        let bodies = product bodies
-        bodies
-        |> List.map (fun (vars, assumptions, body) -> )
-        expr_to_clauses typer VarEnv.empty query
-        |> List.map (fun (vars, assumptions, body) -> Assert(hence (Not body :: assumptions) falsee |> forall vars |> assert_map))
+    | Assert(Forall(vs, query)) ->
+        expr_to_clauses typer (VarEnv.create vs) query
+        |> List.map (fun (vars, assumptions, body) -> Assert(hence (Not body :: assumptions) falsee |> forall (vs @ vars) |> assert_map))
         |> List.singleton
     | c -> failwithf "Can't obtain clauses from: %O" c
 

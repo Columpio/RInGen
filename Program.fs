@@ -24,9 +24,9 @@ let main args =
         let reynolds_tr = "/home/columpio/Desktop/benchmarks/Reynolds-transformed", 2
 //        let tool = CVC4FiniteSolver()
 //        let tool = EldaricaSolver()
-        let tools : ISolver list = [EldaricaSolver()] //; Z3Solver()]
+        let tools : ISolver list = [CVC4FiniteSolver(); EldaricaSolver(); Z3Solver()] //; Z3Solver()]
         for tool in tools do
-            for dirname, to_clauses in [tip; reynolds; reynolds_tr] do
+            for dirname, to_clauses in [tip] do //; reynolds; reynolds_tr] do
                 let dir = tool.GenerateClauses dirname to_clauses
                 tool.RunOnBenchmarkSet dir |> ignore
     0
