@@ -20,7 +20,7 @@ module VarEnv =
                 | None -> failwithf "Environment has no sort for alias %O of %O (%O)" var' var sort
             | None -> failwithf "Environment has neither sort neither alias for %O (%O)" var sort
 
-    let extendOne (env_sorts, env_vars) ((var : string), sort) : sorted_var * env=
+    let extendOne (env_sorts, env_vars) ((var : string), sort) : sorted_var * env =
         let var', env_vars =
             if var.StartsWith("_") then
                 let var' = gensym ()
@@ -36,6 +36,14 @@ module VarEnv =
 
     let extend env vars = List.mapFold extendOne env vars
     let create vars : env = vars |> extend empty |> snd
+
+    let private createFreshOne (env_sorts, env_vars) ((var : string), sort) : sorted_var * env =
+        let var' = gensymp var
+        let env_vars = Map.add var var' env_vars
+        let env_sorts = Map.add var' sort env_sorts
+        (var', sort), (env_sorts, env_vars)
+
+    let createFresh vars = List.mapFold createFreshOne empty vars
 
     let typeCheck (env_sorts, env_vars) x =
         match Map.tryFind x env_sorts with
