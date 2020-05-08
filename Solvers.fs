@@ -6,10 +6,12 @@ open Lexer
 
 let SECONDS_TIMEOUT = 5 * 60
 let MSECONDS_TIMEOUT = SECONDS_TIMEOUT * 1000
+let MEMORY_LIMIT_MB = 12 * 1024
 
-type SolverResult = SAT | UNSAT | ERROR of string | UNKNOWN of string | TIMELIMIT
+type SolverResult = SAT | UNSAT | ERROR of string | UNKNOWN of string | TIMELIMIT | OUTOFMEMORY
 
 let rec private hasInt = function
+    | PList [PSymbol "declare-sort"; _; _] -> false
     | PList es -> List.exists hasInt es
     | PNumber _ -> true
     | PComment -> false
@@ -56,13 +58,15 @@ type ISolver() =
         printfn "Total generated: %d" total_generated
         output_directory
 
-    member x.RunOnBenchmarkSet dir =
+    member x.RunOnBenchmarkSet overwrite dir =
         let run_file src dst =
-            try
-                printfn "Running %s on %s" x.Name src
-                let answer, time = x.SolveWithTime(src)
-                File.WriteAllText(dst, sprintf "%d,%O" time answer)
-            with e -> printfn "Exception in %s: %s" src dst
+            if overwrite || not <| File.Exists(dst) then
+                try
+                    printfn "Running %s on %s" x.Name src
+                    let answer, time = x.SolveWithTime(src)
+                    File.WriteAllText(dst, sprintf "%d,%O" time answer)
+                with e -> printfn "Exception in %s: %s" src dst
+            else printfn "%s skipping %s (answer exists)" x.Name src
         walk_through dir (sprintf ".%sAnswers" x.Name) run_file
 
     member x.Solve (filename : string) =
@@ -98,6 +102,8 @@ type ISolver() =
         | UNKNOWN _ when time = MSECONDS_TIMEOUT -> TIMELIMIT, time
         | _ -> result, time
 
+    member x.EncodeSingleFile filename = filename |> parse_file |> x.CodeTransformation 0 |> List.head
+
 let private split (s : string) = s.Split(Environment.NewLine.ToCharArray()) |> List.ofArray
 
 type CVC4FiniteSolver () =
@@ -106,7 +112,7 @@ type CVC4FiniteSolver () =
     override x.Name = "CVC4Finite"
 
     override x.CodeTransformation to_clauses exprs =
-        let setOfCHCSystems = ParseExtension.functionsToClauses id exprs // (fun t -> Hence(t, falsee)) exprs
+        let setOfCHCSystems = ParseExtension.functionsToClauses exprs // (fun t -> Hence(t, falsee)) exprs
         let set_logic_all = SetLogic "ALL"
         setOfCHCSystems
         |> List.map (fun chcSystem -> List.collect ParseExtension.to_sorts chcSystem)
@@ -124,6 +130,7 @@ type CVC4FiniteSolver () =
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
         | line::_ when line = "sat" -> SAT
         | line::_ when line = "unsat" -> UNSAT
+        | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
         | _ -> UNKNOWN raw_output
 
@@ -133,7 +140,7 @@ type EldaricaSolver () =
 
     override x.Name = "Eldarica"
 
-    override x.CodeTransformation to_clauses exprs = ParseExtension.functionsToClauses id exprs // (fun t -> Hence(t, falsee)) exprs
+    override x.CodeTransformation to_clauses exprs = ParseExtension.functionsToClauses exprs // (fun t -> Hence(t, falsee)) exprs
 
     override x.SetupProcess pi filename =
         pi.FileName <- "/home/columpio/Documents/eldarica/eld"
@@ -154,14 +161,16 @@ type Z3Solver () =
 
     override x.Name = "Z3"
 
-    override x.CodeTransformation to_clauses exprs = ParseExtension.functionsToClauses id exprs
+    override x.CodeTransformation to_clauses exprs = ParseExtension.functionsToClauses exprs
 
     override x.SetupProcess pi filename =
         pi.FileName <- "/usr/bin/z3"
-        pi.Arguments <- sprintf "-smt2 -nw -T:%d %s" SECONDS_TIMEOUT filename
+        pi.Arguments <- sprintf "-smt2 -nw -memory:%d -T:%d %s" MEMORY_LIMIT_MB SECONDS_TIMEOUT filename
 
     override x.InterpretResult error raw_output =
         let output = split raw_output
         match output with
         | line::_ when line = "timeout" -> TIMELIMIT
+        | line::_ when line = "unsat" -> UNSAT
+        | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | _ -> UNKNOWN (error + " &&& " + raw_output)

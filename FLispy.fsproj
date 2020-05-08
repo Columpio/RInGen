@@ -23,18 +23,21 @@
         <Compile Include="Parser.fs" />
         <Compile Include="Lexer.fs" />
         <Compile Include="Operations.fs" />
-        <Compile Include="VarEnv.fs" />
         <Compile Include="Typer.fs" />
+        <Compile Include="VarEnv.fs" />
         <Compile Include="ParseToTerms.fs" />
         <Compile Include="IntToNat.fs" />
         <Compile Include="UnfoldDeclarations.fs" />
         <Compile Include="PropagateNot.fs" />
+        <Compile Include="TakeOutQuantifiers.fs" />
         <Compile Include="ParseExtension.fs" />
         <Compile Include="Solvers.fs" />
+        <Compile Include="ResultTable.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>
 
     <ItemGroup>
+      <PackageReference Include="CsvHelper" Version="15.0.5" />
       <PackageReference Include="FsLexYacc" Version="10.0.0" />
       <PackageReference Include="FsLexYacc.Runtime" Version="10.0.0" />
     </ItemGroup>

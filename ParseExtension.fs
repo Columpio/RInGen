@@ -63,14 +63,10 @@ let rec private expr_to_clauses typer env = function
             return ivars @ tvars @ evars, iassumptions @ tassumptions @ eassumptions, Ite(iretExpr, tretExpr, eretExpr)
         }
     | Match(t, cases) ->
-        let rec get_free_vars = function
-            | Apply(_, ts) -> List.collect get_free_vars ts
-            | Ident(name, _) when Map.containsKey name typer -> []
-            | Ident(v, t) -> [v, t]
-            | _ -> __unreachable__()
         let handle_case (pattern, body) =
-            let vars = get_free_vars pattern
+            let vars = MatchExtensions.getFreeVarsFromPattern typer pattern
             let vars, env = VarEnv.extend env (IntToNat.sorted_var_list vars)
+            let pattern = VarEnv.renameVars typer env pattern
             expr_to_clauses typer env body
             |> List.map (fun (vars', assumptions, body) -> pattern, vars @ vars', assumptions, body)
         let t = expr_to_clauses typer env t
@@ -132,22 +128,9 @@ let private definition_to_clauses typer (name, vars, sort, body) =
     DeclareFun(name, sign, "Bool"), bodies
 
 let private niceAssertion e =
-    let rec hasNoQuantifiers = function
-        | Ident _
-        | Constant _ -> true
-        | Apply(_, es)
-        | Or es
-        | And es -> es |> List.forall hasNoQuantifiers
-        | Not e -> hasNoQuantifiers e
-        | Hence(e1, e2) -> hasNoQuantifiers e1 && hasNoQuantifiers e2
-        | Ite(i, t, e) -> hasNoQuantifiers i && hasNoQuantifiers t && hasNoQuantifiers e
-        | Let(xs, b) -> xs |> List.forall (fun (_, b) -> hasNoQuantifiers b) && hasNoQuantifiers b
-        | Match(t, cs) -> hasNoQuantifiers t && List.forall (fun (_, b) -> hasNoQuantifiers b) cs
-        | Forall _
-        | Exists _ -> false
     match e with
-    | Not(Forall(_, b) as e) when hasNoQuantifiers b -> e
-    | Forall(_, b) as e when hasNoQuantifiers b -> e
+    | Not(Forall _ as e) -> e
+    | Forall _ as e -> e
     | _ -> failwithf "bad assertion: %O" e
 
 let private collectAsserts cs =
@@ -160,7 +143,8 @@ let private collectAsserts cs =
         | c::cs -> iter (c::cms) asserts cs
     iter [] [] cs
 
-let private functionToClauses assert_map typer = function
+let private functionToClauses typer = function
+    | DeclareConst _
     | SetLogic _
     | CheckSat
     | DeclareSort _ as c -> [[c]]
@@ -169,7 +153,7 @@ let private functionToClauses assert_map typer = function
         let constrs = constrs |> List.map IntToNat.constructor_list
         [[DeclareDatatypes(List.zip names constrs)]]
     | DeclareDatatype(name, cs) -> [[DeclareDatatype(name, IntToNat.constructor_list cs)]]
-    | DeclareConst(name, sort) -> [[relational_declaration name [] (IntToNat.sort sort)]]
+//    | DeclareConst(name, sort) -> [[relational_declaration name [] (IntToNat.sort sort)]]
     | DeclareFun(name, argSorts, sort) -> [[relational_declaration name (IntToNat.sort_list argSorts) (IntToNat.sort sort)]]
     | DefineFun df
     | DefineFunRec df ->
@@ -179,24 +163,25 @@ let private functionToClauses assert_map typer = function
     | DefineFunsRec dfs ->
         let decs, bodies = List.map (IntToNat.definition >> definition_to_clauses typer) dfs |> List.unzip
         decs @ List.concat bodies |> List.map List.singleton
-    | Assert(Forall(vs, query)) ->
-        expr_to_clauses typer (VarEnv.create vs) query
-        |> List.map (fun (vars, assumptions, body) -> Assert(hence (Not body :: assumptions) falsee |> forall (vs @ vars) |> assert_map))
+    | Assert query ->
+        let Qs, env, query = TakeOutQuantifiers.takeOutQuantifiers typer query
+        expr_to_clauses typer env query
+        |> List.map (fun (vars, assumptions, body) -> Assert(hence (Not body :: assumptions) falsee |> forall vars |> Qs))
         |> List.singleton
     | c -> failwithf "Can't obtain clauses from: %O" c
 
-let private functionCommandsToClausesSets assert_map cs = typerMap (functionToClauses assert_map) cs |> List.concat |> List.product
+let private functionCommandsToClausesSets cs = typerMap functionToClauses cs |> List.concat |> List.product
 
 let private get_info_unknown = GetInfo ":reason-unknown"
 let private preambulize cs =
     Diseq.preambula @ cs @ [CheckSat; get_info_unknown]
 
-let functionsToClauses assert_map ps =
+let functionsToClauses ps =
     let cs = ps |> parseToTerms //|> unfoldDeclarations
     let cs', asserts = collectAsserts cs
     let cs'' = cs' @ List.map Assert asserts // [Assert (And asserts)]
     seq {
-        for cs in functionCommandsToClausesSets assert_map cs'' do
+        for cs in functionCommandsToClausesSets cs'' do
             let cs''' = PropagateNot.propagateAllNots cs
             yield preambulize cs'''
     } |> List.ofSeq

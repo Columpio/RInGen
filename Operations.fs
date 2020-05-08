@@ -73,3 +73,4 @@ let hence ts t =
     | _ -> Hence(And ts, t)
 let equal t1 t2 = Apply(equal_op, [t1; t2])
 let forall vars e = if List.isEmpty vars then e else Forall(vars, e)
+let exists vars e = if List.isEmpty vars then e else Exists(vars, e)

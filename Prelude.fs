@@ -159,7 +159,28 @@ type command =
             sprintf "(define-funs-rec (%s) (%s))" signs bodies
 let truee = Constant(Bool true)
 let falsee = Constant(Bool false)
-
+let ore =
+    let rec ore acc = function
+        | [] ->
+            match acc with
+            | [] -> falsee
+            | [t] -> t
+            | ts -> Or <| List.rev ts
+        | Constant(Bool true) :: _ -> truee
+        | Constant(Bool false) :: xs -> ore acc xs
+        | x :: xs -> ore (x :: acc) xs
+    ore []
+let ande =
+    let rec ande acc = function
+        | [] ->
+            match acc with
+            | [] -> truee
+            | [t] -> t
+            | ts -> And <| List.rev ts
+        | Constant(Bool false) :: _ -> falsee
+        | Constant(Bool true) :: xs -> ande acc xs
+        | x :: xs -> ande (x :: acc) xs
+    ande []
 
 let walk_through (directory : string) postfix transform =
     let rec walk sourceFolder destFolder =
@@ -176,3 +197,27 @@ let walk_through (directory : string) postfix transform =
     let name' = directory + postfix
     walk directory name'
     name'
+
+let walk_through_simultaneously dirs transform =
+    let rec walk relName (baseDir : DirectoryInfo) (dirs : string list) =
+        for f in baseDir.EnumerateFiles() do
+            let fileName = f.Name
+            let relName = Path.Combine(relName, fileName)
+            let files = dirs |> List.map (fun dir -> Path.Combine(dir, fileName))
+            transform relName files
+        for subDir in baseDir.EnumerateDirectories() do
+            let subDirName = subDir.Name
+            let subDirs = dirs |> List.map (fun d -> Path.Combine(d, subDirName))
+            walk (Path.Combine(relName, subDirName)) subDir subDirs
+    match dirs with
+    | dir::_ -> walk "" (Directory.CreateDirectory(dir)) dirs
+    | [] -> __unreachable__()
+
+module MatchExtensions =
+    let getFreeVarsFromPattern typer =
+        let rec get_free_vars = function
+            | Apply(_, ts) -> List.collect get_free_vars ts
+            | Ident(name, _) when Map.containsKey name typer -> []
+            | Ident(v, t) -> [v, t]
+            | _ -> __unreachable__()
+        get_free_vars

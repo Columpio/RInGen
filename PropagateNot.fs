@@ -37,9 +37,11 @@ let private generateDiseqBody typer diseq_op diseqs cs sort =
             let rids = rvars |> List.map Ident
             let app = diseq (apply constr lids) (apply constr rids)
             for sort, l, r in List.zip3 (Operation.argumentTypes constr) lids rids do
-                match Map.tryFind sort diseqs with
-                | Some op -> yield Assert(forall (lvars @ rvars) (hence [Apply(op, [l; r])] app))
-                | None -> failwithf "No diseq sort: %O" sort
+                let diseq_op =
+                    match Map.tryFind sort diseqs with
+                    | Some op -> op
+                    | None -> distinct_op
+                yield Assert(forall (lvars @ rvars) (hence [Apply(diseq_op, [l; r])] app))
     }
     Seq.append facts steps |> List.ofSeq
 
@@ -47,37 +49,58 @@ let propagateNot typer diseqs =
     let diseq = function
         | [x; _] as ts ->
             let tx = typeOf x
-            Apply(Map.find tx diseqs, ts)
+            match Map.tryFind tx diseqs with
+            | Some op -> Apply(op, ts)
+            | None -> Apply(distinct_op, ts)
         | ts -> failwithf "distinct with not 2 args: %O" ts
     let rec propNotExpr = function
         | Exists(vs, e) -> Exists(vs, propNotExpr e)
         | Forall(vs, e) -> Forall(vs, propNotExpr e)
         | Not e -> pushNot e
-        | And es -> es |> List.map propNotExpr |> And
-        | Or es -> es |> List.map propNotExpr |> Or
+        | And es -> es |> List.map propNotExpr |> ande
+        | Or es -> es |> List.map propNotExpr |> ore
         | Hence(t1, t2) -> Hence(propNotExpr t1, propNotExpr t2)
-        | Apply(op, ts) when op = distinct_op -> diseq ts
+        | Apply(op, ts) ->
+            let ts = List.map propNotExpr ts
+            match ts with
+            | [Not t1; Not t2] when op = distinct_op -> diseq [t1; t2]
+            | [Not t1; t2]
+            | [t1; Not t2] when op = distinct_op -> equal t1 t2
+            | _ when op = distinct_op -> diseq ts
+            | [Not t1; Not t2] when op = equal_op -> equal t1 t2
+            | [Not t1; t2]
+            | [t1; Not t2] when op = equal_op -> diseq [t1; t2]
+            | _ -> Apply(op, ts)
         | Ite(i, t, e) -> Ite(propNotExpr i, propNotExpr t, propNotExpr e)
         | Let(asns, body) -> Let(List.map (fun (s, e) -> s, propNotExpr e) asns, propNotExpr body)
         | Match(t, cases) -> Match(propNotExpr t, List.map (fun (p, b) -> p, propNotExpr b) cases)
         | Constant _
-        | Ident _
-        | Apply _ as e -> e
+        | Ident _ as e -> e
     and pushNot = function
         | Exists(vs, e) -> Forall(vs, pushNot e)
         | Forall(vs, e) -> Exists(vs, pushNot e)
         | Not e -> propNotExpr e
-        | And es -> es |> List.map pushNot |> Or
-        | Or es -> es |> List.map pushNot |> And
+        | And es -> es |> List.map pushNot |> ore
+        | Or es -> es |> List.map pushNot |> ande
         | Hence _ -> __unreachable__()
-        | Apply(op, ts) when op = equal_op -> diseq ts
+        | Apply(op, ts) ->
+            let ts = List.map propNotExpr ts
+            match ts with
+            | [Not t1; Not t2] when op = distinct_op -> equal t1 t2
+            | [Not t1; t2]
+            | [t1; Not t2] when op = distinct_op -> diseq [t1; t2]
+            | [t1; t2] when op = distinct_op -> equal t1 t2
+            | [Not t1; Not t2] when op = equal_op -> diseq [t1; t2]
+            | [Not t1; t2]
+            | [t1; Not t2] when op = equal_op -> equal t1 t2
+            | _ when op = equal_op -> diseq ts
+            | _ -> Not <| Apply(op, ts)
         | Ite(i, t, e) -> Ite(propNotExpr i, pushNot t, pushNot e)
         | Let(asns, body) -> Let(List.map (fun (s, e) -> s, propNotExpr e) asns, pushNot body)
         | Match(t, cases) -> Match(propNotExpr t, List.map (fun (p, b) -> p, pushNot b) cases)
         | Constant(Bool b) -> Constant(Bool (not b))
         | Constant _
-        | Ident _
-        | Apply _ as e -> Not e
+        | Ident _ as e -> Not e
 
     let propDefinition (name, argSorts, sort, body) = name, argSorts, sort, propNotExpr body
 

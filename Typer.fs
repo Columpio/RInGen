@@ -1,6 +1,5 @@
 module FLispy.Typer
 open FLispy.Operations
-open FLispy.VarEnv
 
 let rec typeOf = function
     | Constant(Number _) -> "Int"
@@ -23,13 +22,6 @@ let getOperation f typer =
     match Map.tryFind f typer with
     | Some r -> r
     | _ -> failwithf "Unknown type: %s" f
-let typeGet x (typer, env) =
-    match VarEnv.typeCheck env x with
-    | Some t -> t
-    | None ->
-        match tryTypeCheck x typer with
-        | Some t -> t
-        | None -> failwithf "Unknown type: %s" x
 
 let typerFold f z cs =
     let interpretCommand (typer, z) c =
