@@ -3,18 +3,11 @@ open System.IO
 open System.Globalization
 open System.Text.RegularExpressions
 open CsvHelper
-
-let private writeEmptyResult (csv : CsvWriter) =
-    csv.WriteField("")
-    csv.WriteField("")
-
-let private writeSolverResult (csv : CsvWriter) time result =
-    csv.WriteField(sprintf "%d" time)
-    csv.WriteField(sprintf "%O" result)
+open Solvers
 
 let private resultRegex = Regex @"(\d+),(\w+)"
 
-let GenerateResultTable directories =
+let private GenerateResultTable writeSolverResult writeEmptyResult directories =
     let filename = Path.ChangeExtension(Path.GetTempFileName(), "csv")
     use writer = new StreamWriter(filename)
     use csv = new CsvWriter(writer, CultureInfo.InvariantCulture)
@@ -30,3 +23,26 @@ let GenerateResultTable directories =
         csv.NextRecord()
     walk_through_simultaneously directories generateResultLine
     printfn "Table written to %s" filename
+
+let GenerateReadableResultTable =
+    let writeEmptyResult (csv : CsvWriter) =
+        csv.WriteField("")
+        csv.WriteField("")
+
+    let writeSolverResult (csv : CsvWriter) time result =
+        csv.WriteField(sprintf "%d" time)
+        csv.WriteField(sprintf "%O" result)
+    GenerateResultTable writeSolverResult writeEmptyResult
+
+let GenerateLaTeXResultTable =
+    let timeToString n = n |> sprintf "%d"
+    let writeEmptyResult (csv : CsvWriter) =
+        csv.WriteField(timeToString <| 2 * MSECONDS_TIMEOUT)
+
+    let writeSolverResult (csv : CsvWriter) time result =
+        match parseSolverResult result with
+        | SAT
+        | UNSAT
+        | TIMELIMIT -> csv.WriteField(timeToString time)
+        | _ -> writeEmptyResult csv
+    GenerateResultTable writeSolverResult writeEmptyResult

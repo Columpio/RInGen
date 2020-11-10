@@ -37,6 +37,8 @@ let inline thd3 (_, _, a) = a
 let inline toString x = x.ToString()
 
 module List =
+    let cons x xs = x :: xs
+
     let product xss =
         let rec product xss k =
             match xss with
@@ -120,6 +122,7 @@ type function_def = symbol * sorted_var list * sort * term
 type command =
     | Assert of term
     | CheckSat
+    | GetModel
     | GetInfo of string
     | SetLogic of string
     | DeclareDatatype of symbol * (symbol * sorted_var list) list
@@ -137,6 +140,7 @@ type command =
         match x with
         | Assert t -> sprintf "(assert %O)" t
         | CheckSat -> "(check-sat)"
+        | GetModel -> "(get-model)"
         | GetInfo s -> sprintf "(get-info %s)" s
         | SetLogic l -> sprintf "(set-logic %s)" l
         | DeclareConst(name, sort) -> sprintf "(declare-const %O %O)" name sort

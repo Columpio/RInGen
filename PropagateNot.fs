@@ -45,7 +45,7 @@ let private generateDiseqBody typer diseq_op diseqs cs sort =
     }
     Seq.append facts steps |> List.ofSeq
 
-let propagateNot typer diseqs =
+let propagateNot (typer, _) diseqs =
     let diseq = function
         | [x; _] as ts ->
             let tx = typeOf x
@@ -110,6 +110,7 @@ let propagateNot typer diseqs =
     | CheckSat
     | DeclareFun _
     | DeclareSort _
+    | GetModel
     | SetLogic _ as c -> [c], diseqs
     | DeclareDatatype(name, cs) as c ->
         let diseq_op, diseqs, diseq_decl = generateDiseqHeader diseqs name
@@ -140,4 +141,6 @@ module Diseq =
     let empty = Map.ofList ["Bool", Bool.diseqOp]
     let preambula = Bool.diseqDeclaration
 
-let propagateAllNots = typerFold propagateNot Diseq.empty >> List.concat
+let private propagateAllNotsInBenchmark = typerFold propagateNot Diseq.empty >> List.concat
+
+let propagateAllNots css = List.map propagateAllNotsInBenchmark css //TODO

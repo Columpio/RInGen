@@ -69,7 +69,7 @@ let parseToTerms exprs =
     let toComm typer e =
         let define_fun name vars sort body constr =
             let vars = to_sorted_vars vars
-            let typer = Map.add name (Operation.makeUserOperationFromVars name vars sort) typer
+            let typer = Typer.addOperation name (Operation.makeUserOperationFromVars name vars sort) typer
             let env = VarEnv.create vars
             let body = toExpr (typer, env) body
             constr(name, vars, sort, body), typer
@@ -77,8 +77,8 @@ let parseToTerms exprs =
             let handle_constr typer = function
                 | PList (PSymbol fname::vars) ->
                     let vars = to_sorted_vars vars
-                    let typer = List.fold (fun typer (pr, s) -> Map.add pr (Operation.makeElementaryOperationFromSorts pr [adtname] s) typer) typer vars
-                    let typer = Map.add fname (Operation.makeElementaryOperationFromVars fname vars adtname) typer
+                    let typer = List.fold (fun typer (pr, s) -> Typer.addOperation pr (Operation.makeElementaryOperationFromSorts pr [adtname] s) typer) typer vars
+                    let typer = Typer.addOperation fname (Operation.makeElementaryOperationFromVars fname vars adtname) typer
                     (fname, vars), typer
                 | _ -> __unreachable__()
             List.mapFold handle_constr typer constrs
@@ -90,7 +90,7 @@ let parseToTerms exprs =
                 define_fun name vars sort body DefineFunRec
             | PList [PSymbol "define-funs-rec"; PList signs; PList bodies] ->
                 let signs = signs |> List.map (function PList [PSymbol name; PList vars; PSymbol sort] -> name, to_sorted_vars vars, sort | _ -> __unreachable__())
-                let typer = List.fold (fun typer (name, vars, sort) -> Map.add name (Operation.makeUserOperationFromVars name vars sort) typer) typer signs
+                let typer = List.fold (fun typer (name, vars, sort) -> Typer.addOperation name (Operation.makeUserOperationFromVars name vars sort) typer) typer signs
                 let fs = List.map2 (fun body (name, vars, sort) -> name, vars, sort, toExpr (typer, VarEnv.create vars) body) bodies signs
                 DefineFunsRec fs, typer
             | PList [PSymbol "declare-datatype"; PSymbol adtname; PList constrs] ->
@@ -101,16 +101,17 @@ let parseToTerms exprs =
                 let dfs, typer = List.mapFold (fun typer (name, PList constrs) -> parse_constructors typer name constrs) typer (List.zip names constr_groups)
                 DeclareDatatypes (List.zip names dfs), typer
             | PList [PSymbol "check-sat"] -> CheckSat, typer
+            | PList [PSymbol "get-model"] -> GetModel, typer
             | PList [PSymbol "assert"; expr] ->
                 Assert(toExpr (typer, VarEnv.empty) expr), typer
             | PList [PSymbol "declare-sort"; PSymbol sort; PNumber 0] -> DeclareSort(sort), typer
             | PList [PSymbol "declare-const"; PSymbol name; PSymbol sort] ->
-                DeclareConst(name, sort), Map.add name (Operation.makeUserOperationFromSorts name [] sort) typer
+                DeclareConst(name, sort), Typer.addOperation name (Operation.makeElementaryOperationFromSorts name [] sort) typer
             | PList [PSymbol "declare-fun"; PSymbol name; PList argTypes; PSymbol sort] ->
                 let argTypes = argTypes |> List.map (function PSymbol t -> t | _ -> __unreachable__())
-                DeclareFun(name, argTypes, sort), Map.add name (Operation.makeUserOperationFromSorts name argTypes sort) typer
+                DeclareFun(name, argTypes, sort), Typer.addOperation name (Operation.makeElementaryOperationFromSorts name argTypes sort) typer
             | PList [PSymbol "set-logic"; PSymbol name] -> SetLogic(name), typer
             | e -> failwithf "%O" e
         comm, typer
-    let comms, _ = List.mapFold toComm elementaryOperations exprs
+    let comms, _ = List.mapFold toComm Typer.empty exprs
     comms

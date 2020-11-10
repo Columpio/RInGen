@@ -27,6 +27,7 @@ let private unfoldDeclarationsCommand = function
     | DeclareFun _
     | DeclareSort _
     | CheckSat
+    | GetModel
     | SetLogic _
     | GetInfo _ as c -> c
     | Assert e -> unfoldDeclarationsExpr e |> Assert

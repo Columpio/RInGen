@@ -61,28 +61,29 @@ let typeGet x (typer, env) =
         | Some t -> t
         | None -> failwithf "Unknown type: %s" x
 
-let rec renameVars typer env = function
+let rec renameVars (typer, _ as ts) env = function
     | Ident(name, _) as e when Map.containsKey name typer -> e
-    | Ident(name, sort) -> get env (name, sort) |> Ident
-    | Apply(op, es) -> Apply(op, List.map (renameVars typer env) es)
+    | Ident(name, sort) -> get env (name, Typer.sort ts sort) |> Ident
+    | Apply(op, es) -> Apply(op, List.map (renameVars ts env) es)
     | Match(t, cases) ->
         let handleCase (pattern, expr) =
-            let freeVars = MatchExtensions.getFreeVarsFromPattern typer pattern
+            let freeVars = MatchExtensions.getFreeVarsFromPattern typer pattern |> sorted_var_list ts
             let _, env = extend env freeVars
-            let pattern = renameVars typer env pattern
-            let expr = renameVars typer env expr
+            let pattern = renameVars ts env pattern
+            let expr = renameVars ts env expr
             pattern, expr
-        Match(renameVars typer env t, List.map handleCase cases)
-    | Not e -> renameVars typer env e |> Not
-    | Ite(i, t, e) -> Ite(renameVars typer env i, renameVars typer env t, renameVars typer env e)
+        Match(renameVars ts env t, List.map handleCase cases)
+    | Not e -> renameVars ts env e |> Not
+    | Ite(i, t, e) -> Ite(renameVars ts env i, renameVars ts env t, renameVars ts env e)
     | Let(defs, body) ->
         let iter env (v, e) =
-            let e = renameVars typer env e
+            let e = renameVars ts env e
             let (v, _), env = extendOne env (v, typeOf e)
             (v, e), env
         let defs, env = List.mapFold iter env defs
-        Let(defs, renameVars typer env body)
-    | Or es -> es |> List.map (renameVars typer env) |> Or
-    | And es -> es |> List.map (renameVars typer env) |> And
+        Let(defs, renameVars ts env body)
+    | Or es -> es |> List.map (renameVars ts env) |> Or
+    | And es -> es |> List.map (renameVars ts env) |> And
     | Constant _ as e -> e
+    | Hence(a, b) -> Hence(renameVars ts env a, renameVars ts env b)
     | _ -> __notImplemented__()

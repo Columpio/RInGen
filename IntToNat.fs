@@ -1,20 +1,13 @@
 module FLispy.IntToNat
 open FLispy.Operations
 
-let private nat_sort = gensymp "Nat"
+let internal nat_sort = gensymp "Nat"
 let private Z_constr = gensymp "Z"
 let private S_constr = gensymp "S"
 let private unS_constr = gensymp "unS"
 let private S_op = Operation.makeElementaryOperationFromSorts S_constr [nat_sort] nat_sort
 let private Z = Ident(Z_constr, nat_sort)
 let private S t = Apply(S_op, [t])
-let sort s = if s = "Int" then nat_sort else s
-let sort_list = List.map sort
-let sorted_var (v, t) = v, sort t
-let sorted_var_list vs = List.map sorted_var vs
-let constructor (c, ts) = c, sorted_var_list ts
-let constructor_list cs = List.map constructor cs
-let definition (name, args, ret, body) = name, sorted_var_list args, sort ret, body
 
 let rec int_to_nat n = if n <= 0 then Z else S (int_to_nat (n - 1))
 
@@ -32,7 +25,7 @@ module private V =
     let rid = Ident rvar
     let zid = Ident zvar
 
-let private nat_datatype = DeclareDatatype(nat_sort, [Z_constr, []; S_constr, [unS_constr, nat_sort]])
+let nat_datatype = DeclareDatatype(nat_sort, [Z_constr, []; S_constr, [unS_constr, nat_sort]])
 let private add_name = gensymp "add"
 let private add_sorts = Operation.makeOperationSortsFromTypes [nat_sort; nat_sort] nat_sort
 let private add_op = ElementaryOperation(add_name, Operation.makeOperationSortsFromTypes add_sorts "Bool")

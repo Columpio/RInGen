@@ -5,13 +5,15 @@ let private forallk vars Q = forall vars << Q
 let private existsk vars Q = exists vars << Q
 let private emptyQuantifier = id
 
-let takeOutQuantifiers typer e =
+let takeOutQuantifiers ts e =
     let rec takeOutQs env = function
         | Forall(vars, e) ->
+            let vars = Typer.sorted_var_list ts vars
             let vars, env = VarEnv.extend env vars
             let Q, env, e = takeOutQs env e
             forallk vars Q, env, e
         | Exists(vars, e) ->
+            let vars = Typer.sorted_var_list ts vars
             let vars, env = VarEnv.extend env vars
             let Q, env, e = takeOutQs env e
             existsk vars Q, env, e
@@ -30,7 +32,7 @@ let takeOutQuantifiers typer e =
             Q1 >> Q2, env, Hence(e1, e2)
         | Match _
         | Let _
-        | Apply _ as e -> emptyQuantifier, env, VarEnv.renameVars typer env e
+        | Apply _ as e -> emptyQuantifier, env, VarEnv.renameVars ts env e
         | _ -> __unreachable__()
     and takeOutQuantifiersFromExprList env =
         List.mapFold (fun (Q, env) e -> let Q', env', e' = takeOutQs env e in e', (Q >> Q', env')) (emptyQuantifier, env)
