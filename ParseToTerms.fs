@@ -79,6 +79,8 @@ let parseToTerms exprs =
                     let vars = to_sorted_vars vars
                     let typer = List.fold (fun typer (pr, s) -> Typer.addOperation pr (Operation.makeElementaryOperationFromSorts pr [adtname] s) typer) typer vars
                     let typer = Typer.addOperation fname (Operation.makeElementaryOperationFromVars fname vars adtname) typer
+                    let testerName = "is-" + fname
+                    let typer = Typer.addOperation testerName (Operation.makeElementaryOperationFromSorts testerName [adtname] "Bool") typer
                     (fname, vars), typer
                 | _ -> __unreachable__()
             List.mapFold handle_constr typer constrs
@@ -102,6 +104,8 @@ let parseToTerms exprs =
                 DeclareDatatypes (List.zip names dfs), typer
             | PList [PSymbol "check-sat"] -> CheckSat, typer
             | PList [PSymbol "get-model"] -> GetModel, typer
+            | PList (PSymbol "get-info"::args) ->
+                args |> List.map (function PSymbol option -> option | _ -> __notImplemented__()) |> join " " |> GetInfo, typer
             | PList [PSymbol "assert"; expr] ->
                 Assert(toExpr (typer, VarEnv.empty) expr), typer
             | PList [PSymbol "declare-sort"; PSymbol sort; PNumber 0] -> DeclareSort(sort), typer

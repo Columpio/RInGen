@@ -45,6 +45,23 @@ let private generateDiseqBody typer diseq_op diseqs cs sort =
     }
     Seq.append facts steps |> List.ofSeq
 
+let private generateTesterHeader sort constructorName =
+    let testerName = "is-" + constructorName
+    let op = ElementaryOperation(testerName, [sort; "Bool"])
+    let decl = DeclareFun(testerName, [sort], "Bool")
+    op, decl
+
+let private generateTesterBody tester_op constructor_op =
+    let constructorVars = Operation.generateArguments constructor_op
+    Assert (forall constructorVars (Apply(tester_op, [Operation.makeAppConstructor constructor_op (List.map Ident constructorVars)])))
+
+let private generateTesters typer sort cs =
+    let generateTester (constructorName, _) =
+        let op, decl = generateTesterHeader sort constructorName
+        let body = generateTesterBody op (Map.find constructorName typer)
+        [decl; body]
+    cs |> List.collect generateTester
+
 let propagateNot (typer, _) diseqs =
     let diseq = function
         | [x; _] as ts ->
@@ -112,16 +129,18 @@ let propagateNot (typer, _) diseqs =
     | DeclareSort _
     | GetModel
     | SetLogic _ as c -> [c], diseqs
-    | DeclareDatatype(name, cs) as c ->
+    | DeclareDatatype(name, cs) as c -> //TODO: selector
         let diseq_op, diseqs, diseq_decl = generateDiseqHeader diseqs name
         let body = generateDiseqBody typer diseq_op diseqs cs name
-        c :: diseq_decl::body, diseqs
-    | DeclareDatatypes dts as c ->
+        let testers = generateTesters typer name cs
+        c :: diseq_decl :: body @ testers, diseqs
+    | DeclareDatatypes dts as c -> //TODO: selector
         let names, css = List.unzip dts
         let diseq_stuff, diseqs = List.mapFold (fun diseqs name -> let op, diseqs, decl = generateDiseqHeader diseqs name in (op, decl), diseqs) diseqs names
-        let ops, decls = List.unzip diseq_stuff
-        let diseq_bodies = List.map3 (fun name op cs -> generateDiseqBody typer op diseqs cs name) names ops css |> List.concat
-        c :: decls @ diseq_bodies, diseqs
+        let diseq_ops, diseq_decls = List.unzip diseq_stuff
+        let diseq_bodies = List.map3 (fun name op cs -> generateDiseqBody typer op diseqs cs name) names diseq_ops css |> List.concat
+        let testers = List.map2 (generateTesters typer) names css |> List.concat
+        c :: diseq_decls @ diseq_bodies @ testers, diseqs
     | Assert e -> [Assert <| propNotExpr e], diseqs
     | DefineFun df -> [DefineFun <| propDefinition df], diseqs
     | DefineFunRec df -> [DefineFunRec <| propDefinition df], diseqs

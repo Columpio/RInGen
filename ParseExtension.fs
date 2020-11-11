@@ -170,9 +170,8 @@ let private functionToClauses ts = function
 
 let private functionCommandsToClausesSets cs = Typer.typerMap functionToClauses cs |> List.concat |> List.product
 
-let private get_info_unknown = GetInfo ":reason-unknown"
 let private preambulize cs =
-    Diseq.preambula @ cs @ [CheckSat; get_info_unknown]
+    Diseq.preambula @ cs
 
 let functionsToClauses functionsToClauses ps =
     let cs = ps |> parseToTerms //|> unfoldDeclarations

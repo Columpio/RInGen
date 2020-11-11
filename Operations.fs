@@ -33,6 +33,9 @@ module Operation =
     let makeElementaryOperationFromSorts name argSorts retSort = ElementaryOperation(name, makeOperationSortsFromTypes argSorts retSort)
 
     let makeApp op args ret = Apply(op, makeOperationSortsFromTypes args ret)
+    let makeAppConstructor op = function
+        | [] -> Ident(opName op, returnType op)
+        | args -> Apply(op, args)
 
     let generateReturnArgument sign =
         let retType = returnTypeOfSignature sign

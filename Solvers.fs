@@ -6,7 +6,8 @@ open Lexer
 open SolverResult
 
 let rec private isBadBenchmark = function
-    | PList [PSymbol "declare-sort"; _; _] -> false
+    | PList [PSymbol "declare-sort"; _; _]
+    | PList [PSymbol "declare-datatypes"; _; _] -> false
     | PList [PSymbol "declare-fun"; _; _; _] -> true
     | PList es -> List.exists isBadBenchmark es
     | PNumber _ -> true
@@ -121,6 +122,10 @@ type ISolver() =
 
 let private split (s : string) = s.Split(Environment.NewLine.ToCharArray()) |> List.ofArray
 
+let private cleanCommands set_logic chcSystem =
+    let chcSystem = chcSystem |> List.filter (function SetLogic _ | GetInfo _ | GetModel -> false | _ -> true)
+    set_logic :: chcSystem @ [CheckSat; GetInfo ":reason-unknown"]
+
 type CVC4FiniteSolver () =
     inherit ISolver()
 
@@ -131,8 +136,7 @@ type CVC4FiniteSolver () =
         let set_logic_all = SetLogic "ALL"
         setOfCHCSystems
         |> List.map (fun chcSystem -> List.collect ParseExtension.to_sorts chcSystem)
-        |> List.map (fun chcSystem -> chcSystem |> List.filter (function SetLogic _ -> false | _ -> true))
-        |> List.map (fun chcSystem -> set_logic_all :: chcSystem)
+        |> List.map (cleanCommands set_logic_all)
 
     override x.SetupProcess pi filename =
         pi.FileName <- "cvc4"
@@ -158,8 +162,7 @@ type IADTSolver () =
         let setOfCHCSystems = ParseExtension.functionsToClauses tipToHorn exprs
         let set_logic = SetLogic "HORN"
         setOfCHCSystems
-        |> List.map (fun chcSystem -> chcSystem |> List.filter (function SetLogic _ -> false | _ -> true))
-        |> List.map (fun chcSystem -> set_logic :: chcSystem)
+        |> List.map (cleanCommands set_logic)
 
 
 type EldaricaSolver () =
