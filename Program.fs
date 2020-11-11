@@ -67,29 +67,3 @@ let main args =
     | :? NotParsed<options> -> ()
     | _ -> failwith "Fail during argument parsing"
     0
-
-//let main args =
-//    let tip = "/home/columpio/Desktop/benchmarks/TIP", false
-//    let reynolds = "/home/columpio/Desktop/benchmarks/Reynolds"
-//    let reynolds_tr = "/home/columpio/Desktop/benchmarks/Reynolds-transformed"
-//    let positiveEq = "/home/columpio/Desktop/benchmarks/PositiveEq", true
-//    let diseq = "/home/columpio/Desktop/benchmarks/Diseq", true
-////    if true then
-//    if false then
-////        CVC4IndSolver().EncodeSingleFile("/home/columpio/Desktop/benchmarks/PositiveEq/goal76.smt2") |> List.iter (printfn "%O")
-//        let baseTIP = "/home/columpio/Desktop/benchmarks/TIP"
-//        ResultTable.GenerateLaTeXResultTable [baseTIP + ".CVC4Finite.CVC4FiniteAnswers"; baseTIP + ".Eldarica.EldaricaAnswers"; baseTIP + ".Z3.Z3Answers"; baseTIP + ".CVC4Ind.CVC4IndAnswers"]
-////        ResultTable.GenerateReadableResultTable [baseTIP + ".CVC4Finite.CVC4FiniteAnswers"; baseTIP + ".Eldarica.EldaricaAnswers"; baseTIP + ".Z3.Z3Answers"; baseTIP + ".CVC4Ind.CVC4IndAnswers"]
-//    else
-//        // A /\ E x. p(x) <-> E x. (A /\ p(x))
-//        // !A -> E x. p(x) <-> E x. (!A -> p(x))
-////        let tool = CVC4FiniteSolver()
-////        let tool = EldaricaSolver()
-//        let overwrite = false
-//        let tools : ISolver list = [CVC4FiniteSolver(); Z3Solver()]
-//        for tool in tools do
-//            for dirname, force in [tip] do //; reynolds; reynolds_tr] do
-//                let dir = tool.GenerateClauses force dirname
-//                dir |> ignore
-////                tool.RunOnBenchmarkSet overwrite dir |> ignore
-//    0

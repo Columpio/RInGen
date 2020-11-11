@@ -22,7 +22,7 @@ let parse_file filename =
         | PNumber _
         | PSymbol _ as e -> e
         | PComment -> __unreachable__()
-    let text = sprintf "(%s)" <| System.IO.File.ReadAllText(filename)
+    let text = sprintf "(%s)" <| File.ReadAllText(filename)
     try
         let (PList exprs) = filterComments <| parse_string text
         exprs
@@ -98,66 +98,13 @@ type ISolver() =
         p.StartInfo.UseShellExecute <- false
         x.SetupProcess p.StartInfo filename
         p.Start() |> ignore
-//        let output = Generic.List<string>()
-//        let error = Generic.List<string>()
-//        let addToList (l : Generic.List<_>) x = if x <> null then l.Add x
-//        p.OutputDataReceived.Add(fun args -> addToList output args.Data)
-//        p.ErrorDataReceived.Add(fun args -> addToList error args.Data)
-//        p.BeginErrorReadLine()
-//        p.BeginOutputReadLine()
         let output = p.StandardOutput.ReadToEnd()
         let error = p.StandardError.ReadToEnd()
         let exited = p.WaitForExit(MSECONDS_TIMEOUT ())
         if not exited then
-//                    p.CloseMainWindow() |> ignore
-//                    p.Close()
             p.Kill()
             TIMELIMIT
         else x.InterpretResult error output
-//    default x.Solve (filename : string) =
-//        let MySleep msec =
-//            Seq.init (10000 * msec) id |> Seq.fold (*) 0 |> ignore
-//        let solve =
-//            async {
-//                use p = new Process()
-//                p.StartInfo.WorkingDirectory <- Path.GetDirectoryName(filename)
-//                p.StartInfo.RedirectStandardOutput <- true
-//                p.StartInfo.RedirectStandardError <- true
-//                p.StartInfo.UseShellExecute <- false
-//                x.SetupProcess p.StartInfo filename
-//                p.Start() |> ignore
-//        //        let output = Generic.List<string>()
-//        //        let error = Generic.List<string>()
-//        //        let addToList (l : Generic.List<_>) x = if x <> null then l.Add x
-//        //        p.OutputDataReceived.Add(fun args -> addToList output args.Data)
-//        //        p.ErrorDataReceived.Add(fun args -> addToList error args.Data)
-//        //        p.BeginErrorReadLine()
-//        //        p.BeginOutputReadLine()
-////                let output = p.StandardOutput.ReadToEnd()
-////                let error = p.StandardError.ReadToEnd()
-////                let exited = p.WaitForExit(MSECONDS_TIMEOUT)
-//                MySleep(MSECONDS_TIMEOUT)
-//                let error, output, exited = "", "", false
-//                if not exited then
-////                    p.CloseMainWindow() |> ignore
-////                    p.Close()
-//                    p.Kill()
-//                    return TIMELIMIT
-//                else return x.InterpretResult error output
-//            }
-//        // create a cancellation source
-//        use cancellationSource = new Threading.CancellationTokenSource()
-//
-//        // start the task, but this time pass in a cancellation token
-//        let result = Async.RunSynchronously(solve, MSECONDS_TIMEOUT)
-////        let result = Async.RunSynchronously(solve, MSECONDS_TIMEOUT, cancellationSource.Token)
-//
-//        // wait a bit
-////        Threading.Thread.Sleep(MSECONDS_TIMEOUT)
-//
-//        // cancel after 200ms
-////        cancellationSource.Cancel()
-//        result
 
     member x.SolveWithTime filename =
         printfn "Solving %s with timelimit %d seconds" filename SECONDS_TIMEOUT
@@ -221,7 +168,7 @@ type EldaricaSolver () =
     override x.Name = "Eldarica"
 
     override x.SetupProcess pi filename =
-        pi.FileName <- "/home/columpio/Documents/eldarica/eld"
+        pi.FileName <- "eld"
         pi.Arguments <- sprintf "-horn -hsmt -t:%d %s" SECONDS_TIMEOUT filename
 
     override x.InterpretResult error raw_output =
@@ -240,7 +187,7 @@ type Z3Solver () =
     override x.Name = "Z3"
 
     override x.SetupProcess pi filename =
-        pi.FileName <- "/usr/bin/z3"
+        pi.FileName <- "z3"
         pi.Arguments <- sprintf "-smt2 -nw -memory:%d -T:%d %s" MEMORY_LIMIT_MB SECONDS_TIMEOUT filename
 
     override x.InterpretResult error raw_output =

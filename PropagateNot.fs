@@ -143,4 +143,4 @@ module Diseq =
 
 let private propagateAllNotsInBenchmark = typerFold propagateNot Diseq.empty >> List.concat
 
-let propagateAllNots css = List.map propagateAllNotsInBenchmark css //TODO
+let propagateAllNots css = List.map propagateAllNotsInBenchmark css
