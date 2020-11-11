@@ -31,8 +31,9 @@
         <Compile Include="PropagateNot.fs" />
         <Compile Include="TakeOutQuantifiers.fs" />
         <Compile Include="ParseExtension.fs" />
-        <Compile Include="Solvers.fs" />
+        <Compile Include="SolverResult.fs" />
         <Compile Include="ResultTable.fs" />
+        <Compile Include="Solvers.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>
 
