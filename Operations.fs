@@ -43,6 +43,8 @@ module Operation =
         let retVar = Ident retArg
         retArg, retVar
 
+    let generateReturnArgumentOfOperation = getSortOfOperation >> generateReturnArgument
+
     let generateArguments = argumentTypes >> List.map (fun s -> gensym(), s)
 
 

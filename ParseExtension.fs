@@ -1,4 +1,5 @@
 module FLispy.ParseExtension
+open FLispy
 open FLispy.Operations
 open FLispy.PropagateNot
 open FLispy.ParseToTerms
@@ -143,6 +144,7 @@ let private collectAsserts cs =
     iter [] [] cs
 
 let private functionToClauses ts = function
+    | GetInfo _
     | SetLogic _
     | CheckSat as c -> [[c]]
     | DeclareSort _ -> [] // substituted by Nats
@@ -180,7 +182,8 @@ let functionsToClauses functionsToClauses ps =
     let css = if functionsToClauses then functionCommandsToClausesSets cs'' else [cs'']
     let css' = List.map (fun cs -> IntToNat.nat_datatype::cs) css
     let css'' = PropagateNot.propagateAllNots css'
-    List.map preambulize css''
+    let css''' = EliminateSelectors.eliminateAllSelectors css''
+    List.map preambulize css'''
 
 let private adt_df_to_sorted (typename, constructors) =
     let parse_constructor (name, args) = DeclareFun(name, List.map snd args, typename)

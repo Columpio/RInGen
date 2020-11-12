@@ -198,6 +198,7 @@ type Z3Solver () =
         match output with
         | line::_ when line = "timeout" -> TIMELIMIT
         | line::_ when line = "unsat" -> UNSAT
+        | line::_ when line = "sat" -> SAT
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 

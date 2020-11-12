@@ -29,6 +29,7 @@
         <Compile Include="ParseToTerms.fs" />
         <Compile Include="UnfoldDeclarations.fs" />
         <Compile Include="PropagateNot.fs" />
+        <Compile Include="EliminateSelectors.fs" />
         <Compile Include="TakeOutQuantifiers.fs" />
         <Compile Include="ParseExtension.fs" />
         <Compile Include="SolverResult.fs" />
