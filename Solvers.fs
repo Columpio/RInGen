@@ -1,54 +1,81 @@
-module FLispy.Solvers
+module RInGen.Solvers
 open System.IO
 open System.Diagnostics
-open System
-open Lexer
+open System.Text.RegularExpressions
 open SolverResult
 
-let rec private isBadBenchmark = function
-    | PList [PSymbol "declare-sort"; _; _]
-    | PList [PSymbol "declare-datatypes"; _; _] -> false
-    | PList [PSymbol "declare-fun"; _; _; _] -> true
-    | PList es -> List.exists isBadBenchmark es
-    | PNumber _ -> true
-    | PComment -> false
-    | PMatch(t, ts) -> isBadBenchmark t || List.exists (fun (a, b) -> isBadBenchmark a || isBadBenchmark b) ts
-    | PSymbol "Int" -> true
-    | PSymbol _ -> false
+let private isBadBenchmark = function
+    | PList cmnds ->
+        let hasDefines = List.exists (function PList (PSymbol name::_) when name.StartsWith("define")-> true | _ -> false) cmnds
+        let hasDeclareFuns = List.exists (function PList(PSymbol "declare-fun"::_) -> true | _ -> false) cmnds
+        hasDefines && hasDeclareFuns
+    | _ -> false
 
-let parse_file filename =
-    let rec filterComments = function
-        | PList es -> es |> List.filter ((<>) PComment) |> List.map filterComments |> PList
-        | PMatch(t, ts) -> PMatch(filterComments t, ts |> List.map (fun (p, e) -> filterComments p, filterComments e))
-        | PNumber _
-        | PSymbol _ as e -> e
-        | PComment -> __unreachable__()
-    let text = sprintf "(%s)" <| File.ReadAllText(filename)
-    try
-        let (PList exprs) = filterComments <| parse_string text
-        exprs
-    with _ -> printfn "%s" filename; reraise ()
+let private containsExistentialClauses =
+    let rec containsExistentialClauses = function
+        | BaseRule _ -> false
+        | ExistsRule _ -> true
+        | ForallRule(_, r) -> containsExistentialClauses r
+    let containsExistentialClauses = function
+        | TransformedCommand r -> containsExistentialClauses r
+        | _ -> false
+    List.exists containsExistentialClauses
+
+let private isNonLinearCHCSystem =
+    let rec isNonLinearClause = function
+        | BaseRule(atoms, _) ->
+            atoms |> Seq.filter (function AApply _ -> true | _ -> false) |> Seq.length |> (<) 1
+        | ExistsRule(_, r)
+        | ForallRule(_, r) -> isNonLinearClause r
+    let isNonLinearCommand = function
+        | TransformedCommand r -> isNonLinearClause r
+        | _ -> false
+    List.exists isNonLinearCommand
 
 [<AbstractClass>]
 type ISolver() =
-    abstract member SetupProcess : ProcessStartInfo -> string -> unit
+    let cleanPath (path : string) =
+        let newpath = Regex.Replace(path, "[^a-zA-Z0-9_./]", "")
+        newpath
+
+    let saveClauses directory dst commands =
+        for testIndex, newTest in List.indexed commands do
+            let lines = List.map toString newTest
+            let path = Path.ChangeExtension(dst, sprintf ".%d.smt2" testIndex)
+//            let linearityPostfix = if isNonLinearCHCSystem newTest then ".NonLin" else ".Lin"
+//            let fullPath = directory + linearityPostfix + cleanPath path
+            let fullPath = directory + path
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)) |> ignore
+            File.WriteAllLines(fullPath, lines)
+        List.length commands
+
     abstract member InterpretResult : string -> string -> SolverResult
     abstract member Name : string
-    abstract member CodeTransformation : bool -> ParseExpression list -> command list list
+    abstract member BinaryName : string
+    abstract member BinaryOptions : string -> string
+    abstract member CodeTransformation : bool -> ParseExpression list -> transformedCommand list list // command list list
 
-    member x.GenerateClausesSingle tipToHorn filename =
-        let exprs = parse_file filename
-        if List.exists isBadBenchmark exprs then
-            failwithf "Syntax error in %s" filename
-        else
+    member x.SetupProcess (psinfo : ProcessStartInfo) filename =
+        let path = ref ""
+        psinfo.FileName <- if psinfo.Environment.TryGetValue(x.BinaryName, path) then !path else x.BinaryName
+        psinfo.Arguments <- x.BinaryOptions filename
+
+    member x.GenerateClausesSingle tipToHorn filename outputPath =
+        let outputPath =
+            match outputPath with
+            | Some outputPath ->
+                fun (path : string) -> Path.Join(outputPath, Path.GetFileName(path))
+            | None -> id
+        let exprs = FileParser.parse_file filename
         let transformed = x.CodeTransformation tipToHorn exprs
         let paths =
             seq {
                 for testIndex, newTest in List.indexed transformed do
                     let lines = List.map toString newTest
                     let path = Path.ChangeExtension(filename, sprintf ".%s.%d.smt2" x.Name testIndex)
-                    File.WriteAllLines(path, lines)
-                    yield path
+                    let fullPath = outputPath path
+                    File.WriteAllLines(fullPath, lines)
+                    yield fullPath
             } |> List.ofSeq
         paths
 
@@ -59,17 +86,13 @@ type ISolver() =
         let mutable total_generated = 0
         let mapFile (src : string) dst =
             if src.EndsWith(".smt2") then
-    //            printfn "Transforming: %s" src
+                printfn "Transforming: %s" src
                 files <- files + 1
-                let exprs = parse_file src
+                let exprs = FileParser.parse_file src
                 try
-                    if force || not <| List.exists isBadBenchmark exprs then
+                    if force || not <| isBadBenchmark (PList exprs) then
                         let newTests = x.CodeTransformation tipToHorn exprs
-                        for testIndex, newTest in List.indexed newTests do
-                            let lines = List.map toString newTest
-                            let path = Path.ChangeExtension(dst, sprintf ".%d.smt2" testIndex)
-                            File.WriteAllLines(path, lines)
-                            total_generated <- total_generated + 1
+                        total_generated <- total_generated + saveClauses directory dst newTests
                     successful <- successful + 1
                 with e -> printfn "Exception in %s: %O" src e.Message
         let output_directory = walk_through directory ("." + x.Name) mapFile
@@ -84,7 +107,7 @@ type ISolver() =
             if overwrite || not <| File.Exists(dst) then
                 try
                     printfn "Running %s on %s" x.Name src
-                    let answer, time = x.SolveWithTime(src)
+                    let answer, time = x.SolveWithTime(false, src)
                     File.WriteAllText(dst, sprintf "%d,%O" time answer)
                 with e -> printfn "Exception in %s: %s" src dst
             else printfn "%s skipping %s (answer exists)" x.Name src
@@ -107,8 +130,8 @@ type ISolver() =
             TIMELIMIT
         else x.InterpretResult error output
 
-    member x.SolveWithTime filename =
-        printfn "Solving %s with timelimit %d seconds" filename SECONDS_TIMEOUT
+    member x.SolveWithTime(quiet, filename) =
+        if not <| quiet then printfn "Solving %s with timelimit %d seconds" filename SECONDS_TIMEOUT
         let timer = Stopwatch()
         timer.Start()
         let result = x.Solve filename
@@ -118,33 +141,38 @@ type ISolver() =
         | UNKNOWN _ when time = MSECONDS_TIMEOUT () -> TIMELIMIT, time
         | _ -> result, time
 
-    member x.EncodeSingleFile tipToHorn filename = filename |> parse_file |> x.CodeTransformation tipToHorn |> List.head
-
-let private split (s : string) = s.Split(Environment.NewLine.ToCharArray()) |> List.ofArray
+    member x.EncodeSingleFile tipToHorn filename = filename |> FileParser.parse_file |> x.CodeTransformation tipToHorn |> List.head
 
 let private cleanCommands set_logic chcSystem =
-    let chcSystem = chcSystem |> List.filter (function SetLogic _ | GetInfo _ | GetModel -> false | _ -> true)
-    set_logic :: chcSystem @ [CheckSat; GetInfo ":reason-unknown"]
+    let filt = function
+        | OriginalCommand(SetLogic _)
+        | OriginalCommand(GetInfo _)
+        | OriginalCommand GetModel
+        | OriginalCommand CheckSat
+        | OriginalCommand Exit -> false
+        | _ -> true
+    let chcSystem = chcSystem |> List.filter filt
+    OriginalCommand set_logic :: chcSystem @ [OriginalCommand CheckSat]
 
 type CVC4FiniteSolver () =
     inherit ISolver()
 
     override x.Name = "CVC4Finite"
+    override x.BinaryName = "cvc4"
+    override x.BinaryOptions filename = sprintf "--finite-model-find --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
 
-    override x.CodeTransformation tipToHorn exprs =
-        let setOfCHCSystems = ParseExtension.functionsToClauses tipToHorn exprs
+    override x.CodeTransformation tipToHorn parsed =
+        let cleaned = ParseToTerms.removeComments parsed
+        let commands = ParseToTerms.parseToTerms cleaned
+        let chcSystem = SMTcode.toClauses tipToHorn commands
+        let noADTSystem = SMTcode.DatatypesToSorts.datatypesToSorts chcSystem
         let set_logic_all = SetLogic "ALL"
-        setOfCHCSystems
-        |> List.map (fun chcSystem -> List.collect ParseExtension.to_sorts chcSystem)
-        |> List.map (cleanCommands set_logic_all)
-
-    override x.SetupProcess pi filename =
-        pi.FileName <- "cvc4"
-        pi.Arguments <- sprintf "--finite-model-find --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
+        let commands = cleanCommands set_logic_all noADTSystem
+        if containsExistentialClauses commands then [] else [commands]
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
-        let output = split raw_output
+        let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
         | line::_ when line = "sat" -> SAT
@@ -153,29 +181,27 @@ type CVC4FiniteSolver () =
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
         | _ -> UNKNOWN raw_output
 
-
 [<AbstractClass>]
 type IADTSolver () =
     inherit ISolver()
 
-    override x.CodeTransformation tipToHorn exprs =
-        let setOfCHCSystems = ParseExtension.functionsToClauses tipToHorn exprs
-        let set_logic = SetLogic "HORN"
-        setOfCHCSystems
-        |> List.map (cleanCommands set_logic)
-
+    override x.CodeTransformation tipToHorn parsed =
+        let cleaned = ParseToTerms.removeComments parsed
+        let commands = ParseToTerms.parseToTerms cleaned
+        let chcSystem = SMTcode.toClauses tipToHorn commands
+        let set_logic_horn = SetLogic "HORN"
+        let commands = cleanCommands set_logic_horn chcSystem
+        if containsExistentialClauses commands then [] else [commands]
 
 type EldaricaSolver () =
     inherit IADTSolver()
 
     override x.Name = "Eldarica"
-
-    override x.SetupProcess pi filename =
-        pi.FileName <- "eld"
-        pi.Arguments <- sprintf "-horn -hsmt -t:%d %s" SECONDS_TIMEOUT filename
+    override x.BinaryName = "eld"
+    override x.BinaryOptions filename = sprintf "-horn -hsmt -t:%d %s" SECONDS_TIMEOUT filename
 
     override x.InterpretResult error raw_output =
-        let output = split raw_output
+        let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error") -> ERROR raw_output
         | line::_ when line = "unknown" -> UNKNOWN raw_output
@@ -183,18 +209,15 @@ type EldaricaSolver () =
         | line::_ when line = "unsat" -> UNSAT
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
-
 type Z3Solver () =
     inherit IADTSolver()
 
     override x.Name = "Z3"
-
-    override x.SetupProcess pi filename =
-        pi.FileName <- "z3"
-        pi.Arguments <- sprintf "-smt2 -nw -memory:%d -T:%d %s" MEMORY_LIMIT_MB SECONDS_TIMEOUT filename
+    override x.BinaryName = "z3"
+    override x.BinaryOptions filename = sprintf "-smt2 -nw -memory:%d -T:%d %s" MEMORY_LIMIT_MB SECONDS_TIMEOUT filename
 
     override x.InterpretResult error raw_output =
-        let output = split raw_output
+        let output = Environment.split raw_output
         match output with
         | line::_ when line = "timeout" -> TIMELIMIT
         | line::_ when line = "unsat" -> UNSAT
@@ -206,14 +229,13 @@ type CVC4IndSolver () =
     inherit IADTSolver()
 
     override x.Name = "CVC4Ind"
-
-    override x.SetupProcess pi filename =
-        pi.FileName <- "cvc4"
-        pi.Arguments <- sprintf "--quant-ind --quant-cf --conjecture-gen --conjecture-gen-per-round=3 --full-saturate-quant --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
+    override x.BinaryName = "cvc4"
+    override x.BinaryOptions filename =
+        sprintf "--quant-ind --quant-cf --conjecture-gen --conjecture-gen-per-round=3 --full-saturate-quant --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
-        let output = split raw_output
+        let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
         | line::_ when line = "sat" -> SAT
@@ -227,7 +249,8 @@ type AllSolver () =
     let solvers : ISolver list = [Z3Solver(); EldaricaSolver(); CVC4IndSolver(); CVC4FiniteSolver()]
 
     override x.Name = "AllSolvers"
-    override x.SetupProcess _ _ = __unreachable__()
+    override x.BinaryName = "AllSolvers"
+    override x.BinaryOptions _ = __unreachable__()
     override x.InterpretResult _ _ = __unreachable__()
     override x.CodeTransformation _ _ = __unreachable__()
 
@@ -240,8 +263,20 @@ type AllSolver () =
         join ";;;" paths
 
     override x.RunOnBenchmarkSet overwrite directory =
-        let runs = directory.Split(";;;") |> List.ofArray |> List.zip solvers
-        let results = runs |> List.map (fun (solver, path) -> solver.RunOnBenchmarkSet overwrite path)
+        let runs = directory.Split(";;;") |> List.ofArray
+        let results = List.zip solvers runs |> List.map (fun (solver, path) -> solver.RunOnBenchmarkSet overwrite path)
         let names = solvers |> List.map (fun solver -> solver.Name)
-        ResultTable.PrintReadableResultTable names results
+        ResultTable.GenerateReadableResultTable results
+//        ResultTable.PrintReadableResultTable names results
         directory
+
+
+let solverByName (solverName : string) =
+    let solverName = solverName.ToLower().Trim()
+    match () with
+    | _ when solverName = "z3" -> Z3Solver() :> ISolver
+    | _ when solverName = "eldarica" -> EldaricaSolver() :> ISolver
+    | _ when solverName = "cvc4ind" -> CVC4IndSolver() :> ISolver
+    | _ when solverName = "cvc4f" -> CVC4FiniteSolver() :> ISolver
+    | _ when solverName = "all" -> AllSolver() :> ISolver
+    | _ -> failwithf "Unknown solver: %s. Specify one of: z3, eldarica, cvc4f, cvc4ind, all." solverName

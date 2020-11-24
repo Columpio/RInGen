@@ -1,10 +1,10 @@
 ﻿%{
-open FLispy.Prelude
+open RInGen.Prelude
 %}
 
 %start start
 
-%token <int> Int
+%token <int64> Int64Tok
 %token <string> Str
 %token <string> Sym
 %token EOF LPAREN RPAREN QUOTE MATCH COMMENT
@@ -15,7 +15,7 @@ open FLispy.Prelude
 
 start: expr     { $1 }
 
-expr: Int       { PNumber($1) }
+expr: Int64Tok  { PNumber($1) }
     | Sym       { PSymbol($1) }
     | COMMENT   { PComment }
     | LPAREN MATCH expr LPAREN match_case_list RPAREN RPAREN { PMatch($3, $5) }

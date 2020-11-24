@@ -1,81 +1,120 @@
-module FLispy.Operations
-open System.Collections.Generic
-
-let gensymp =
-    let symbols = Dictionary<string, int>()
-    fun prefix ->
-        let counter = ref 0
-        if symbols.TryGetValue(prefix, counter) then
-            symbols.[prefix] <- !counter + 1
-        else
-            symbols.Add(prefix, 1)
-        sprintf "%s@%d" prefix !counter
-
-let gensym () = gensymp "x"
+[<AutoOpen>]
+module RInGen.Operations
 
 module Operation =
-    let private getSortOfOperation = function
-        | ElementaryOperation(_, s)
-        | UserDefinedOperation(_, s) -> s
+    let argumentTypes = function
+        | ElementaryOperation(_, s, _)
+        | UserDefinedOperation(_, s, _) -> s
+    let returnType = function
+        | ElementaryOperation(_, _, s)
+        | UserDefinedOperation(_, _, s) -> s
     let opName = function
-        | ElementaryOperation(n, _)
-        | UserDefinedOperation(n, _) -> n
-    let argumentTypes = getSortOfOperation >> List.tail
+        | ElementaryOperation(n, _, _)
+        | UserDefinedOperation(n, _, _) -> n
 
-    let private returnTypeOfSignature = List.head
-    let returnType = getSortOfOperation >> returnTypeOfSignature
+    let changeName name = function
+        | ElementaryOperation(_, s1, s2) -> ElementaryOperation(symbol name, s1, s2)
+        | UserDefinedOperation(_, s1, s2) -> UserDefinedOperation(symbol name, s1, s2)
 
-    let makeOperationSortsFromTypes sorts retSort = retSort :: sorts
-    let makeOperationSortsFromVars vars retSort = makeOperationSortsFromTypes (List.map snd vars) retSort
-    let makeUserOperationFromVars name vars retSort = UserDefinedOperation(name, makeOperationSortsFromVars vars retSort)
-    let makeUserOperationFromSorts name argSorts retSort = UserDefinedOperation(name, makeOperationSortsFromTypes argSorts retSort)
-    let makeElementaryOperationFromVars name vars retSort = ElementaryOperation(name, makeOperationSortsFromVars vars retSort)
-    let makeElementaryOperationFromSorts name argSorts retSort = ElementaryOperation(name, makeOperationSortsFromTypes argSorts retSort)
+    let makeUserOperationFromVars name vars retSort = UserDefinedOperation(name, List.map snd vars, retSort)
+    let makeUserOperationFromSorts name argSorts retSort = UserDefinedOperation(name, argSorts, retSort)
+    let makeElementaryOperationFromVars name vars retSort = ElementaryOperation(name, List.map snd vars, retSort)
+    let makeElementaryOperationFromSorts name argSorts retSort = ElementaryOperation(name, argSorts, retSort)
+    let makeElementaryRelationFromSorts name argSorts = makeElementaryOperationFromSorts name argSorts boolSort
 
-    let makeApp op args ret = Apply(op, makeOperationSortsFromTypes args ret)
-    let makeAppConstructor op = function
-        | [] -> Ident(opName op, returnType op)
-        | args -> Apply(op, args)
-
-    let generateReturnArgument sign =
-        let retType = returnTypeOfSignature sign
-        let retArg = gensym (), retType
-        let retVar = Ident retArg
-        retArg, retVar
-
-    let generateReturnArgumentOfOperation = getSortOfOperation >> generateReturnArgument
-
-    let generateArguments = argumentTypes >> List.map (fun s -> gensym(), s)
-
+    let private operationToIdent = function
+        | UserDefinedOperation(name, [], ret) -> Ident(name, ret)
+        | ElementaryOperation(name, [], ret) -> Ident(name, ret)
+        | op -> failwithf "Can't create identifier from operation: %O" op
 
 let elementaryOperations =
     let ops = [
-        "=", ["*dummy-type*"; "*dummy-type*"; "Bool"]
-        "distinct", ["*dummy-type*"; "*dummy-type*"; "Bool"]
-        ">", ["Int"; "Int"; "Bool"]
-        "<", ["Int"; "Int"; "Bool"]
-        "<=", ["Int"; "Int"; "Bool"]
-        ">=", ["Int"; "Int"; "Bool"]
-        "+", ["Int"; "Int"; "Int"]
-        "-", ["Int"; "Int"; "Int"]
-        "*", ["Int"; "Int"; "Int"]
-        "mod", ["Int"; "Int"; "Int"]
-        "div", ["Int"; "Int"; "Int"]
+        "=", [dummySort; dummySort; boolSort]
+        "distinct", [dummySort; dummySort; boolSort]
+        "and", [boolSort; boolSort; boolSort]
+        "or", [boolSort; boolSort; boolSort]
+        "not", [boolSort; boolSort]
+        "=>", [boolSort; boolSort; boolSort]
+        ">", [integerSort; integerSort; boolSort]
+        "<", [integerSort; integerSort; boolSort]
+        "<=", [integerSort; integerSort; boolSort]
+        ">=", [integerSort; integerSort; boolSort]
+        "+", [integerSort; integerSort; integerSort]
+        "-", [integerSort; integerSort; integerSort]
+        "*", [integerSort; integerSort; integerSort]
+        "mod", [integerSort; integerSort; integerSort]
+        "div", [integerSort; integerSort; integerSort]
+        "store", [ArraySort(dummySort, dummySort); dummySort; dummySort; ArraySort(dummySort, dummySort)]
+        "select", [ArraySort(dummySort, dummySort); dummySort; dummySort]
     ]
-    let ops = List.map (fun ((op, _) as os) -> op, ElementaryOperation(os)) ops
+    let ops = List.map (fun (op, sorts) -> (symbol op), Operation.makeElementaryOperationFromSorts (symbol op) (List.initial sorts) (List.last sorts)) ops
     Map.ofList ops
-let distinct_op = Map.find "distinct" elementaryOperations
-let equal_op = Map.find "=" elementaryOperations
 
-let henceOrNot ts t =
-    match ts with
-    | [] -> t
-    | _ -> Or (List.map Not ts @ [t])
-let hence ts t =
-    match ts with
-    | [] -> t
-    | [ts] -> Hence(ts, t)
-    | _ -> Hence(And ts, t)
-let equal t1 t2 = Apply(equal_op, [t1; t2])
-let forall vars e = if List.isEmpty vars then e else Forall(vars, e)
-let exists vars e = if List.isEmpty vars then e else Exists(vars, e)
+let equal_op typ = Operation.makeElementaryRelationFromSorts (symbol "=") [typ; typ]
+let distinct_op typ = Operation.makeElementaryRelationFromSorts (symbol "distinct") [typ; typ]
+let smartDiseqSubstitutor t1 t2 = distinct t1 t2
+let emptyEqSubstitutor t1 t2 = Equal(t1, t2)
+let emptyDiseqSubstitutor t1 t2 = Distinct(t1, t2)
+let applyBinaryRelation op x y = AApply(op, [x; y])
+let private congruenceBySort empty opMap (sort : sort) =
+    match Map.tryFind sort opMap with
+    | Some op -> applyBinaryRelation op
+    | None -> empty
+let equalBySort = congruenceBySort emptyEqSubstitutor
+let disequalBySort = congruenceBySort emptyDiseqSubstitutor
+let opSubstitutor empty opMap t1 t2 =
+    let typ1 = typeOfTerm t1
+    let typ2 = typeOfTerm t2
+    if typ1 <> typ2
+        then failwithf "Disequality of different sorts: %O and %O" typ1 typ2
+        else congruenceBySort empty opMap typ1 t1 t2
+
+
+let identToUserOp name sort = Operation.makeUserOperationFromSorts name [] sort
+let userOpToIdent = function
+    | UserDefinedOperation(name, [], sort) -> TIdent(name, sort)
+    | op -> failwithf "Can't create identifier from operation: %O" op
+
+let selectFromArraySort arraySort =
+    let indexSort, itemSort = argumentSortsOfArraySort arraySort
+    Operation.makeElementaryOperationFromSorts (symbol "select") [arraySort; indexSort] itemSort
+
+let fillDummyOperationTypes op argTypes =
+    match op, argTypes with
+    | ElementaryOperation("select", _, _), [arraySort; _] -> selectFromArraySort arraySort
+    | ElementaryOperation("store", _, _), [arraySort; _; _] ->
+        Operation.makeElementaryOperationFromSorts ("store") argTypes arraySort
+    | ElementaryOperation("=", _, _), [typ; _] -> equal_op typ
+    | ElementaryOperation("distinct", _, _), [typ; _] -> distinct_op typ
+    | _ -> op
+
+
+let private negativeOperations =
+    [
+        "<=", ">"
+        "<", ">="
+        ">", "<="
+        ">=", "<"
+    ] |> List.map (fun (k, v) -> symbol k, symbol v) |> Map.ofList
+
+let (|NotT|_|) = function
+    | ElementaryOperation(name, _, _) ->
+        opt {
+            let! negname = Map.tryFind name negativeOperations
+            return! Map.tryFind negname elementaryOperations
+        }
+    | _ -> None
+
+let rec nota = function
+    | Top -> Bot
+    | Bot -> Top
+    | ANot e -> e
+    | Equal(t1, t2) -> Distinct(t1, t2)
+    | Distinct(t1, t2) -> Equal(t1, t2)
+    | AApply(NotT negop, ts) -> AApply(negop, ts) //TODO: approximates too much: see CHC-LIA-LIN-Arrays_001.smt2
+    | AApply(ElementaryOperation _, _) as e -> ANot e
+    | AApply(UserDefinedOperation _, []) as e -> ANot e
+    | AApply(UserDefinedOperation _, _) as e -> ANot e // TODO: failwithf "Trying to obtain negation of user defined predicate: %O" e
+    | AAnd ts -> ts |> List.map nota |> AOr
+    | AOr ts -> ts |> List.map nota |> AAnd
+    | _ -> __notImplemented__()

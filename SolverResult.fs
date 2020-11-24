@@ -1,4 +1,4 @@
-module FLispy.SolverResult
+module RInGen.SolverResult
 
 
 let mutable SECONDS_TIMEOUT = 5 * 60
@@ -6,6 +6,12 @@ let MSECONDS_TIMEOUT () = SECONDS_TIMEOUT * 1000
 let MEMORY_LIMIT_MB = 12 * 1024
 
 type SolverResult = SAT | UNSAT | ERROR of string | UNKNOWN of string | TIMELIMIT | OUTOFMEMORY
+
+let quietModeToString = function
+    | SAT -> "sat"
+    | UNSAT -> "unsat"
+    | _ -> "unknown"
+
 let parseSolverResult s =
     match () with
     | _ when s = "SAT" -> SAT

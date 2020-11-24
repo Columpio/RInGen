@@ -22,18 +22,21 @@
 <!--        <Compile Include="Runtime.fs" />-->
         <Compile Include="Parser.fs" />
         <Compile Include="Lexer.fs" />
+        <Compile Include="FileParser.fs" />
         <Compile Include="Operations.fs" />
-        <Compile Include="IntToNat.fs" />
+        <Compile Include="IdentGenerator.fs" />
         <Compile Include="Typer.fs" />
+        <Compile Include="ADTExtensions.fs" />
         <Compile Include="VarEnv.fs" />
         <Compile Include="ParseToTerms.fs" />
-        <Compile Include="UnfoldDeclarations.fs" />
-        <Compile Include="PropagateNot.fs" />
-        <Compile Include="EliminateSelectors.fs" />
-        <Compile Include="TakeOutQuantifiers.fs" />
-        <Compile Include="ParseExtension.fs" />
+        <Compile Include="Relativization.fs" />
+        <Compile Include="SubstituteOperations.fs" />
+        <Compile Include="IntToNat.fs" />
+        <Compile Include="ADTs.fs" />
+        <Compile Include="Arrays.fs" />
         <Compile Include="SolverResult.fs" />
         <Compile Include="ResultTable.fs" />
+        <Compile Include="SMTcode.fs" />
         <Compile Include="Solvers.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>

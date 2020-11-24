@@ -1,15 +1,30 @@
-module FLispy.Typer
-open FLispy.Operations
+module RInGen.Typer
+open RInGen.Operations
+
+type Typer(operations : Map<symbol, operation>, adts : Map<sort, symbol list>) =
+    let operations = operations
+    let adts = adts
+
+    member x.tryFind opName = Map.tryFind opName operations
+    member x.find opName = Map.find opName operations
+    member x.addOperation name op = Typer(Map.add name op operations, adts)
+    member x.addADTConstructors name nos =
+        let names = Map.toList nos |> List.map fst
+        Typer(Map.union operations nos, Map.add name names adts)
+    member x.containsKey key = Map.containsKey key operations
+    member x.getConstructors adtName = Map.find adtName adts
+
+    new (operations) = Typer(operations, Map.empty)
 
 let rec typeOf = function
-    | Constant(Number _) -> "Int"
-    | Forall _
-    | Exists _
-    | And _
-    | Or _
     | Not _
     | Hence _
-    | Constant(Bool _) -> "Bool"
+    | And _
+    | Or _
+    | Forall _
+    | Exists _
+    | BoolConst _ -> boolSort
+    | Number _ -> integerSort
     | Ident(_, t) -> t
     | Apply(op, _) -> Operation.returnType op
     | Match(_, ((_, t)::_))
@@ -17,18 +32,19 @@ let rec typeOf = function
     | Let(_, t) -> typeOf t
     | Match(_, []) -> __unreachable__()
 
-let tryTypeCheck f (typer, _) = Option.map Operation.returnType (Map.tryFind f typer)
-let getOperation f (typer, _) =
-    match Map.tryFind f typer with
+let tryTypeCheck f (typer : Typer) = Option.map Operation.returnType (typer.tryFind f)
+
+let getOperation (typer : Typer) opName =
+    match typer.tryFind opName with
     | Some r -> r
-    | _ -> failwithf "Unknown type: %s" f
+    | _ -> failwithf "Unknown operation: %O" opName
+let fillOperation (typer : Typer) opName argTypes =
+    let op = getOperation typer opName
+    fillDummyOperationTypes op argTypes
 
-let addOperationsOps name op ops = Map.add name op ops
-let addOperation name op (ops, sorts) = addOperationsOps name op ops, sorts
+let addOperation name op (typer : Typer) = typer.addOperation name op
 
-let addSort name (ops, sorts) = ops, Map.add name IntToNat.nat_sort sorts
-
-let empty = elementaryOperations, Map.empty
+let empty = Typer(elementaryOperations)
 
 let sort (_, sorts) name =
     match Map.tryFind name sorts with
@@ -42,27 +58,26 @@ let constructor ts (c, t) = c, sorted_var_list ts t
 let constructor_list ts cs = List.map (constructor ts) cs
 let definition ts (name, args, ret, body) = name, sorted_var_list ts args, sort ts ret, body
 
-let typerFold f z cs =
-    let interpretCommand ((typer, sorts) as typs, z) c =
-        let extendDef typer (name, vars, sort, _) = addOperationsOps name (Operation.makeUserOperationFromVars name vars sort) typer
-        let extendDecl typer (adtname, cs) =
-            let handle_constr typer (fname, vars) =
-                let typer = List.fold (fun typer (pr, s) -> Map.add pr (Operation.makeElementaryOperationFromSorts pr [adtname] s) typer) typer vars
-                Map.add fname (Operation.makeElementaryOperationFromVars fname vars adtname) typer
-            List.fold handle_constr typer cs
-        let typer =
-            match c with
-            | DefineFunRec df
-            | DefineFun df -> extendDef typer df, sorts
-            | DefineFunsRec dfs -> dfs |> List.fold extendDef typer, sorts
-            | DeclareDatatype(name, cs) -> extendDecl typer (name, cs), sorts
-            | DeclareDatatypes dts -> dts |> List.fold extendDecl typer, sorts
-            | DeclareConst(name, sort) -> addOperationsOps name (Operation.makeElementaryOperationFromSorts name [] sort) typer, sorts
-            | DeclareFun(name, argTypes, sort) -> addOperationsOps name (Operation.makeUserOperationFromSorts name argTypes sort) typer, sorts
-            | DeclareSort name -> addSort name typs
-            | _ -> typs
-        let r, z = f typer z c
-        r, (typer, z)
-    List.mapFold interpretCommand (empty, z) cs |> fst
+let interpretCommand (typer : Typer) c =
+    let extendDef (typer : Typer) (name, vars, sort, _) = addOperation name (Operation.makeUserOperationFromVars name vars sort) typer
+    let extendDecl (typer : Typer) (adtname, cs) =
+        let handle_constr (constrs, typer) (fname, vars) =
+            let typer = List.fold (fun (typer : Typer) (pr, s) -> typer.addOperation pr (Operation.makeElementaryOperationFromSorts pr [adtname] s)) typer vars
+            let op = Operation.makeElementaryOperationFromVars fname vars adtname
+            Map.add fname op constrs, typer
+        let constrs, typer = List.fold handle_constr (Map.empty, typer) cs
+        typer.addADTConstructors adtname constrs
+    match c with
+    | Definition(DefineFunRec df)
+    | Definition(DefineFun df) -> extendDef typer df
+    | Definition(DefineFunsRec dfs) -> dfs |> List.fold extendDef typer
+    | Command(DeclareDatatype(name, cs)) -> extendDecl typer (name, cs)
+    | Command(DeclareDatatypes dts) -> dts |> List.fold extendDecl typer
+    | Command(DeclareConst(name, sort)) -> addOperation name (Operation.makeUserOperationFromSorts name [] sort) typer
+    | Command(DeclareFun(name, argTypes, sort)) ->
+        addOperation name (Operation.makeUserOperationFromSorts name argTypes sort) typer
+    | Command(DeclareSort name) -> typer
+    | _ -> typer
 
-let typerMap f cs = typerFold (fun typer () c -> f typer c, ()) () cs
+let typerFold f cs =
+    List.mapFold (fun typer c -> let typer = interpretCommand typer c in let r = f typer c in r, typer) empty cs |> fst

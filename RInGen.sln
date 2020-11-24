@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FLispy", "FLispy.fsproj", "{845A8DE1-46E1-40B4-83BC-F963B333E22E}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "RInGen", "RInGen.fsproj", "{845A8DE1-46E1-40B4-83BC-F963B333E22E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

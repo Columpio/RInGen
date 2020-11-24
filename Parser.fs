@@ -5,7 +5,7 @@ open FSharp.Text.Lexing
 open FSharp.Text.Parsing.ParseHelpers
 # 1 "Parser.fsy"
 
-open FLispy.Prelude
+open RInGen.Prelude
 
 # 10 "Parser.fs"
 // This type is the type of tokens accepted by the parser
@@ -18,7 +18,7 @@ type token =
   | COMMENT
   | Sym of (string)
   | Str of (string)
-  | Int of (int)
+  | Int64Tok of (int64)
 // This type is used to give symbolic names to token indexes, useful for error messages
 type tokenId = 
     | TOKEN_EOF
@@ -29,7 +29,7 @@ type tokenId =
     | TOKEN_COMMENT
     | TOKEN_Sym
     | TOKEN_Str
-    | TOKEN_Int
+    | TOKEN_Int64Tok
     | TOKEN_end_of_input
     | TOKEN_error
 // This type is used to give symbolic names to token indexes, useful for error messages
@@ -53,7 +53,7 @@ let tagOfToken (t:token) =
   | COMMENT  -> 5 
   | Sym _ -> 6 
   | Str _ -> 7 
-  | Int _ -> 8 
+  | Int64Tok _ -> 8 
 
 // This function maps integer indexes to symbolic token ids
 let tokenTagToTokenId (tokenIdx:int) = 
@@ -66,7 +66,7 @@ let tokenTagToTokenId (tokenIdx:int) =
   | 5 -> TOKEN_COMMENT 
   | 6 -> TOKEN_Sym 
   | 7 -> TOKEN_Str 
-  | 8 -> TOKEN_Int 
+  | 8 -> TOKEN_Int64Tok 
   | 11 -> TOKEN_end_of_input
   | 9 -> TOKEN_error
   | _ -> failwith "tokenTagToTokenId: bad token"
@@ -104,7 +104,7 @@ let token_to_string (t:token) =
   | COMMENT  -> "COMMENT" 
   | Sym _ -> "Sym" 
   | Str _ -> "Str" 
-  | Int _ -> "Int" 
+  | Int64Tok _ -> "Int64Tok" 
 
 // This function gets the data carried by a token as an object
 let _fsyacc_dataOfToken (t:token) = 
@@ -117,7 +117,7 @@ let _fsyacc_dataOfToken (t:token) =
   | COMMENT  -> (null : System.Object) 
   | Sym _fsyacc_x -> Microsoft.FSharp.Core.Operators.box _fsyacc_x 
   | Str _fsyacc_x -> Microsoft.FSharp.Core.Operators.box _fsyacc_x 
-  | Int _fsyacc_x -> Microsoft.FSharp.Core.Operators.box _fsyacc_x 
+  | Int64Tok _fsyacc_x -> Microsoft.FSharp.Core.Operators.box _fsyacc_x 
 let _fsyacc_gotos = [| 0us; 65535us; 1us; 65535us; 0us; 1us; 6us; 65535us; 0us; 2us; 6us; 25us; 7us; 8us; 16us; 25us; 20us; 21us; 25us; 25us; 1us; 65535us; 19us; 20us; 2us; 65535us; 9us; 23us; 23us; 23us; 2us; 65535us; 9us; 10us; 23us; 24us; 3us; 65535us; 6us; 13us; 16us; 17us; 25us; 26us; |]
 let _fsyacc_sparseGotoTableRowOffsets = [|0us; 1us; 3us; 10us; 12us; 15us; 18us; |]
 let _fsyacc_stateToProdIdxsTableElements = [| 1us; 0us; 1us; 0us; 1us; 1us; 1us; 2us; 1us; 3us; 1us; 4us; 2us; 5us; 6us; 1us; 5us; 1us; 5us; 1us; 5us; 1us; 5us; 1us; 5us; 1us; 5us; 1us; 6us; 1us; 6us; 1us; 7us; 1us; 8us; 1us; 8us; 1us; 8us; 1us; 9us; 1us; 9us; 1us; 9us; 1us; 9us; 1us; 10us; 1us; 10us; 1us; 12us; 1us; 12us; |]
@@ -151,7 +151,7 @@ let _fsyacc_reductions ()  =    [|
                  : ParseExpression));
 # 152 "Parser.fs"
         (fun (parseState : FSharp.Text.Parsing.IParseState) ->
-            let _1 = (let data = parseState.GetInput(1) in (Microsoft.FSharp.Core.Operators.unbox data : int)) in
+            let _1 = (let data = parseState.GetInput(1) in (Microsoft.FSharp.Core.Operators.unbox data : int64)) in
             Microsoft.FSharp.Core.Operators.box
                 (
                    (

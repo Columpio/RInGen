@@ -9,7 +9,7 @@ type token =
   | COMMENT
   | Sym of (string)
   | Str of (string)
-  | Int of (int)
+  | Int64Tok of (int64)
 type tokenId = 
     | TOKEN_EOF
     | TOKEN_LPAREN
@@ -19,7 +19,7 @@ type tokenId =
     | TOKEN_COMMENT
     | TOKEN_Sym
     | TOKEN_Str
-    | TOKEN_Int
+    | TOKEN_Int64Tok
     | TOKEN_end_of_input
     | TOKEN_error
 type nonTerminalId = 

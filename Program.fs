@@ -1,15 +1,18 @@
-﻿module FLispy.Program
+﻿module RInGen.Program
 
-open FLispy.Solvers
+open RInGen.SolverResult
+open RInGen.Solvers
 open CommandLine
 
 type options = {
     [<Option("sorts", HelpText = "Convert ADTs to sorts (preprocessing for the finite-model finder)")>] tosorts : bool
-    [<Option("tipToHorn", HelpText = "Convert TIP like systems to Horn clauses")>] tipToHorn : bool
-    [<Option('d', "directory", HelpText = "Run on directory")>] directory : string option
-    [<Option('f', "file", HelpText = "Run on single file")>] filename : string option
+    [<Option("tipToHorn", HelpText = "Convert TIP-like systems to Horn clauses")>] tipToHorn : bool
+    [<Option('d', "directory", HelpText = "Run on a directory")>] directory : string option
+    [<Option('f', "file", HelpText = "Run on a single file")>] filename : string option
     [<Option('s', "solver", HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | all) after processing")>] solver : string option
     [<Option('t', "timelimit", HelpText = "Time limit, in seconds (default 300)")>] timelimit : int option
+    [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
+    [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as --file)")>] output : string option
 }
 
 let solverByName (solverName : string) tosorts =
@@ -46,24 +49,26 @@ let main args =
             let outputDirectory = solver.GenerateClauses tipToHorn (not tipToHorn) directory
             printfn "CHC systems of directory %s are preprocessed and saved in %s" directory outputDirectory
             if Option.isSome solverName then
-                let resultsDirectory = solver.RunOnBenchmarkSet true outputDirectory
+                let resultsDirectory = solver.RunOnBenchmarkSet false outputDirectory
                 printfn "Solver run on %s and saved results in %s" outputDirectory resultsDirectory
-        | {tosorts=tosorts; tipToHorn=tipToHorn; directory=None; filename=Some filename; solver=solverName; timelimit=_} ->
+        | {tosorts=tosorts; tipToHorn=tipToHorn; directory=None; filename=Some filename; solver=solverName; timelimit=_; quiet = quiet; output=output} ->
             let solver = solverOrPreprocessor solverName tosorts
-            let outputFiles = solver.GenerateClausesSingle tipToHorn filename
+            let outputFiles = solver.GenerateClausesSingle tipToHorn filename output
             match outputFiles with
+            | [] -> printfn "unknown"
             | [outputFile] ->
-                printfn "CHC system in %s is preprocessed and saved in %s" filename outputFile
+                if not <| quiet then printfn "CHC system in %s is preprocessed and saved in %s" filename outputFile
                 if Option.isSome solverName then
-                    let result, time = solver.SolveWithTime outputFile
+                    let result, time = solver.SolveWithTime(quiet, outputFile)
+                    if quiet then printfn "%s" <| quietModeToString result else
                     printfn "Solver run on %s and the result is %O which was obtained in %d msec." outputFile result time
             | _ ->
-                printfn "Preprocessing of %s produced %d files:" filename (List.length outputFiles)
-                List.iter (printfn "%s") outputFiles
+                if not <| quiet then printfn "Preprocessing of %s produced %d files:" filename (List.length outputFiles)
+                if not <| quiet then List.iter (printfn "%s") outputFiles
                 if Option.isSome solverName then
                     for outputFile in outputFiles do
-                        let result, time = solver.SolveWithTime outputFile
-                        printfn "Solver run on %s and the result is %O which was obtained in %d msec." outputFile result time
+                        let result, time = solver.SolveWithTime(quiet, outputFile)
+                        if not <| quiet then printfn "Solver run on %s and the result is %O which was obtained in %d msec." outputFile result time
     | :? NotParsed<options> -> ()
     | _ -> failwith "Fail during argument parsing"
     0

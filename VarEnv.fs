@@ -1,51 +1,53 @@
-module FLispy.VarEnv
-open FLispy.Typer
-open FLispy.Operations
+module RInGen.VarEnv
+open RInGen.Typer
+open RInGen.Operations
 
-type sorted_var = string * sort
-type env = Map<string, sort> * Map<string, string>
+type sorted_var = ident * sort
+type env = Map<ident, sort> * Map<ident, ident>
 
 let empty : env = Map.empty, Map.empty
 
-let get (env_sorts, env_vars) ((var, sort) as vs) : sorted_var =
-    match Map.tryFind var env_sorts with
-    | Some sort' when sort = sort' -> vs
-    | Some sort' -> failwithf "Environment has sort %O of %O (%O)" sort' var sort
-    | None ->
+let tryGetFromEnv ((env_sorts, env_vars) : env) ((var, sort) as vs : sorted_var) : sorted_var option =
+    let var' =
         match Map.tryFind var env_vars with
-        | Some var' ->
-            match Map.tryFind var' env_sorts with
-            | Some sort' when sort = sort' -> var', sort
-            | Some sort' -> failwithf "Environment has alias %O with sort %O for %O (%O)" var' sort' var sort
-            | None -> failwithf "Environment has no sort for alias %O of %O (%O)" var' var sort
-        | None -> failwithf "Environment has neither sort neither alias for %O (%O)" var sort
+        | Some var' -> var'
+        | None -> var
+    match Map.tryFind var' env_sorts with
+    | Some sort' when sort = sort' -> Some (var', sort)
+    | Some sort' -> None // failwithf "Environment has alias %O with sort %O for %O (%O)" var' sort' var sort
+    | None -> None // failwithf "Environment has no sort for alias %O of %O (%O)" var' var sort
 
-let extendOne (env_sorts, env_vars) ((var : string), sort) : sorted_var * env =
+let get (typer : Typer, env) (name, _ as vs : sorted_var) : sorted_var =
+    match tryGetFromEnv env vs with
+    | Some vs' -> vs'
+    | None when typer.containsKey name -> vs
+    | None -> failwithf "Identifier is not found in the environment: %O" vs
+
+let extendOne ((typer, (env_sorts, env_vars)) : Typer * env) ((var : ident), sort) : sorted_var * (Typer * env) =
     let var', env_vars =
-        if var.StartsWith("_") then
-            let var' = gensym ()
+        if var = "_" then // ADT match placeholder
+            let var' = IdentGenerator.gensym ()
             let env_vars = Map.add var var' env_vars
             var', env_vars
-        elif Map.containsKey var env_sorts then
-            let var' = gensymp var
+        elif Map.containsKey var env_sorts || typer.containsKey var then
+            let var' = IdentGenerator.gensymp var
             let env_vars = Map.add var var' env_vars
             var', env_vars
         else var, env_vars
     let env_sorts = Map.add var' sort env_sorts
-    (var', sort), (env_sorts, env_vars)
+    (var', sort), (typer, (env_sorts, env_vars))
 
-let extend env vars = List.mapFold extendOne env vars
-let create vars : env = vars |> extend empty |> snd
+let extend te vars = List.mapFold extendOne te vars
+let create typer vars = vars |> extend (typer, empty) |> snd
 
-let private createFreshOne (env_sorts, env_vars) ((var : string), sort) : sorted_var * env =
-    let var' = gensymp var
-    let env_vars = Map.add var var' env_vars
-    let env_sorts = Map.add var' sort env_sorts
-    (var', sort), (env_sorts, env_vars)
+let replaceOne ((typer, (env_sorts, env_vars)) : 'a * env) ((var : symbol), sort) : 'a * env =
+    let env_vars = Map.add var var env_vars
+    let env_sorts = Map.add var sort env_sorts
+    typer, (env_sorts, env_vars)
 
-let createFresh vars = List.mapFold createFreshOne empty vars
+let replace te vars = List.fold replaceOne te vars
 
-let typeCheck (env_sorts, env_vars) x =
+let private typeCheck (env_sorts, env_vars) x =
     match Map.tryFind x env_sorts with
     | Some _ as t -> t
     | None ->
@@ -53,37 +55,10 @@ let typeCheck (env_sorts, env_vars) x =
         | Some y -> Map.tryFind y env_sorts
         | None -> None
 
-let typeGet x (typer, env) =
+let typeGet (x : ident) (typer, env) =
     match typeCheck env x with
     | Some t -> t
     | None ->
         match tryTypeCheck x typer with
         | Some t -> t
-        | None -> failwithf "Unknown type: %s" x
-
-let rec renameVars (typer, _ as ts) env = function
-    | Ident(name, _) as e when Map.containsKey name typer -> e
-    | Ident(name, sort) -> get env (name, Typer.sort ts sort) |> Ident
-    | Apply(op, es) -> Apply(op, List.map (renameVars ts env) es)
-    | Match(t, cases) ->
-        let handleCase (pattern, expr) =
-            let freeVars = MatchExtensions.getFreeVarsFromPattern typer pattern |> sorted_var_list ts
-            let _, env = extend env freeVars
-            let pattern = renameVars ts env pattern
-            let expr = renameVars ts env expr
-            pattern, expr
-        Match(renameVars ts env t, List.map handleCase cases)
-    | Not e -> renameVars ts env e |> Not
-    | Ite(i, t, e) -> Ite(renameVars ts env i, renameVars ts env t, renameVars ts env e)
-    | Let(defs, body) ->
-        let iter env (v, e) =
-            let e = renameVars ts env e
-            let (v, _), env = extendOne env (v, typeOf e)
-            (v, e), env
-        let defs, env = List.mapFold iter env defs
-        Let(defs, renameVars ts env body)
-    | Or es -> es |> List.map (renameVars ts env) |> Or
-    | And es -> es |> List.map (renameVars ts env) |> And
-    | Constant _ as e -> e
-    | Hence(a, b) -> Hence(renameVars ts env a, renameVars ts env b)
-    | _ -> __notImplemented__()
+        | None -> failwithf "Unknown type: %O" x

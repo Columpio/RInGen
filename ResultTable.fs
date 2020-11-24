@@ -1,4 +1,4 @@
-module FLispy.ResultTable
+module RInGen.ResultTable
 open System.IO
 open System.Globalization
 open System.Text.RegularExpressions
