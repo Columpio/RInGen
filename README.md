@@ -28,9 +28,28 @@ in the environment
 
 ## Build
 `~/RInGen$ dotnet build -c Release RInGen.sln`
+### Build standalone version (for specific platform from the [list](https://raw.githubusercontent.com/dotnet/runtime/main/src/libraries/Microsoft.NETCore.Platforms/pkg/runtime.json))
+`dotnet publish -c Release -r <RID> -p:PublishReadyToRun=true RInGen.sln`
+
+Executable then can be found in the `~/RInGen/bin/Release/netcoreapp3.1/<RID>/publish` folder.
 
 ## Run
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll`
+### Standalone version
+```bash
+~$ unzip /path/to/standalone-<RID>.zip -d RInGen
+~$ cd RInGen
+~/RInGen$ ./RInGen ..arguments..
+```
+### .NET crossplatform version
+```bash
+~$ unzip /path/to/dotnet-build.zip -d RInGen
+~$ cd RInGen
+~/RInGen$ dotnet RInGen.dll ..arguments..
+```
+### Built from sources
+```bash
+~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll ..arguments..
+```
 
 ## Options
 ### `-f`, `--file` `/FULL/PATH.smt2`
