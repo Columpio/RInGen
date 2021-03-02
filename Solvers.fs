@@ -104,6 +104,8 @@ type ISolver() =
     abstract member RunOnBenchmarkSet : bool -> string -> string
     default x.RunOnBenchmarkSet overwrite dir =
         let run_file src dst =
+            let dst = dir + dst
+            Directory.CreateDirectory(Path.GetDirectoryName(dst)) |> ignore
             if overwrite || not <| File.Exists(dst) then
                 try
                     printfn "Running %s on %s" x.Name src
@@ -152,7 +154,8 @@ let private cleanCommands set_logic chcSystem =
         | OriginalCommand Exit -> false
         | _ -> true
     let chcSystem = chcSystem |> List.filter filt
-    OriginalCommand set_logic :: chcSystem @ [OriginalCommand CheckSat]
+    let commands = OriginalCommand set_logic :: chcSystem @ [OriginalCommand CheckSat]
+    if containsExistentialClauses commands then [] else [commands]
 
 type CVC4FiniteSolver () =
     inherit ISolver()
@@ -167,8 +170,7 @@ type CVC4FiniteSolver () =
         let chcSystem = SMTcode.toClauses tipToHorn commands
         let noADTSystem = SMTcode.DatatypesToSorts.datatypesToSorts chcSystem
         let set_logic_all = SetLogic "ALL"
-        let commands = cleanCommands set_logic_all noADTSystem
-        if containsExistentialClauses commands then [] else [commands]
+        cleanCommands set_logic_all noADTSystem
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
@@ -190,8 +192,7 @@ type IADTSolver () =
         let commands = ParseToTerms.parseToTerms cleaned
         let chcSystem = SMTcode.toClauses tipToHorn commands
         let set_logic_horn = SetLogic "HORN"
-        let commands = cleanCommands set_logic_horn chcSystem
-        if containsExistentialClauses commands then [] else [commands]
+        cleanCommands set_logic_horn chcSystem
 
 type EldaricaSolver () =
     inherit IADTSolver()
