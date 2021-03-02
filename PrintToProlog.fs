@@ -38,27 +38,29 @@ let rec private mapTerm vars = function
 and private mapTerms vars = List.map (mapTerm vars)
 
 let private mapAtom vars = function
-    | Bot -> queryName
+    | Bot -> Some queryName
+    | Top -> None
     | AApply(op, ts) ->
         let op = mapOp op
         let ts = mapTerms vars ts
-        ts |> join ", " |> sprintf "%s(%s)" op
-    | Equal(t1, t2) -> sprintf "%s = %s" (mapTerm vars t1) (mapTerm vars t2)
-    | Distinct(t1, t2) -> sprintf "%s =\= %s" (mapTerm vars t1) (mapTerm vars t2)
-    | _ -> __notImplemented__()
+        ts |> join ", " |> sprintf "%s(%s)" op |> Some
+    | Equal(t1, t2) -> sprintf "%s = %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
+    | Distinct(t1, t2) -> sprintf "%s =\= %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
 
 let rec private mapRule vars = function
     | ExistsRule _ -> None
     | ForallRule(vars', r) -> mapRule (vars @ vars') r
     | BaseRule(premises, head) ->
         let vars = vars |> List.map fst |> Set.ofList
-        let premises = List.map (mapAtom vars) premises
-        let head = mapAtom vars head
-        let clause =
-            match premises with
-            | [] -> head
-            | _ -> premises |> join ", " |> sprintf "%s :- %s" head
-        Some (sprintf "%s." clause)
+        let premises = List.choose (mapAtom vars) premises
+        match mapAtom vars head with
+        | None -> None
+        | Some head ->
+            let clause =
+                match premises with
+                | [] -> head
+                | _ -> premises |> join ", " |> sprintf "%s :- %s" head
+            Some (sprintf "%s." clause)
 
 let private mapDatatypeDeclaration (name, cs) =
     let handleConstr (constr, selectors) =

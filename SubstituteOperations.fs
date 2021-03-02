@@ -27,11 +27,6 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         | [], [] -> [], [], f
         | _ -> __notImplemented__()
 
-    let ahence conds t =
-        match conds with
-        | [] -> t
-        | _ -> AHence(AAnd conds, t)
-
     let rec substituteOperationsWithRelationsInAtom = function
         | Top | Bot as a -> [], [], a
         | Equal(a, b) ->
@@ -49,20 +44,6 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
             match Map.tryFind op relativizations with
             | Some(op', _) -> vars, conds, AApply(op', ts)
             | None -> vars, conds, AApply(op, ts)
-        //TODO: relativization of general formula does not make sense
-        | ANot a ->
-            let vars, conds, a = substituteOperationsWithRelationsInAtom a
-            defaultFormula vars conds (ANot a)
-        | AAnd ts ->
-            let vars, conds, ts = substituteOperationsWithRelationsInAtoms ts
-            defaultFormula vars conds (AAnd ts)
-        | AOr ts ->
-            let vars, ts = ts |> List.map (fun t -> let vars, conds, t = substituteOperationsWithRelationsInAtom t in vars, ahence conds t) |> List.unzip
-            List.concat vars, [], AOr ts
-        | AHence(a, b) ->
-            let avars, aconds, a = substituteOperationsWithRelationsInAtom a
-            let bvars, bconds, b = substituteOperationsWithRelationsInAtom b
-            defaultFormula (avars @ bvars) (aconds @ bconds) (AHence(a, b))
     and substituteOperationsWithRelationsInAtoms  ts =
         let varss, condss, ts = ts |> List.map substituteOperationsWithRelationsInAtom |> List.unzip3
         List.concat varss, List.concat condss, ts

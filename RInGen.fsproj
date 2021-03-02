@@ -31,6 +31,7 @@
         <Compile Include="ParseToTerms.fs" />
         <Compile Include="Relativization.fs" />
         <Compile Include="SubstituteOperations.fs" />
+        <Compile Include="BoolAxiomatization.fs" />
         <Compile Include="IntToNat.fs" />
         <Compile Include="ADTs.fs" />
         <Compile Include="Arrays.fs" />

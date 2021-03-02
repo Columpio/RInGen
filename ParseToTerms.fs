@@ -52,7 +52,7 @@ let rec private toExpr ((typer, env) as te) = function
             match op, args with
             | "+", [Apply(ElementaryOperation("-", _, _) as minusOp, [t1]); t2] -> Apply(minusOp, [t2; t1]) // TODO: #parseWorkaround (+ (- a) b) = (- b a)
             | "<=", [t1; Apply(ElementaryOperation("-", _, _), [t2])] ->
-                Apply(oper, [Apply(Map.find (symbol "+") elementaryOperations, [t1; t2]); Number 0L])// (<= a (- b)) = (<= (+ a b) 0)
+                Apply(oper, [Apply(DummyOperations.addOp, [t1; t2]); Number 0L])// (<= a (- b)) = (<= (+ a b) 0)
             | _ -> Apply(oper, args)
     | PSymbol x -> let x = symbol x in Ident(x, VarEnv.typeGet x te)
     | PMatch(t, cases) ->

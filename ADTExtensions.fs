@@ -18,19 +18,24 @@ let rec isUnifiableWith typer p1 p2 =
     | Ident(name1, sort1), Ident(name2, sort2) -> name1 = name2 && sort1 = sort2
     | _ -> false
 
-let patternsToConstraints (typer : Typer) usedPatterns currentPattern patternMatch =
+let patternsToConstraints (typer : Typer) usedPatterns currentPattern exprToMatch toTerm =
     let getHead = function
         | Ident(name, _)
         | Apply(ElementaryOperation(name, _, _), _) when typer.containsKey name -> Some name
         | _ -> None
-    let makePatternMatchWithOp opName =
-        let op = typer.find opName
-        let args = IdentGenerator.generateArguments op
-        args, patternMatch (Apply(op, List.map Ident args))
     match currentPattern with
     | Ident(name, sort) when not <| typer.containsKey name -> // placeholder case
         let heads = List.choose getHead usedPatterns
         let allConstructorNames = typer.getConstructors sort
-        let rest = Set.difference (Set.ofList allConstructorNames) (Set.ofList heads) |> Set.toList
-        List.map makePatternMatchWithOp rest
-    | _ -> [[], patternMatch currentPattern]
+        collector {
+            let! opName = Set.difference (Set.ofList allConstructorNames) (Set.ofList heads) |> Set.toList
+            let op = typer.find opName
+            let args = IdentGenerator.generateArguments op
+            let! conds, pat = toTerm <| Apply(op, List.map Ident args)
+            return args, conds, Equal(exprToMatch, pat)
+        }
+    | _ ->
+        collector {
+            let! conds, pat = toTerm currentPattern
+            return [], conds, Equal(exprToMatch, pat)
+        }

@@ -27,3 +27,35 @@ let operationsOfADT ((adtname, cs) : symbol * (symbol * sorted_var list) list) =
         let selectors = List.map (fun (pr, s) -> (Operation.makeElementaryOperationFromSorts pr [PrimitiveSort adtname] s)) vars
         selectors
     List.collect handle_constr cs
+
+let createNAryRelation name sorts =
+    let name = IdentGenerator.gensyms name
+    let op = Operation.makeElementaryRelationFromSorts name sorts
+    let decl = DeclareFun(name, sorts, boolSort)
+    decl, op
+
+let createBinaryRelation name sort1 sort2 =
+    let decl, op = createNAryRelation name [sort1; sort2]
+    let app x y = AApply(op, [x; y])
+    app, decl, op
+
+let createUnaryRelation name sort =
+    let decl, op = createNAryRelation name [sort]
+    let app x = AApply(op, [x])
+    app, decl, op
+
+let createNAryOperation name sorts retSort =
+    let name = IdentGenerator.gensyms name
+    let op = createRelativeOperation ElementaryOperation name sorts retSort
+    let decl = reldeclare name sorts retSort
+    decl, op
+
+let createBinaryOperation name sort1 sort2 retSort =
+    let decl, op = createNAryOperation name [sort1; sort2] retSort
+    let app x y r = relapply op [x; y] r
+    app, decl, op
+
+let createUnaryOperation name sort retSort =
+    let decl, op = createNAryOperation name [sort] retSort
+    let app x r = relapply op [x] r
+    app, decl, op

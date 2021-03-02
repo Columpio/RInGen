@@ -44,13 +44,15 @@ let inline toString x = x.ToString()
 module List =
     let cons x xs = x :: xs
 
+    let product2 xs ys = List.collect (fun y -> List.map (fun x -> x, y) xs) ys
+    
     let product xss =
         let rec product xss k =
             match xss with
             | [] -> k [[]]
             | xs::xss -> product xss (fun yss -> List.collect (fun ys -> List.map (fun x -> x :: ys) xs) yss |> k)
         product xss id
-
+    
     let rec suffixes xs = seq {
         match xs with
         | [] -> yield []
@@ -181,10 +183,6 @@ type atom =
     | Equal of term * term
     | Distinct of term * term
     | AApply of operation * term list
-    | AHence of atom * atom
-    | AOr of atom list
-    | AAnd of atom list
-    | ANot of atom
     override x.ToString() =
         match x with
         | Top -> "true"
@@ -193,10 +191,6 @@ type atom =
         | Distinct(t1, t2) -> sprintf "(not (= %O %O))" t1 t2
         | AApply(op, []) -> op.ToString()
         | AApply(op, ts) -> sprintf "(%O %s)" op (ts |> List.map toString |> join " ")
-        | AHence(a, b) -> sprintf "(=> %O %O)" a b
-        | AOr ts -> ts |> List.map toString |> join " " |> sprintf "(or %s)"
-        | AAnd ts -> ts |> List.map toString |> join " " |> sprintf "(and %s)"
-        | ANot t -> sprintf "(not %O)" t
 type rule =
     | BaseRule of atom list * atom
     | ForallRule of sorted_var list * rule

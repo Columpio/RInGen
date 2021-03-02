@@ -50,6 +50,13 @@ let elementaryOperations =
     let ops = List.map (fun (op, sorts) -> (symbol op), Operation.makeElementaryOperationFromSorts (symbol op) (List.initial sorts) (List.last sorts)) ops
     Map.ofList ops
 
+module DummyOperations =
+    let andOp = Map.find "and" elementaryOperations
+    let orOp = Map.find "or" elementaryOperations
+    let henceOp = Map.find "=>" elementaryOperations
+    let notOp = Map.find "not" elementaryOperations
+    let addOp = Map.find "+" elementaryOperations
+
 let equal_op typ = Operation.makeElementaryRelationFromSorts (symbol "=") [typ; typ]
 let distinct_op typ = Operation.makeElementaryRelationFromSorts (symbol "distinct") [typ; typ]
 let smartDiseqSubstitutor t1 t2 = distinct t1 t2
@@ -108,13 +115,13 @@ let (|NotT|_|) = function
 let rec nota = function
     | Top -> Bot
     | Bot -> Top
-    | ANot e -> e
+//    | ANot e -> e
     | Equal(t1, t2) -> Distinct(t1, t2)
     | Distinct(t1, t2) -> Equal(t1, t2)
     | AApply(NotT negop, ts) -> AApply(negop, ts) //TODO: approximates too much: see CHC-LIA-LIN-Arrays_001.smt2
-    | AApply(ElementaryOperation _, _) as e -> ANot e
-    | AApply(UserDefinedOperation _, []) as e -> ANot e
-    | AApply(UserDefinedOperation _, _) as e -> ANot e // TODO: failwithf "Trying to obtain negation of user defined predicate: %O" e
-    | AAnd ts -> ts |> List.map nota |> AOr
-    | AOr ts -> ts |> List.map nota |> AAnd
+//    | AApply(ElementaryOperation _, _) as e -> ANot e
+//    | AApply(UserDefinedOperation _, []) as e -> ANot e
+//    | AApply(UserDefinedOperation _, _) as e -> ANot e // TODO: failwithf "Trying to obtain negation of user defined predicate: %O" e
+//    | AAnd ts -> ts |> List.map nota |> AOr
+//    | AOr ts -> ts |> List.map nota |> AAnd
     | _ -> __notImplemented__()

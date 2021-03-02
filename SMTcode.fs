@@ -1,6 +1,6 @@
 module RInGen.SMTcode
 open System.Runtime.CompilerServices
-open RInGen.Operations
+open RInGen
 open RInGen.Typer
 open Relativization
 open SubstituteOperations
@@ -174,51 +174,116 @@ module private RemoveVariableOverlapping =
     let removeVariableOverlapping = List.mapFold renameIdentsInCommand (Typer.empty, Map.empty, Map.empty) >> fst
 
 module private DefinitionsToDeclarations =
-    let private aand = function
-        | [t] -> t
-        | ts -> AAnd ts
+    [<AutoOpen>]
+    module private Conditional =
+        type conditional<'a> = atom list * 'a
+        let toCondition x : 'a conditional = [], x
+        let assumeTrue x = [x], truet
+        let assumeFalse x = [x], falset
+        
+        let pair ((conds1, x1) : term conditional) ((conds2, x2) : term conditional) : (term * term) conditional = conds1 @ conds2, (x1, x2)
+        let list (cnds : 'a conditional list) : ('a list) conditional =
+            let cnds, xs = List.unzip cnds
+            List.concat cnds, xs
+        let map f ((conds, x) : 'a conditional) : 'b conditional = conds, f x
+        let strengthen conds1 ((conds2, x) : 'a conditional) : 'a conditional = conds1 @ conds2, x
+        let bind f ((conds1, x) : 'a conditional) : 'b conditional =
+            let conds2, y = f x
+            conds1 @ conds2, y
+        let map2 f ((conds1, x) : 'a conditional) ((conds2, y) : 'b conditional) = conds1 @ conds2, f x y
+        let toConj ((conds, x) : atom conditional) : atom list = x :: conds
 
+    [<AutoOpen>]
+    module private Choosable =
+        type choosable<'a> = 'a conditional list
+        let toChoosable x : 'a choosable = [toCondition x]
+        let combinations (oneToMany : 'a -> 'b choosable) : 'a list -> 'b list choosable = List.map oneToMany >> List.product >> List.map list
+        let map (f : 'a -> 'b) (ch : 'a choosable) : 'b choosable = List.map (Conditional.map f) ch
+        let strengthen conds (c : 'a choosable) : 'a choosable = List.map (Conditional.strengthen conds) c
+        let flatten (xss : 'a choosable choosable) : 'a choosable =
+            List.collect (fun (conds, xs) -> strengthen conds xs) xss
+        let bind (f : 'a -> 'b choosable) (ch : 'a choosable) : 'b choosable = flatten <| map f ch
+        let map2 f (x : 'a choosable) (y : 'b choosable) : 'c choosable = List.product2 x y |> List.map ((<||) (Conditional.map2 f))
+        let destruct : term -> term choosable = function
+            | TApply(ElementaryOperation("=", _, _), [t1; t2]) ->
+                [assumeTrue <| Equal(t1, t2); assumeFalse <| Distinct(t1, t2)]
+            | TApply(ElementaryOperation("distinct", _, _), [t1; t2]) ->
+                [assumeFalse <| Equal(t1, t2); assumeTrue <| Distinct(t1, t2)]
+            | TApply(NotT negop as op, ts) ->
+                [assumeTrue <| AApply(op, ts); assumeFalse <| AApply(negop, ts)]
+            | TConst _
+            | TIdent _
+            | TApply _ as t -> toChoosable t
+        let toDNF : atom choosable -> atom list list = List.map Conditional.toConj
+    
+    let private binaryApplyToOp zero one op xs =
+        if List.contains one xs then one else
+        let binaryApplyToOp x y = TApply(op, [x; y])
+        let xs = List.filter ((<>) zero) xs
+        if xs = [] then zero else
+        List.reduce binaryApplyToOp xs
+    let private mapBoolOperator f ts =
+        let trueAndFalseCombinations ts : term choosable =
+            let ts = Choosable.combinations Choosable.destruct ts
+            Choosable.map f ts
+        Choosable.bind trueAndFalseCombinations ts
+    let private bindBoolOperator f ts =
+        let trueAndFalseCombinations ts : term choosable =
+            let ts = Choosable.combinations Choosable.destruct ts
+            Choosable.bind f ts
+        Choosable.bind trueAndFalseCombinations ts
+    let private tand = mapBoolOperator (binaryApplyToOp truet falset DummyOperations.andOp)
+    let private tor = mapBoolOperator (binaryApplyToOp falset truet DummyOperations.orOp)
+//    let private ahence ts = TApply(DummyOperations.henceOp, ts)
+    let private tnot t = TApply(DummyOperations.notOp, [t])
+//    let private anot ts = Equal(tnot ts, truet)
+    
     let rec private atomToTerm = function
-        | AApply(op, ts) -> TApply(op, ts)
-        | Distinct(t, t2) when t2 = truet -> TApply(Map.find (symbol "not") elementaryOperations, [t])
-        | ANot t -> TApply(Map.find (symbol "not") elementaryOperations, [atomToTerm t])
+//        | AApply(op, ts) -> TApply(op, ts)
+//        | Distinct(t, t2) when t2 = truet -> TApply(DummyOperations.notOp, [t])
+//        | ANot t -> TApply(DummyOperations.notOp, [atomToTerm t])
         | t -> failwithf "Can't obtain term from atom: %O" t
 
-    let rec private exprToTerm atomsAreTerms = function
-        | Ident(name, sort) -> TIdent(name, sort)
-        | BoolConst _ as e -> e |> toString |> symbol |> TConst
-        | Or es -> TApply(Map.find (symbol "or") elementaryOperations, exprsToTerms atomsAreTerms es)
-        | And es -> TApply(Map.find (symbol "and") elementaryOperations, exprsToTerms atomsAreTerms es)
-        | Not e -> e |> exprToAtom atomsAreTerms |> nota |> atomToTerm
-        | Hence(a, b) -> TApply(Map.find (symbol "=>") elementaryOperations, [exprToTerm atomsAreTerms a; exprToTerm atomsAreTerms b])
-        | Apply(ElementaryOperation _ as op, ts) -> TApply(op, exprsToTerms atomsAreTerms ts)
-        | Apply(UserDefinedOperation _ as op, ts) -> TApply(op, exprsToTerms atomsAreTerms ts)
-        | Number n -> n |> toString |> symbol |> TConst //TODO: IntToNat
+    let rec private exprToTerm atomsAreTerms : smtExpr -> term choosable = function
+        | Ident(name, sort) -> TIdent(name, sort) |> toChoosable
+        | BoolConst _ as e -> e |> toString |> symbol |> TConst |> toChoosable
+        | Number n -> n |> toString |> symbol |> TConst |> toChoosable //TODO: IntToNat
+        | Apply(op, ts) ->
+            let toChoose ts = TApply(op, ts) |> Choosable.destruct
+            bindBoolOperator toChoose (exprsToTerms atomsAreTerms ts)
+        | Not (Not e) -> exprToTerm atomsAreTerms e
+        | Not e -> e |> exprToTerm atomsAreTerms |> List.map (fun (cs, t) -> cs, tnot t)
+        | Or es -> tor <| exprsToTerms atomsAreTerms es
+        | And es -> tand <| exprsToTerms atomsAreTerms es
+//        | Hence(a, b) -> TApply(DummyOperations.henceOp, [exprToTerm atomsAreTerms a; exprToTerm atomsAreTerms b])
         | t -> failwithf "Can't obtain term from expr: %O" t
-    and private exprsToTerms atomsAreTerms = List.map (exprToTerm atomsAreTerms)
+    and private exprsToTerms atomsAreTerms = Choosable.combinations (exprToTerm atomsAreTerms)
 
-    and private exprToAtoms atomsAreTerms = function
+    and private exprToAtoms atomsAreTerms e : atom list list = // returns DNF
+        match e with
+        | Ident(name, s) when s = boolSort -> [[Equal(TIdent(name, s), truet)]]
         | Not (Not t) -> exprToAtoms atomsAreTerms t
-        | Not t -> t |> exprToAtom atomsAreTerms |> nota |> List.singleton
-        | Ident(name, s) when s = boolSort -> [AApply(identToUserOp name s, [])]
-        | BoolConst true -> [Top]
-        | BoolConst false -> [Bot]
+        | Not e -> e |> exprToAtoms atomsAreTerms |> List.product |> List.map (List.map nota)
+        | BoolConst true -> [[Top]]
+        | BoolConst false -> [[Bot]]
         | Apply(UserDefinedOperation(_, _, s) as op, ts) when s = boolSort ->
-            if atomsAreTerms
-                then [Equal(TApply(op, exprsToTerms atomsAreTerms ts), truet)]
-                else [AApply(op, exprsToTerms atomsAreTerms ts)]
-        | And ts -> List.collect (exprToAtoms atomsAreTerms) ts
-        | Hence(a, b) -> [AHence(aand <| exprToAtoms atomsAreTerms a, aand <| exprToAtoms atomsAreTerms b)]
-        | Or ts -> ts |> List.map (exprToAtoms atomsAreTerms >> aand) |> AOr |> List.singleton
-        | Apply(ElementaryOperation("=", _, _), [t1; t2]) -> [Equal(exprToTerm atomsAreTerms t1, exprToTerm atomsAreTerms t2)]
-        | Apply(ElementaryOperation("distinct", _, _), [t1; t2]) -> [distinct (exprToTerm atomsAreTerms t1) (exprToTerm atomsAreTerms t2)]
-        | Apply(ElementaryOperation(_, _, s) as op, ts) when s = boolSort  -> [AApply(op, exprsToTerms atomsAreTerms ts)]
+            let toAtom = if atomsAreTerms then fun ts -> Equal(TApply(op, ts), truet) else fun ts -> AApply(op, ts)
+            exprsToTerms atomsAreTerms ts
+            |> Choosable.map toAtom
+            |> Choosable.toDNF
+        | Or ts -> List.collect (exprToAtoms atomsAreTerms) ts
+//        | Hence(a, b) -> [AHence(aand <| exprToAtoms atomsAreTerms a, aand <| exprToAtoms atomsAreTerms b)]
+        | And ts -> exprsToAtoms atomsAreTerms ts
+        | Apply(ElementaryOperation("=", _, _), [t1; t2]) ->
+            Choosable.map2 (fun t1 t2 -> Equal(t1, t2)) (exprToTerm atomsAreTerms t1) (exprToTerm atomsAreTerms t2) |> Choosable.toDNF
+        | Apply(ElementaryOperation("distinct", _, _), [t1; t2]) ->
+            Choosable.map2 (fun t1 t2 -> Distinct(t1, t2)) (exprToTerm atomsAreTerms t1) (exprToTerm atomsAreTerms t2) |> Choosable.toDNF
+        | Apply(ElementaryOperation(_, _, s) as op, ts) when s = boolSort ->
+            exprsToTerms atomsAreTerms ts
+            |> Choosable.map (fun ts -> AApply(op, ts))
+            |> Choosable.toDNF
         | t -> failwithf "Can't obtain atom from expr: %O" t
-
-    and private exprToAtom atomsAreTerms t =
-        match exprToAtoms atomsAreTerms t with
-        | [t] -> t
-        | ts -> AAnd ts
+    and private exprsToAtoms atomsAreTerms = List.map (exprToAtoms atomsAreTerms) >> List.product >> List.map List.concat
 
     let private functionExprToTerm = exprToTerm true
 
@@ -306,7 +371,8 @@ module private DefinitionsToDeclarations =
                 let te = VarEnv.replaceOne te v
                 collector {
                     let! exprvs, exprcs, expr = exprToRule te expr
-                    return combineQuantifiers (stableallrule [v]) exprvs, (Equal(TIdent v, functionExprToTerm expr)::exprcs)
+                    let! exprConds, expr = functionExprToTerm expr
+                    return combineQuantifiers (stableallrule [v]) exprvs, (Equal(TIdent v, expr) :: exprConds @ exprcs)
                 }, te
             let assignments, te = List.mapFold handleAssignment te assignments  // [[even; odd]; [0mod3; 1mod3; 2mod3]]
             collector {
@@ -329,18 +395,22 @@ module private DefinitionsToDeclarations =
             let cases = List.mapFold handle_case [] cases |> fst |> List.concat
             collector {
                 let! tvars, tassumptions, tretExpr = expr
-                let tretExpr = functionExprToTerm tretExpr
+                let! tretExprConds, tretExpr = functionExprToTerm tretExpr
                 let! pattern, patterns, brvars, brassumptions, brretExpr = cases
-                let! pvars, pattern_match = ADTExtensions.patternsToConstraints typer patterns pattern (fun pat -> Equal(tretExpr, functionExprToTerm pat))
-                return combineQuantifiers (stableallrule pvars) (combineQuantifiers tvars brvars), pattern_match :: tassumptions @ brassumptions, brretExpr
+                let! pvars, patConds, pattern_match = ADTExtensions.patternsToConstraints typer patterns pattern tretExpr functionExprToTerm
+                return combineQuantifiers (stableallrule pvars) (combineQuantifiers tvars brvars), pattern_match :: tretExprConds @ patConds @ tassumptions @ brassumptions, brretExpr
             }
         | Ite(i, t, e) ->
             collector {
                 let! ivs, ics, ir = exprToRule te i
                 let! tvs, tcs, tr = exprToRule te t
                 let! evs, ecs, er = exprToRule te e
-                let thenBranch = combineQuantifiers ivs tvs, exprToAtoms true ir @ ics @ tcs, tr
-                let elseBranch = combineQuantifiers ivs evs, exprToAtoms true (note ir) @ ics @ ecs, er
+                let thenBranchQuantifiers = combineQuantifiers ivs tvs
+                let elseBranchQuantifiers = combineQuantifiers ivs evs
+                let! thenBranchConditions = exprToAtoms true ir
+                let! elseBranchConditions = exprToAtoms true (note ir)
+                let thenBranch = thenBranchQuantifiers, thenBranchConditions @ ics @ tcs, tr
+                let elseBranch = elseBranchQuantifiers, elseBranchConditions @ ics @ ecs, er
                 return! [thenBranch; elseBranch]
             }
 
@@ -355,8 +425,10 @@ module private DefinitionsToDeclarations =
         | AApply(ElementaryOperation(name, [_; _], s), [call; bodyResult]) when name = defineOperationName && s = boolSort -> Some (call, bodyResult)
         | _ -> None
     let private connectFunctionCallWithBody call bodyResult =
-        let bodyResult = functionExprToTerm bodyResult
-        AApply(defineOperation call bodyResult, [call; bodyResult])
+        collector {
+            let! conds, bodyResult = functionExprToTerm bodyResult
+            return conds, AApply(defineOperation call bodyResult, [call; bodyResult])
+        }
     let private connectFunctionNameWithBody userFuncOp args bodyResult = connectFunctionCallWithBody (TApply(userFuncOp, List.map TIdent args)) bodyResult
 
     let private finalRule vars qbvars qhvars conds result =
@@ -367,7 +439,8 @@ module private DefinitionsToDeclarations =
         let userFuncOp = Operation.makeUserOperationFromVars name vars sort
         collector {
             let! bodyVars, bodyConditions, bodyResult = exprToRule (VarEnv.create typer vars) body
-            let body = finalRule vars emptyQuantifier bodyVars bodyConditions (connectFunctionNameWithBody userFuncOp vars bodyResult)
+            let! conds, bodyResult = connectFunctionNameWithBody userFuncOp vars bodyResult
+            let body = finalRule vars emptyQuantifier bodyVars (conds @ bodyConditions) bodyResult
             return TransformedCommand body
         }
 
@@ -406,8 +479,11 @@ module private DefinitionsToDeclarations =
                 collector {
                     let! bodyVars, bodyConditions, bodyResult = toRuleProduct te conds
                     let! appVars, appConditions, appResult = exprToRule te app
-                    let bodyAddition, head = if assertsToQueries then exprToAtoms assertsToQueries (note appResult), Bot else [], exprToAtom assertsToQueries appResult
-                    let r = finalRule vars bodyVars appVars (bodyAddition @ List.collect (exprToAtoms assertsToQueries) bodyResult @ bodyConditions @ appConditions) head
+                    let! bodyAddition = if assertsToQueries then exprToAtoms assertsToQueries (note appResult) else []
+                    let! heads = if assertsToQueries then [[Bot]] else exprToAtoms assertsToQueries appResult
+                    let! bodyResult = List.map (exprToAtoms assertsToQueries) bodyResult |> List.product |> List.map List.concat
+                    let! head = heads
+                    let r = finalRule vars bodyVars appVars (bodyAddition @ bodyResult @ bodyConditions @ appConditions) head
                     return TransformedCommand r
                 }
         eat [] []
@@ -554,19 +630,6 @@ type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc) =
             let op, arraySorts = mapOp arraySorts op
             let ts, arraySorts = mapTerms arraySorts ts
             AApply(op, ts), arraySorts
-        | AAnd xs ->
-            let xs, arraySorts = mapAtoms arraySorts xs
-            AAnd xs, arraySorts
-        | AOr xs ->
-            let xs, arraySorts = mapAtoms arraySorts xs
-            AOr xs, arraySorts
-        | AHence(a, b) ->
-            let a, arraySorts = mapAtom arraySorts a
-            let b, arraySorts = mapAtom arraySorts b
-            AHence(a, b), arraySorts
-        | ANot a ->
-            let a, arraySorts = mapAtom arraySorts a
-            ANot a, arraySorts
     and mapAtoms = List.mapFold mapAtom
 
     let mapDatatype arraySorts (name, constrs) =
@@ -698,10 +761,10 @@ module private SubstIntWithNat =
         command
 
     let substituteIntWithNat commands =
-        let preambula, natSort, natOps, natConstMap = IntToNat.generateNatDeclarations ()
+        let preamble, natSort, natOps, natConstMap = IntToNat.generateNatDeclarations ()
         let mapper = MapSorts(mapSort natSort)
         let natOps = natOps |> Map.toList |> List.map (fun (oldOp, newOp) -> mapper.MapOperation(oldOp), newOp) |> Map.ofList
-        preambula @ List.map (substInCommand mapper natOps natConstMap) commands, natSort
+        preamble @ List.map (substInCommand mapper natOps natConstMap) commands, natSort
 
 module private SubstituteFreeSortsWithNat =
 
@@ -722,6 +785,7 @@ let toClauses needToApplyTIPfix commands =
     let freeSorts = commandsWithUniqueVariableNames |> List.choose (function Command(DeclareSort(s)) -> Some s | _ -> None) |> Set.ofList
     let hornClauses = DefinitionsToDeclarations.definesToDeclarations needToApplyTIPfix commandsWithUniqueVariableNames
     let relHornClauses = if needToApplyTIPfix then RelativizeSymbols.relativizeSymbols hornClauses else hornClauses
+    let relHornClauses = BoolAxiomatization.axiomatizeBoolOperations relHornClauses
     let commandsWithoutInts, natSort = SubstIntWithNat.substituteIntWithNat relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses

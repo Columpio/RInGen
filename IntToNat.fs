@@ -29,31 +29,15 @@ type private IntToNat() =
 
     let nat_datatype = DeclareDatatype(nat_sort, [Z_constr, []; S_constr, [unS_constr, nat_sort]])
 
-    let createBinaryOperation name =
-        let add_name = gensyms name
-        let add_sorts = [nat_sort; nat_sort]
-        let add_op = Relativization.createRelativeOperation ElementaryOperation add_name add_sorts nat_sort
-        let add_app x y r = Relativization.relapply add_op [x; y] r
-        let decl = Relativization.reldeclare add_name add_sorts nat_sort
-        add_app, decl, add_op
-
-    let createBinaryRelation name =
-        let le_name = gensyms name
-        let le_sorts = [nat_sort; nat_sort]
-        let le_op = Operation.makeElementaryRelationFromSorts le_name le_sorts
-        let le_app x y = AApply(le_op, [x; y])
-        let decl = DeclareFun(le_name, le_sorts, boolSort)
-        le_app, decl, le_op
-
-    let add_app, add_def, add_op = createBinaryOperation "add"
-    let minus_app, minus_def, minus_op = createBinaryOperation "minus"
-    let mult_app, mult_def, mult_op = createBinaryOperation "mult"
-    let div_app, div_def, div_op = createBinaryOperation "div"
-    let mod_app, mod_def, mod_op = createBinaryOperation "mod"
-    let le_app, le_def, le_op = createBinaryRelation "le"
-    let ge_app, ge_def, ge_op = createBinaryRelation "ge"
-    let lt_app, lt_def, lt_op = createBinaryRelation "lt"
-    let gt_app, gt_def, gt_op = createBinaryRelation "gt"
+    let add_app, add_def, add_op = Relativization.createBinaryOperation "add" nat_sort nat_sort nat_sort
+    let minus_app, minus_def, minus_op = Relativization.createBinaryOperation "minus" nat_sort nat_sort nat_sort
+    let mult_app, mult_def, mult_op = Relativization.createBinaryOperation "mult" nat_sort nat_sort nat_sort
+    let div_app, div_def, div_op = Relativization.createBinaryOperation "div" nat_sort nat_sort nat_sort
+    let mod_app, mod_def, mod_op = Relativization.createBinaryOperation "mod" nat_sort nat_sort nat_sort
+    let le_app, le_def, le_op = Relativization.createBinaryRelation "le" nat_sort nat_sort
+    let ge_app, ge_def, ge_op = Relativization.createBinaryRelation "ge" nat_sort nat_sort
+    let lt_app, lt_def, lt_op = Relativization.createBinaryRelation "lt" nat_sort nat_sort
+    let gt_app, gt_def, gt_op = Relativization.createBinaryRelation "gt" nat_sort nat_sort
     let add_decl =
         [
             rule [yvar] [] (add_app Z yid yid)
@@ -112,12 +96,12 @@ type private IntToNat() =
             ">", (gt_op, false)
             "<", (lt_op, false)
         ] |> List.map (fun (name, op) -> Map.find (symbol name) elementaryOperations, op) |> Map.ofList
-    let preambula =
+    let preamble =
         List.map OriginalCommand [nat_datatype; add_def; minus_def; le_def; ge_def; lt_def; gt_def; mult_def; div_def; mod_def]
         @ List.map TransformedCommand (add_decl @ minus_decl @ le_decl @ ge_decl @ lt_decl @ gt_decl @ mult_decl @ div_decl @ mod_decl)
 
     member x.NatSort() = nat_sort
-    member x.Preambula() = preambula
+    member x.Preamble() = preamble
     member x.NatOps() = substitutions
     member x.IntConstToNat (s: symbol) c =
         let r = ref 0L
@@ -125,4 +109,4 @@ type private IntToNat() =
 
 let generateNatDeclarations () =
     let i = IntToNat()
-    i.Preambula(), i.NatSort(), i.NatOps(), i.IntConstToNat
+    i.Preamble(), i.NatSort(), i.NatOps(), i.IntConstToNat
