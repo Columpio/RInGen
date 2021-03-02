@@ -37,6 +37,7 @@
         <Compile Include="SolverResult.fs" />
         <Compile Include="ResultTable.fs" />
         <Compile Include="SMTcode.fs" />
+        <Compile Include="PrintToProlog.fs" />
         <Compile Include="Solvers.fs" />
         <Compile Include="Program.fs" />
     </ItemGroup>

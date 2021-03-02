@@ -1,4 +1,5 @@
 module RInGen.Solvers
+open System
 open System.IO
 open System.Diagnostics
 open System.Text.RegularExpressions
@@ -38,16 +39,16 @@ type ISolver() =
         let newpath = Regex.Replace(path, "[^a-zA-Z0-9_./]", "")
         newpath
 
-    let saveClauses directory dst commands =
-        for testIndex, newTest in List.indexed commands do
-            let lines = List.map toString newTest
-            let path = Path.ChangeExtension(dst, sprintf ".%d.smt2" testIndex)
+    member private x.SaveClauses directory dst commands =
+        let lines = List.collect x.CommandsToStrings commands
+        for testIndex, newTest in List.indexed lines do
+            let path = Path.ChangeExtension(dst, sprintf ".%d.%s" testIndex x.FileExtension)
 //            let linearityPostfix = if isNonLinearCHCSystem newTest then ".NonLin" else ".Lin"
 //            let fullPath = directory + linearityPostfix + cleanPath path
             let fullPath = directory + path
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)) |> ignore
-            File.WriteAllLines(fullPath, lines)
-        List.length commands
+            File.WriteAllLines(fullPath, newTest)
+        List.length lines
 
     abstract member InterpretResult : string -> string -> SolverResult
     abstract member Name : string
@@ -55,10 +56,20 @@ type ISolver() =
     abstract member BinaryOptions : string -> string
     abstract member CodeTransformation : bool -> ParseExpression list -> transformedCommand list list // command list list
 
+    abstract CommandsToStrings : transformedCommand list -> string list list
+    default x.CommandsToStrings commands = [List.map toString commands]
+
+    abstract FileExtension : string
+    default x.FileExtension = "smt2"
+
+    abstract WorkingDirectory : string -> string
+    default x.WorkingDirectory filename = Path.GetDirectoryName(filename)
+
     member x.SetupProcess (psinfo : ProcessStartInfo) filename =
         let path = ref ""
         psinfo.FileName <- if psinfo.Environment.TryGetValue(x.BinaryName, path) then !path else x.BinaryName
         psinfo.Arguments <- x.BinaryOptions filename
+        psinfo.WorkingDirectory <- x.WorkingDirectory filename
 
     member x.GenerateClausesSingle tipToHorn filename outputPath =
         let outputPath =
@@ -70,11 +81,11 @@ type ISolver() =
         let transformed = x.CodeTransformation tipToHorn exprs
         let paths =
             seq {
-                for testIndex, newTest in List.indexed transformed do
-                    let lines = List.map toString newTest
-                    let path = Path.ChangeExtension(filename, sprintf ".%s.%d.smt2" x.Name testIndex)
+                let lines = List.collect x.CommandsToStrings transformed
+                for testIndex, newTest in List.indexed lines do
+                    let path = Path.ChangeExtension(filename, sprintf ".%s.%d.%s" x.Name testIndex x.FileExtension)
                     let fullPath = outputPath path
-                    File.WriteAllLines(fullPath, lines)
+                    File.WriteAllLines(fullPath, newTest)
                     yield fullPath
             } |> List.ofSeq
         paths
@@ -92,7 +103,7 @@ type ISolver() =
                 try
                     if force || not <| isBadBenchmark (PList exprs) then
                         let newTests = x.CodeTransformation tipToHorn exprs
-                        total_generated <- total_generated + saveClauses directory dst newTests
+                        total_generated <- total_generated + x.SaveClauses directory dst newTests
                     successful <- successful + 1
                 with e -> printfn "Exception in %s: %O" src e.Message
         let output_directory = walk_through directory ("." + x.Name) mapFile
@@ -118,7 +129,6 @@ type ISolver() =
     abstract member Solve : string -> SolverResult
     default x.Solve (filename : string) =
         use p = new Process()
-        p.StartInfo.WorkingDirectory <- Path.GetDirectoryName(filename)
         p.StartInfo.RedirectStandardOutput <- true
         p.StartInfo.RedirectStandardError <- true
         p.StartInfo.UseShellExecute <- false
@@ -245,9 +255,45 @@ type CVC4IndSolver () =
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
         | _ -> UNKNOWN raw_output
 
+type VeriMAPiddtSolver () =
+    inherit IADTSolver()
+
+    let isRule =
+        let rec isRule = function
+            | ExistsRule _
+            | BaseRule(_, Bot) -> false
+            | ForallRule(_, r) -> isRule r
+            | BaseRule _ -> true
+        function
+        | TransformedCommand r -> isRule r
+        | _ -> true
+
+    let binaryName = "VeriMAP-iddt"
+    let solverDirectory = Path.GetDirectoryName(Environment.GetEnvironmentVariable(binaryName))
+
+    override x.Name = binaryName
+    override x.BinaryName = binaryName
+    override x.BinaryOptions filename = sprintf "--timeout=%d --check-sat %s" SECONDS_TIMEOUT filename
+    override x.FileExtension = "pl"
+    override x.WorkingDirectory _ = solverDirectory
+
+    override x.CommandsToStrings commands =
+        let rules, queries = List.partition isRule commands
+        match queries with
+        | [] -> [PrintToProlog.toPrologFile rules]
+        | _ -> List.map (fun query -> PrintToProlog.toPrologFile (rules @ [query])) queries
+
+    override x.InterpretResult error raw_output =
+        if error <> "" then ERROR(error) else
+        let output = Environment.split raw_output
+        match output with
+        | _::line::_ when line.Contains("Answer") && line.EndsWith("true") -> SAT
+        | _::line::_ when line.Contains("Answer") && line.EndsWith("false") -> UNSAT
+        | _ -> UNKNOWN raw_output
+
 type AllSolver () =
     inherit ISolver()
-    let solvers : ISolver list = [Z3Solver(); EldaricaSolver(); CVC4IndSolver(); CVC4FiniteSolver()]
+    let solvers : ISolver list = [Z3Solver(); EldaricaSolver(); CVC4IndSolver(); CVC4FiniteSolver(); VeriMAPiddtSolver()]
 
     override x.Name = "AllSolvers"
     override x.BinaryName = "AllSolvers"
@@ -279,5 +325,6 @@ let solverByName (solverName : string) =
     | _ when solverName = "eldarica" -> EldaricaSolver() :> ISolver
     | _ when solverName = "cvc4ind" -> CVC4IndSolver() :> ISolver
     | _ when solverName = "cvc4f" -> CVC4FiniteSolver() :> ISolver
+    | _ when solverName = "verimap" -> VeriMAPiddtSolver() :> ISolver
     | _ when solverName = "all" -> AllSolver() :> ISolver
-    | _ -> failwithf "Unknown solver: %s. Specify one of: z3, eldarica, cvc4f, cvc4ind, all." solverName
+    | _ -> failwithf "Unknown solver: %s. Specify one of: z3, eldarica, cvc4f, cvc4ind, verimap, all." solverName
