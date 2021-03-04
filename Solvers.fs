@@ -239,5 +239,5 @@ type AllSolver () =
         let runs = directory.Split(";;;") |> List.ofArray |> List.zip solvers
         let results = runs |> List.map (fun (solver, path) -> solver.RunOnBenchmarkSet overwrite path)
         let names = solvers |> List.map (fun solver -> solver.Name)
-        ResultTable.PrintReadableResultTable names results
+        ResultTable.GenerateReadableResultTable results
         directory

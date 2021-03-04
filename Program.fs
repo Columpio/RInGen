@@ -46,7 +46,7 @@ let main args =
             let outputDirectory = solver.GenerateClauses tipToHorn (not tipToHorn) directory
             printfn "CHC systems of directory %s are preprocessed and saved in %s" directory outputDirectory
             if Option.isSome solverName then
-                let resultsDirectory = solver.RunOnBenchmarkSet true outputDirectory
+                let resultsDirectory = solver.RunOnBenchmarkSet false outputDirectory
                 printfn "Solver run on %s and saved results in %s" outputDirectory resultsDirectory
         | {tosorts=tosorts; tipToHorn=tipToHorn; directory=None; filename=Some filename; solver=solverName; timelimit=_} ->
             let solver = solverOrPreprocessor solverName tosorts
