@@ -2,6 +2,7 @@ module FLispy.Solvers
 open System.IO
 open System.Diagnostics
 open System
+open System.Text.RegularExpressions
 open Lexer
 open SolverResult
 
@@ -33,14 +34,14 @@ type ISolver() =
     abstract member SetupProcess : ProcessStartInfo -> string -> unit
     abstract member InterpretResult : string -> string -> SolverResult
     abstract member Name : string
-    abstract member CodeTransformation : bool -> ParseExpression list -> command list list
+    abstract member CodeTransformation : bool -> bool -> ParseExpression list -> command list list
 
     member x.GenerateClausesSingle tipToHorn filename =
         let exprs = parse_file filename
         if List.exists isBadBenchmark exprs then
             failwithf "Syntax error in %s" filename
         else
-        let transformed = x.CodeTransformation tipToHorn exprs
+        let transformed = x.CodeTransformation tipToHorn false exprs
         let paths =
             seq {
                 for testIndex, newTest in List.indexed transformed do
@@ -51,8 +52,8 @@ type ISolver() =
             } |> List.ofSeq
         paths
 
-    abstract GenerateClauses : bool -> bool -> string -> string
-    default x.GenerateClauses tipToHorn force directory =
+    abstract GenerateClauses : bool -> bool -> bool -> string -> string
+    default x.GenerateClauses tipToHorn force getModel directory =
         let mutable files = 0
         let mutable successful = 0
         let mutable total_generated = 0
@@ -63,7 +64,7 @@ type ISolver() =
                 let exprs = parse_file src
                 try
                     if force || not <| List.exists isBadBenchmark exprs then
-                        let newTests = x.CodeTransformation tipToHorn exprs
+                        let newTests = x.CodeTransformation tipToHorn getModel exprs
                         for testIndex, newTest in List.indexed newTests do
                             let lines = List.map toString newTest
                             let path = Path.ChangeExtension(dst, sprintf ".%d.smt2" testIndex)
@@ -89,6 +90,23 @@ type ISolver() =
             else printfn "%s skipping %s (answer exists)" x.Name src
         walk_through dir (sprintf ".%sAnswers" x.Name) run_file
 
+    member x.RerunOnBenchmarkSet dir =
+        let mutable satResults = 0
+        let run_file src dst =
+            if File.Exists(dst) then
+                match parseAnswerFile dst |> snd |> parseSolverResult with
+                | SAT _ ->
+                    try
+                        match x.SolveWithTime(src) with
+                        | SAT cardinalities, _ ->
+                            satResults <- satResults + 1
+                            printfn "%s,%s" src cardinalities
+                        | _ -> printfn "No sat result for: %s" src
+                    with e -> printfn "Exception in %s: %s" src dst
+                | _ -> ()
+        walk_through dir (sprintf ".%sAnswers" x.Name) run_file |> ignore
+        printfn "Total sat: %d" satResults
+
     abstract member Solve : string -> SolverResult
     default x.Solve (filename : string) =
         use p = new Process()
@@ -107,7 +125,7 @@ type ISolver() =
         else x.InterpretResult error output
 
     member x.SolveWithTime filename =
-        printfn "Solving %s with timelimit %d seconds" filename SECONDS_TIMEOUT
+//        printfn "Solving %s with timelimit %d seconds" filename SECONDS_TIMEOUT
         let timer = Stopwatch()
         timer.Start()
         let result = x.Solve filename
@@ -117,33 +135,43 @@ type ISolver() =
         | UNKNOWN _ when time = MSECONDS_TIMEOUT () -> TIMELIMIT, time
         | _ -> result, time
 
-    member x.EncodeSingleFile tipToHorn filename = filename |> parse_file |> x.CodeTransformation tipToHorn |> List.head
+    member x.EncodeSingleFile tipToHorn filename = filename |> parse_file |> x.CodeTransformation tipToHorn false |> List.head
 
 let private split (s : string) = s.Split(Environment.NewLine.ToCharArray()) |> List.ofArray
 
 type CVC4FiniteSolver () =
     inherit ISolver()
 
+    let cardinalityRegex = Regex "^; cardinality of \S+ is (\d+)$"
+    let getCardinality line =
+        let cardinalityMatch = cardinalityRegex.Match(line)
+        if cardinalityMatch.Success then
+            let cardinality = int <| cardinalityMatch.Groups.[1].Value
+            Some cardinality
+        else None
+
     override x.Name = "CVC4Finite"
 
-    override x.CodeTransformation tipToHorn exprs =
+    override x.CodeTransformation tipToHorn getModel exprs =
         let setOfCHCSystems = ParseExtension.functionsToClauses tipToHorn exprs
         let set_logic_all = SetLogic "ALL"
         setOfCHCSystems
         |> List.map (fun chcSystem -> List.collect ParseExtension.to_sorts chcSystem)
-        |> List.map (fun chcSystem -> chcSystem |> List.filter (function SetLogic _ -> false | _ -> true))
-        |> List.map (fun chcSystem -> set_logic_all :: chcSystem)
+        |> List.map (fun chcSystem -> chcSystem |> List.filter (function SetLogic _ | GetInfo _ -> false | _ -> true))
+        |> List.map (fun chcSystem -> let all = set_logic_all :: chcSystem in if getModel then all @ [GetModel] else all)
 
     override x.SetupProcess pi filename =
         pi.FileName <- "cvc4"
-        pi.Arguments <- sprintf "--finite-model-find --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
+        pi.Arguments <- sprintf "--finite-model-find -m --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
         let output = split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
-        | line::_ when line = "sat" -> SAT
+        | line::_ when line = "sat" ->
+            let cardinalities = List.choose getCardinality output
+            SAT (cardinalities |> List.map toString |> join ";")
         | line::_ when line = "unsat" -> UNSAT
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
@@ -154,12 +182,12 @@ type CVC4FiniteSolver () =
 type IADTSolver () =
     inherit ISolver()
 
-    override x.CodeTransformation tipToHorn exprs =
+    override x.CodeTransformation tipToHorn getModel exprs =
         let setOfCHCSystems = ParseExtension.functionsToClauses tipToHorn exprs
         let set_logic = SetLogic "HORN"
         setOfCHCSystems
         |> List.map (fun chcSystem -> chcSystem |> List.filter (function SetLogic _ -> false | _ -> true))
-        |> List.map (fun chcSystem -> set_logic :: chcSystem)
+        |> List.map (fun chcSystem -> let all = set_logic :: chcSystem in if getModel then all @ [GetModel] else all)
 
 
 type EldaricaSolver () =
@@ -176,7 +204,7 @@ type EldaricaSolver () =
         match output with
         | line::_ when line.StartsWith("(error") -> ERROR raw_output
         | line::_ when line = "unknown" -> UNKNOWN raw_output
-        | line::_ when line = "sat" -> SAT
+        | line::_ when line = "sat" -> SAT ""
         | line::_ when line = "unsat" -> UNSAT
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
@@ -212,7 +240,7 @@ type CVC4IndSolver () =
         let output = split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
-        | line::_ when line = "sat" -> SAT
+        | line::_ when line = "sat" -> SAT ""
         | line::_ when line = "unsat" -> UNSAT
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
@@ -225,14 +253,14 @@ type AllSolver () =
     override x.Name = "AllSolvers"
     override x.SetupProcess _ _ = __unreachable__()
     override x.InterpretResult _ _ = __unreachable__()
-    override x.CodeTransformation _ _ = __unreachable__()
+    override x.CodeTransformation _ _ _ = __unreachable__()
 
     override x.Solve filename =
         for solver in solvers do solver.Solve(filename) |> ignore
         UNKNOWN "All solvers"
 
-    override x.GenerateClauses tipToHorn force directory =
-        let paths = solvers |> List.map (fun solver -> printfn "Generating clauses for %s" solver.Name; solver.GenerateClauses tipToHorn force directory)
+    override x.GenerateClauses tipToHorn force getModel directory =
+        let paths = solvers |> List.map (fun solver -> printfn "Generating clauses for %s" solver.Name; solver.GenerateClauses tipToHorn force getModel directory)
         join ";;;" paths
 
     override x.RunOnBenchmarkSet overwrite directory =

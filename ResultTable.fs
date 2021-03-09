@@ -1,11 +1,8 @@
 module FLispy.ResultTable
 open System.IO
 open System.Globalization
-open System.Text.RegularExpressions
 open CsvHelper
 open SolverResult
-
-let private resultRegex = Regex @"(\d+),(\w+)"
 
 let private GenerateResultTable writeSolverResult writeEmptyResult directories =
     let filename = Path.ChangeExtension(Path.GetTempFileName(), "csv")
@@ -15,9 +12,7 @@ let private GenerateResultTable writeSolverResult writeEmptyResult directories =
         csv.WriteField(testName)
         for resultFileName in resultFileNames do
             if File.Exists(resultFileName) then
-                let result = resultRegex.Match(File.ReadAllLines(resultFileName).[0]).Groups
-                let time = int <| result.[1].Value
-                let answer = result.[2].Value
+                let time, answer = parseAnswerFile resultFileName
                 writeSolverResult csv time answer
             else writeEmptyResult csv
         csv.NextRecord()
@@ -41,7 +36,7 @@ let GenerateLaTeXResultTable =
 
     let writeSolverResult (csv : CsvWriter) time result =
         match parseSolverResult result with
-        | SAT
+        | SAT _
         | UNSAT
         | TIMELIMIT -> csv.WriteField(timeToString time)
         | _ -> writeEmptyResult csv
@@ -56,11 +51,9 @@ let PrintReadableResultTable names directories =
             nameWidth <- max nameWidth testName.Length
             for resultFileName in resultFileNames do
                 if File.Exists(resultFileName) then
-                    let result = resultRegex.Match(File.ReadAllLines(resultFileName).[0]).Groups
-                    let time = result.[1].Value.Length
-                    let answer = result.[2].Value.Length
-                    timeWidth <- max timeWidth time
-                    resultWidth <- max resultWidth answer
+                    let time, answer = parseAnswerFile resultFileName
+                    timeWidth <- max timeWidth (time.ToString().Length)
+                    resultWidth <- max resultWidth answer.Length
         walk_through_simultaneously directories calcWidths
         timeWidth, resultWidth, nameWidth
     let printResultLine (testName : string) resultFileNames =
@@ -68,10 +61,8 @@ let PrintReadableResultTable names directories =
         for resultFileName in resultFileNames do
             let time, answer =
                 if File.Exists(resultFileName) then
-                    let result = resultRegex.Match(File.ReadAllLines(resultFileName).[0]).Groups
-                    let time = result.[1].Value
-                    let answer = result.[2].Value
-                    time, answer
+                    let time, answer = parseAnswerFile resultFileName
+                    time.ToString(), answer
                 else "", ""
             let time = time.PadRight(timeWidth)
             let answer = answer.PadRight(resultWidth)

@@ -10,6 +10,7 @@ type options = {
     [<Option('f', "file", HelpText = "Run on single file")>] filename : string option
     [<Option('s', "solver", HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | all) after processing")>] solver : string option
     [<Option('t', "timelimit", HelpText = "Time limit, in seconds (default 300)")>] timelimit : int option
+    [<Option('r', "rerun", HelpText = "Rerun solver and get model")>] rerun : bool
 }
 
 let solverByName (solverName : string) tosorts =
@@ -41,13 +42,16 @@ let main args =
         | {tosorts=_; tipToHorn=_; directory=Some _; filename=Some _; solver=_; timelimit=_}
         | {tosorts=_; tipToHorn=_; directory=None; filename=None; solver=_; timelimit=_} ->
             failwith "Should specify either --directory or --file"
-        | {tosorts=tosorts; tipToHorn=tipToHorn; directory=Some directory; filename=None; solver=solverName; timelimit=_} ->
+        | {tosorts=tosorts; tipToHorn=tipToHorn; directory=Some directory; filename=None; solver=solverName; timelimit=_; rerun=rerun} ->
             let solver = solverOrPreprocessor solverName tosorts
-            let outputDirectory = solver.GenerateClauses tipToHorn (not tipToHorn) directory
+            let outputDirectory = solver.GenerateClauses tipToHorn (not tipToHorn) rerun directory
             printfn "CHC systems of directory %s are preprocessed and saved in %s" directory outputDirectory
             if Option.isSome solverName then
-                let resultsDirectory = solver.RunOnBenchmarkSet false outputDirectory
-                printfn "Solver run on %s and saved results in %s" outputDirectory resultsDirectory
+                if rerun then
+                    solver.RerunOnBenchmarkSet outputDirectory
+                else
+                    let resultsDirectory = solver.RunOnBenchmarkSet false outputDirectory
+                    printfn "Solver run on %s and saved results in %s" outputDirectory resultsDirectory
         | {tosorts=tosorts; tipToHorn=tipToHorn; directory=None; filename=Some filename; solver=solverName; timelimit=_} ->
             let solver = solverOrPreprocessor solverName tosorts
             let outputFiles = solver.GenerateClausesSingle tipToHorn filename
