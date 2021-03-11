@@ -16,9 +16,9 @@ dec(s(X), s(Y)) :- dec(X, Y).
 incorrect :- inc(X, Y), dec(X, Y).
 *)
 let private queryName = "incorrect" // this is hardcoded in VeriMAP-iddt (we will never obtain this term as all our idents are of the form `[a-zA-Z]+_[0-9]+`
-let private mapName (s : string) = s.ToLower()
+let private mapName (s : string) = s.ToLowerFirstChar()
 let private mapNames = List.map mapName
-let private mapVariable (s : string) = s.ToUpper()
+let private mapVariable (s : string) = s.ToUpperFirstChar()
 let private mapSort = function
     | PrimitiveSort s -> mapName s
     | _ -> __notImplemented__()
@@ -37,7 +37,7 @@ let rec private mapTerm vars = function
         ts |> join ", " |> sprintf "%s(%s)" op
 and private mapTerms vars = List.map (mapTerm vars)
 
-let private mapAtom vars = function
+let private mapAtomInPremise vars = function
     | Bot -> Some queryName
     | Top -> None
     | AApply(op, ts) ->
@@ -46,14 +46,21 @@ let private mapAtom vars = function
         ts |> join ", " |> sprintf "%s(%s)" op |> Some
     | Equal(t1, t2) -> sprintf "%s = %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
     | Distinct(t1, t2) -> sprintf "%s =\= %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
+let private mapAtomInHead vars a =
+    match mapAtomInPremise vars a with
+    | None ->
+        match a with
+        | Bot -> Some queryName
+        | _ -> None
+    | a -> a
 
 let rec private mapRule vars = function
     | ExistsRule _ -> None
     | ForallRule(vars', r) -> mapRule (vars @ vars') r
     | BaseRule(premises, head) ->
         let vars = vars |> List.map fst |> Set.ofList
-        let premises = List.choose (mapAtom vars) premises
-        match mapAtom vars head with
+        let premises = List.choose (mapAtomInPremise vars) premises
+        match mapAtomInHead vars head with
         | None -> None
         | Some head ->
             let clause =

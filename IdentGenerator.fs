@@ -11,11 +11,12 @@ type IdentGenerator() =
         let prefixStr = prefix.ToString()
         let prefixStr = Regex.Replace(prefixStr, "[^a-zA-Z]", "")
         let prefixStr = if prefixStr = "" then "x" else prefixStr
+        let prefixStrLow = prefixStr.ToLower()
         let counter = ref 0
-        if symbols.TryGetValue(prefixStr, counter) then
-            symbols.[prefixStr] <- !counter + 1
+        if symbols.TryGetValue(prefixStrLow, counter) then
+            symbols.[prefixStrLow] <- !counter + 1
         else
-            symbols.Add(prefixStr, 1)
+            symbols.Add(prefixStrLow, 1)
         sprintf "%s_%d" prefixStr !counter
 
 let mutable idgen = IdentGenerator()

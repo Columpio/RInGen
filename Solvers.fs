@@ -39,13 +39,18 @@ type ISolver() =
         let newpath = Regex.Replace(path, "[^a-zA-Z0-9_./]", "")
         newpath
 
+    let takeCommandsBeforeFirstCheckSat = List.takeWhile (function Command CheckSat -> false | _ -> true)
+    let takeOnlyQueryAcrossAssertsInTIPBenchmark = List.filter (function Assert(Not _) -> true | Assert _ -> false | _ -> true)
+
+    member private x.DirectoryForTransformed directory = directory + "." + x.Name
+
     member private x.SaveClauses directory dst commands =
         let lines = List.collect x.CommandsToStrings commands
         for testIndex, newTest in List.indexed lines do
             let path = Path.ChangeExtension(dst, sprintf ".%d.%s" testIndex x.FileExtension)
 //            let linearityPostfix = if isNonLinearCHCSystem newTest then ".NonLin" else ".Lin"
 //            let fullPath = directory + linearityPostfix + cleanPath path
-            let fullPath = directory + path
+            let fullPath = Path.Join(x.DirectoryForTransformed directory, path)
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)) |> ignore
             File.WriteAllLines(fullPath, newTest)
         List.length lines
@@ -54,7 +59,13 @@ type ISolver() =
     abstract member Name : string
     abstract member BinaryName : string
     abstract member BinaryOptions : string -> string
-    abstract member CodeTransformation : bool -> ParseExpression list -> transformedCommand list list // command list list
+    abstract member TransformClauses : transformedCommand list -> transformedCommand list list
+
+    member x.CodeTransformation tipToHorn parsed =
+        let cleaned = ParseToTerms.removeComments parsed
+        let commands = ParseToTerms.parseToTerms cleaned
+        let chcSystem = SMTcode.toClauses tipToHorn commands
+        x.TransformClauses chcSystem
 
     abstract CommandsToStrings : transformedCommand list -> string list list
     default x.CommandsToStrings commands = [List.map toString commands]
@@ -92,11 +103,17 @@ type ISolver() =
 
     abstract GenerateClauses : bool -> bool -> string -> string
     default x.GenerateClauses tipToHorn force directory =
+        let referenceDirectory = sprintf "%s.Z3.Z3Answers" directory
+        let shouldBeTransformed (src : string) dst =
+            let ext = Path.GetExtension(src)
+            ext = ".smt2" &&
+            let referenceFile = Path.ChangeExtension(Path.Join(referenceDirectory, dst), sprintf ".0.smt2")
+            File.Exists(referenceFile)
         let mutable files = 0
         let mutable successful = 0
         let mutable total_generated = 0
         let mapFile (src : string) dst =
-            if src.EndsWith(".smt2") then
+            if shouldBeTransformed src dst then
                 printfn "Transforming: %s" src
                 files <- files + 1
                 let exprs = FileParser.parse_file src
@@ -106,11 +123,11 @@ type ISolver() =
                         total_generated <- total_generated + x.SaveClauses directory dst newTests
                     successful <- successful + 1
                 with e -> printfn "Exception in %s: %O" src e.Message
-        let output_directory = walk_through directory ("." + x.Name) mapFile
+        walk_through directory "" mapFile |> ignore
         printfn "All files:       %d" files
         printfn "Successful:      %d" successful
         printfn "Total generated: %d" total_generated
-        output_directory
+        x.DirectoryForTransformed directory
 
     abstract member RunOnBenchmarkSet : bool -> string -> string
     default x.RunOnBenchmarkSet overwrite dir =
@@ -174,10 +191,7 @@ type CVC4FiniteSolver () =
     override x.BinaryName = "cvc4"
     override x.BinaryOptions filename = sprintf "--finite-model-find --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
 
-    override x.CodeTransformation tipToHorn parsed =
-        let cleaned = ParseToTerms.removeComments parsed
-        let commands = ParseToTerms.parseToTerms cleaned
-        let chcSystem = SMTcode.toClauses tipToHorn commands
+    override x.TransformClauses chcSystem =
         let noADTSystem = SMTcode.DatatypesToSorts.datatypesToSorts chcSystem
         let set_logic_all = SetLogic "ALL"
         cleanCommands set_logic_all noADTSystem
@@ -197,10 +211,7 @@ type CVC4FiniteSolver () =
 type IADTSolver () =
     inherit ISolver()
 
-    override x.CodeTransformation tipToHorn parsed =
-        let cleaned = ParseToTerms.removeComments parsed
-        let commands = ParseToTerms.parseToTerms cleaned
-        let chcSystem = SMTcode.toClauses tipToHorn commands
+    override x.TransformClauses chcSystem =
         let set_logic_horn = SetLogic "HORN"
         cleanCommands set_logic_horn chcSystem
 
@@ -277,11 +288,7 @@ type VeriMAPiddtSolver () =
     override x.FileExtension = "pl"
     override x.WorkingDirectory _ = solverDirectory
 
-    override x.CommandsToStrings commands =
-        let rules, queries = List.partition isRule commands
-        match queries with
-        | [] -> [PrintToProlog.toPrologFile rules]
-        | _ -> List.map (fun query -> PrintToProlog.toPrologFile (rules @ [query])) queries
+    override x.CommandsToStrings commands = [PrintToProlog.toPrologFile commands]
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
@@ -299,7 +306,7 @@ type AllSolver () =
     override x.BinaryName = "AllSolvers"
     override x.BinaryOptions _ = __unreachable__()
     override x.InterpretResult _ _ = __unreachable__()
-    override x.CodeTransformation _ _ = __unreachable__()
+    override x.TransformClauses _ = __unreachable__()
 
     override x.Solve filename =
         for solver in solvers do solver.Solve(filename) |> ignore

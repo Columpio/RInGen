@@ -1,10 +1,14 @@
 [<AutoOpen>]
 module RInGen.Prelude
 open System.IO
-open System.Text.RegularExpressions
 
 let __notImplemented__() = failwith "Not implemented!"
 let __unreachable__() = failwith "Unreachable!"
+
+let private mapFirstChar x f = if x = "" then "" else sprintf "%c%s" (f(x.Chars(0))) (x.Substring(1))
+type System.String with
+    member x.ToLowerFirstChar() = mapFirstChar x System.Char.ToLower
+    member x.ToUpperFirstChar() = mapFirstChar x System.Char.ToUpper
 
 let optCons xs = function
     | Some x -> x::xs
