@@ -5,12 +5,10 @@ open System.Diagnostics
 open System.Text.RegularExpressions
 open SolverResult
 
-let private isBadBenchmark = function
-    | PList cmnds ->
-        let hasDefines = List.exists (function PList (PSymbol name::_) when name.StartsWith("define")-> true | _ -> false) cmnds
-        let hasDeclareFuns = List.exists (function PList(PSymbol "declare-fun"::_) -> true | _ -> false) cmnds
-        hasDefines && hasDeclareFuns
-    | _ -> false
+let private isBadBenchmark cmnds =
+    let hasDefines = List.exists (function Definition _ -> true | _ -> false) cmnds
+    let hasDeclareFuns = List.exists (function Command (DeclareFun _) -> true | _ -> false) cmnds
+    hasDefines && hasDeclareFuns
 
 let private containsExistentialClauses =
     let rec containsExistentialClauses = function
@@ -61,9 +59,7 @@ type ISolver() =
     abstract member BinaryOptions : string -> string
     abstract member TransformClauses : transformedCommand list -> transformedCommand list list
 
-    member x.CodeTransformation tipToHorn parsed =
-        let cleaned = ParseToTerms.removeComments parsed
-        let commands = ParseToTerms.parseToTerms cleaned
+    member x.CodeTransformation tipToHorn commands =
         let chcSystem = SMTcode.toClauses tipToHorn commands
         x.TransformClauses chcSystem
 
@@ -88,7 +84,7 @@ type ISolver() =
             | Some outputPath ->
                 fun (path : string) -> Path.Join(outputPath, Path.GetFileName(path))
             | None -> id
-        let exprs = FileParser.parse_file filename
+        let exprs = SMTExpr.parseFile filename
         let transformed = x.CodeTransformation tipToHorn exprs
         let paths =
             seq {
@@ -104,11 +100,13 @@ type ISolver() =
     abstract GenerateClauses : bool -> bool -> string -> string
     default x.GenerateClauses tipToHorn force directory =
         let referenceDirectory = sprintf "%s.Z3.Z3Answers" directory
+        let shouldCompareResults = false //TODO
         let shouldBeTransformed (src : string) dst =
             let ext = Path.GetExtension(src)
             ext = ".smt2" &&
-            let referenceFile = Path.ChangeExtension(Path.Join(referenceDirectory, dst), sprintf ".0.smt2")
-            File.Exists(referenceFile)
+            (not shouldCompareResults ||
+                let referenceFile = Path.ChangeExtension(Path.Join(referenceDirectory, dst), sprintf ".0.smt2")
+                File.Exists(referenceFile))
         let mutable files = 0
         let mutable successful = 0
         let mutable total_generated = 0
@@ -116,9 +114,9 @@ type ISolver() =
             if shouldBeTransformed src dst then
                 printfn "Transforming: %s" src
                 files <- files + 1
-                let exprs = FileParser.parse_file src
+                let exprs = SMTExpr.parseFile src
                 try
-                    if force || not <| isBadBenchmark (PList exprs) then
+                    if force || not <| isBadBenchmark exprs then
                         let newTests = x.CodeTransformation tipToHorn exprs
                         total_generated <- total_generated + x.SaveClauses directory dst newTests
                     successful <- successful + 1
@@ -169,8 +167,6 @@ type ISolver() =
         match result with
         | UNKNOWN _ when time = MSECONDS_TIMEOUT () -> TIMELIMIT, time
         | _ -> result, time
-
-    member x.EncodeSingleFile tipToHorn filename = filename |> FileParser.parse_file |> x.CodeTransformation tipToHorn |> List.head
 
 let private cleanCommands set_logic chcSystem =
     let filt = function
@@ -288,7 +284,9 @@ type VeriMAPiddtSolver () =
     override x.FileExtension = "pl"
     override x.WorkingDirectory _ = solverDirectory
 
-    override x.CommandsToStrings commands = [PrintToProlog.toPrologFile commands]
+    override x.CommandsToStrings commands =
+        let all = List.map toString commands
+        [PrintToProlog.toPrologFile commands]
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else

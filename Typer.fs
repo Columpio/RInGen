@@ -79,5 +79,9 @@ let interpretCommand (typer : Typer) c =
     | Command(DeclareSort name) -> typer
     | _ -> typer
 
+let typerMapFold f z cs =
+    let rs, (_, z) = List.mapFold (fun (typer, z) c -> let typer = interpretCommand typer c in let r, z = f typer z c in r, (typer, z)) (empty, z) cs
+    rs, z
+
 let typerFold f cs =
     List.mapFold (fun typer c -> let typer = interpretCommand typer c in let r = f typer c in r, typer) empty cs |> fst

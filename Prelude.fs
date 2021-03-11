@@ -48,6 +48,10 @@ let inline toString x = x.ToString()
 module List =
     let cons x xs = x :: xs
 
+    let butLast xs =
+        let first, last = List.splitAt (List.length xs - 1) xs
+        first, List.head last
+
     let product2 xs ys = List.collect (fun y -> List.map (fun x -> x, y) xs) ys
     
     let product xss =
@@ -82,13 +86,6 @@ module Seq =
 module Map =
     let union x y = Map.foldBack Map.add x y
 
-type ParseExpression =
-    | PNumber of int64
-    | PSymbol of string
-    | PList of ParseExpression list
-    | PMatch of ParseExpression * (ParseExpression * ParseExpression) list
-    | PComment
-
 type symbol = string
 let symbol = id
 module Symbols =
@@ -98,22 +95,26 @@ module Symbols =
 type ident = symbol
 type sort =
     | PrimitiveSort of ident
-    | ArraySort of sort * sort
+    | CompoundSort of ident * sort list
     override x.ToString() =
         match x with
         | PrimitiveSort i -> i.ToString()
-        | ArraySort(indexSort, elementSort) -> sprintf "(Array %O %O)" indexSort elementSort
+        | CompoundSort(name, sorts) -> sorts |> List.map toString |> join " " |> sprintf "(%s %s)" name
+let (|ArraySort|_|) = function
+    | CompoundSort("Array", [s1; s2]) -> Some(s1, s2)
+    | _ -> None
+let ArraySort(s1, s2) = CompoundSort("Array", [s1; s2])
 let sortToFlatString s =
     let rec sortToFlatString = function
         | PrimitiveSort s -> [s.ToString()]
-        | ArraySort(s1, s2) -> "Array" :: sortToFlatString s1 @ sortToFlatString s2
+        | CompoundSort(name, sorts) -> name :: List.collect sortToFlatString sorts
     sortToFlatString s |> join ""
 let boolSort = PrimitiveSort(symbol("Bool"))
 let integerSort = PrimitiveSort(symbol("Int"))
 let dummySort = PrimitiveSort(symbol("*dummy-sort*"))
 let argumentSortsOfArraySort = function
     | ArraySort(s1, s2) -> s1, s2
-    | PrimitiveSort _ -> __unreachable__()
+    | _ -> __unreachable__()
 type pattern = symbol list
 type sorted_var = symbol * sort
 type operation =

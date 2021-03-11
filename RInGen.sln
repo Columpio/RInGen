@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "RInGen", "RInGen.fsproj", "{845A8DE1-46E1-40B4-83BC-F963B333E22E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SMTLIB2Parser", "SMTLIB2Parser\SMTLIB2Parser.csproj", "{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{845A8DE1-46E1-40B4-83BC-F963B333E22E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{845A8DE1-46E1-40B4-83BC-F963B333E22E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{845A8DE1-46E1-40B4-83BC-F963B333E22E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

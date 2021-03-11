@@ -12,23 +12,14 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <FsYacc Include="Parser.fsy">
-            <OtherFlags>--module Parser</OtherFlags>
-        </FsYacc>
-        <FsLex Include="Lexer.fsl">
-            <OtherFlags>--module Lexer --unicode</OtherFlags>
-        </FsLex>
         <Compile Include="Prelude.fs" />
 <!--        <Compile Include="Runtime.fs" />-->
-        <Compile Include="Parser.fs" />
-        <Compile Include="Lexer.fs" />
-        <Compile Include="FileParser.fs" />
         <Compile Include="Operations.fs" />
         <Compile Include="IdentGenerator.fs" />
         <Compile Include="Typer.fs" />
         <Compile Include="ADTExtensions.fs" />
         <Compile Include="VarEnv.fs" />
-        <Compile Include="ParseToTerms.fs" />
+        <Compile Include="SMTExpr.fs" />
         <Compile Include="Relativization.fs" />
         <Compile Include="SubstituteOperations.fs" />
         <Compile Include="BoolAxiomatization.fs" />
@@ -46,8 +37,10 @@
     <ItemGroup>
       <PackageReference Include="CommandLineParser.FSharp" Version="2.8.0" />
       <PackageReference Include="CsvHelper" Version="15.0.5" />
-      <PackageReference Include="FsLexYacc" Version="10.0.0" />
-      <PackageReference Include="FsLexYacc.Runtime" Version="10.0.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="SMTLIB2Parser\SMTLIB2Parser.csproj" />
     </ItemGroup>
 <!--    <Import Project="FsLexYacc.Build.Tasks\FsLexYacc.targets" />-->
 </Project>

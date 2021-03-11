@@ -67,7 +67,8 @@ let generateArrayDiseqDeclarations newArraySort newIndexSort newElementSort sele
 let generateEqsAndDiseqs eqs diseqs originalSorts arraySorts =
     let getNewSort = function
         | ArraySort _ as s -> Map.find s arraySorts |> fst3
-        | s -> s
+        | PrimitiveSort _ as s -> s
+        | s -> __notImplemented__()
     let rec collectEqsAndDiseqs eqs diseqs originalSort =
         match originalSort with
         | PrimitiveSort("Bool") -> ADTs.generateBoolCongruences eqs diseqs
@@ -88,6 +89,7 @@ let generateEqsAndDiseqs eqs diseqs originalSorts arraySorts =
                 @ eqElementNewDeclarations @ diseqElementNewDeclarations
                 @ eqArrayDeclarations @ diseqArrayDeclarations
             applyBinaryRelation eqArrayOp, applyBinaryRelation diseqArrayOp, Map.add newArraySort eqArrayOp eqs, Map.add newArraySort diseqArrayOp diseqs, newDecls
+        | _ -> __notImplemented__()
     let originalSorts, (eqs, diseqs) =
         Set.toList originalSorts
         |> List.mapFold (fun (eqs, diseqs) sort -> let _, _, eqs, diseqs, decls = collectEqsAndDiseqs eqs diseqs sort in decls, (eqs, diseqs)) (eqs, diseqs)

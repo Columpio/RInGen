@@ -114,6 +114,6 @@ Obtained clauses are in the `~/RInGen/samples/one-zeroary-constr.Z3.0.smt2` file
 Result of the `z3` run will be output to `stdout`. For `one-zeroary-constr.Z3.0.smt2` example it is `SAT`.
 
 ### Use the finite-model finder in cvc4 as an ADT Horn-solver
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll --sorts --solver cvc4f --quiet --file ~/RInGen/samples/prop_20.smt2`
+`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll --sorts --solver cvc4f --tipToHorn --quiet  --file ~/RInGen/samples/prop_20.smt2`
 
 The output is `sat`.
