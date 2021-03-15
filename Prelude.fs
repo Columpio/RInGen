@@ -52,6 +52,26 @@ module List =
         let first, last = List.splitAt (List.length xs - 1) xs
         first, List.head last
 
+    let mapReduce f xs =
+        match xs with
+        | [] -> __unreachable__()
+        | x::xs -> List.mapFold f x xs
+
+    let mapReduceBack f xs =
+        match xs with
+        | [] -> __unreachable__()
+        | _ ->
+            let xs, x = butLast xs
+            List.mapFoldBack f xs x
+
+    let triangle xs =
+        let rec iter x = function
+            | [] -> []
+            | y::ys as rest -> List.map (fun z -> x, z) rest @ iter y ys
+        match xs with
+        | [] -> __unreachable__()
+        | x::xs -> iter x xs
+
     let product2 xs ys = List.collect (fun y -> List.map (fun x -> x, y) xs) ys
     
     let product xss =

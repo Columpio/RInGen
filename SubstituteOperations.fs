@@ -1,5 +1,27 @@
 module RInGen.SubstituteOperations
 
+type private termArgumentFolding = LeftAssoc | RightAssoc
+type private atomArgumentFolding = Chainable | Pairwise
+
+let private termOperations =
+    [
+        "+", LeftAssoc
+        "-", LeftAssoc
+        "*", LeftAssoc
+        "and", LeftAssoc
+        "or", LeftAssoc
+        "=>", RightAssoc
+    ] |> List.map (fun (name, assoc) -> Map.find name elementaryOperations, assoc) |> Map.ofList
+let private atomOperations =
+    [
+        "=", Chainable
+        "<=", Chainable
+        "<", Chainable
+        ">=", Chainable
+        ">", Chainable
+        "distinct", Pairwise
+    ] |> List.map (fun (name, assoc) -> Map.find name elementaryOperations, assoc) |> Map.ofList
+
 type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, constantMap) =
     let relativizationsSubstitutor op ts justSubstOp defaultResult =
         match Map.tryFind op relativizations with
@@ -9,23 +31,41 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         | Some (op', false) -> [], [], justSubstOp op'
         | None -> [], [], defaultResult
 
+    let substituteOperationsWithRelationsInTermApplication op ts =
+        relativizationsSubstitutor op ts (fun op' -> TApply(op', ts)) (TApply(op, ts))
+
+    let applyBinary op x y =
+        let ts = [x; y]
+        let vars, conds, result = substituteOperationsWithRelationsInTermApplication op ts
+        (vars, conds), result
+
     let rec substituteOperationsWithRelationsInTerm = function
         | TConst c as t -> [], [], constantMap c t
         | TIdent(name, sort) as t ->
             relativizationsSubstitutor (identToUserOp name sort) [] userOpToIdent t
         | TApply(op, ts) ->
             let vars, conds, ts = substituteOperationsWithRelationsInTermList ts
-            let appVars, appConds, app = relativizationsSubstitutor op ts (fun op' -> TApply(op', ts)) (TApply(op, ts))
-            vars @ appVars, conds @ appConds, app
+            match Map.tryFind op termOperations with
+            | Some assoc when List.length ts >= 2 ->
+                let folder =
+                    match assoc with
+                    | LeftAssoc -> List.mapReduce
+                    | RightAssoc -> List.mapReduceBack
+                let vcs, t = folder (applyBinary op) ts
+                let vss, css = List.unzip vcs
+                vars @ List.concat vss, conds @ List.concat css, t
+            | _ ->
+                let appVars, appConds, app = substituteOperationsWithRelationsInTermApplication op ts
+                vars @ appVars, conds @ appConds, app
 
     and substituteOperationsWithRelationsInTermList ts =
         let varss, condss, ts = ts |> List.map substituteOperationsWithRelationsInTerm |> List.unzip3
         List.concat varss, List.concat condss, ts
 
-    let defaultFormula vars conds f =
-        match vars, conds with
-        | [], [] -> [], [], f
-        | _ -> __notImplemented__()
+    let substituteOperationsWithRelationsInAtomApplication op ts =
+            match Map.tryFind op relativizations with
+            | Some(op', _) -> AApply(op', ts)
+            | None -> AApply(op, ts)
 
     let rec substituteOperationsWithRelationsInAtom = function
         | Top | Bot as a -> [], [], a
@@ -41,12 +81,21 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
             avars @ bvars, aconds @ bconds, d
         | AApply(op, ts) ->
             let vars, conds, ts = substituteOperationsWithRelationsInTermList ts
-            match Map.tryFind op relativizations with
-            | Some(op', _) -> vars, conds, AApply(op', ts)
-            | None -> vars, conds, AApply(op, ts)
-    and substituteOperationsWithRelationsInAtoms  ts =
-        let varss, condss, ts = ts |> List.map substituteOperationsWithRelationsInAtom |> List.unzip3
-        List.concat varss, List.concat condss, ts
+            match Map.tryFind op atomOperations with
+            | Some assoc when List.length ts >= 2 ->
+                let makeApp =
+                    match op with
+                    | ElementaryOperation("=", _, _) -> (<||) eqSubstitutor
+                    | ElementaryOperation("distinct", _, _) -> (<||) diseqSubstitutor
+                    | _ -> fun (x, y) -> substituteOperationsWithRelationsInAtomApplication op [x; y]
+                let pairs =
+                    match assoc with
+                    | Chainable -> List.pairwise
+                    | Pairwise -> List.triangle
+                match ts |> pairs |> List.map makeApp with
+                | at::ats -> vars, ats @ conds, at
+                | _ -> __unreachable__()
+            | _ -> vars, conds, substituteOperationsWithRelationsInAtomApplication op ts
 
     let rec substInRule = function
         | BaseRule(premises, consequence) ->
