@@ -2,12 +2,13 @@
 RInGen is a [SMTLIB2](http://smtlib.cs.uiowa.edu/language.shtml) converter.
 It takes arbitrary SMTLIB2 files as input and
 generates [Horn clauses](https://chc-comp.github.io/format.html) over
-pure [algebraic datatypes](https://en.wikipedia.org/wiki/Algebraic_data_type) again in SMTLIB2.
+pure [algebraic datatypes](https://en.wikipedia.org/wiki/Algebraic_data_type) in SMTLIB2 and Prolog.
 It can optionally run a number of CHC and other solvers over output clauses, currently:
-[z3](https://github.com/Z3Prover/z3),
+[Z3](https://github.com/Z3Prover/z3),
 [Eldarica](https://github.com/uuverifiers/eldarica),
-[cvc4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf),
-[cvc4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/).
+[CVC4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf),
+[CVC4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/),
+[VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/).
 
 ## Features
 - [x] Supports `define-fun`, `define-fun-rec` and `define-funs-rec` translation to
@@ -23,7 +24,7 @@ predicates
 
 ## Requirements
 - [`.NET core >= 3.1`](https://dotnet.microsoft.com/download/dotnet/3.1)
-- (optionally, to run solvers) `z3`, `eldarica`, `cvc4` executables accessible
+- (optionally, to run solvers) `z3`, `eldarica`, `cvc4`, `VeriMAP-iddt` executables accessible
 in the environment
 
 ## Build
@@ -51,25 +52,36 @@ Executable then can be found in the `~/RInGen/bin/Release/netcoreapp3.1/<RID>/pu
 ~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll ..arguments..
 ```
 
-## Options
-### `-f`, `--file` `/FULL/PATH.smt2`
-Specifies **full** path `/FULL/PATH.smt2` to a single SMTLIB2 file. If `--output-directory` flag is not specified,
-the tool will generate Horn clauses in SMTLIB2 format and save them at `/FULL/PATH.*.0.smt2`.
-### `-d`, `--directory`
-Run on a directory. The tool will recursively traverse the directory and process all
-`.smt2` files.
-> Either `--file` or `--directory` should be specified to run the tool.
-### `-o`, `--output-directory`
-Output directory where to put a transformed file (default: same as `--file`)
+## Modes and Options
+### `transform (--tipToHorn) (--sorts) (--quiet) (--output-directory PATH) /FULL/PATH`
+Only process input files, do not run any solvers.
 
-### `--tipToHorn` `/FULL/PATH`
+### `solve (--tipToHorn) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
+Process input files and run one (or many) solvers.
+
+## Shared options for both modes
+### `/FULL/PATH`
+Specifies **full** path to either a single SMTLIB2 file or a directory.
+If `/FULL/PATH.smt2` leads to a file and the `--output-directory` flag is not specified,
+the tool will generate Horn clauses in SMTLIB2 format and save them at `/FULL/PATH.*.0.smt2`.
+Otherwise if `/FULL/PATH.smt2` leads to a directory,
+the tool will recursively traverse the directory and process all `.smt2` files.
+
+### `-o`, `--output-directory` `PATH`
+A **full** path `PATH` to an output **directory** where to put a transformed file (default: same as input).
+
+### `--tipToHorn`
 Convert [TIP-like](https://tip-org.github.io/) systems to Horn clauses.
-This flag enables translation of functions defined with `define-*` SMTLIB2 command
-into Horn clauses. Each function is transformed into a predicate with one supplementary
-argument (for return). All `assert`ions are then **treated as queries**, meaning that
+This flag makes the tool treat all `assert`ions as **queries**, meaning that
 they are transformed to the following form:
 ```(assert (forall ... (=> .. false)))```
 
+### `-q`, `--quiet`
+Quiet mode. Only outputs are `sat`, `unsat`, `unknown` when in `solve` mode or nothing when in `transform` mode.
+
+### `--help`, `--version`
+
+## `transform` options
 ### `--sorts`
 After all other translation the following will be performed:
 all algebraic datatypes are transformed into sorts.
@@ -77,43 +89,38 @@ Specifically, each ADT sort declaration with `declare-datatypes` is substituted 
 `declare-sort` for ADT sort and a number of `declare-fun` declarations for constructors.
 This preprocessing step is required to run the finite-model finder.
 
-### `-s`, `--solver`
-Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | all) after processing.
-- [z3](https://github.com/Z3Prover/z3) (`--solver z3`)
-- [Eldarica](https://github.com/uuverifiers/eldarica) (`--solver eldarica`)
-- [cvc4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf) (`--solver cvc4f`)
-- [cvc4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/) (`--solver cvc4ind`)
+## `solve` options
+### `SOLVER_NAME`
+Run a specific solver after processing. Available options:
+- [Z3](https://github.com/Z3Prover/z3) (`z3`)
+- [Eldarica](https://github.com/uuverifiers/eldarica) (`eldarica`)
+- [CVC4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf) (`cvc4f`)
+- [CVC4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/) (`cvc4ind`)
+- [VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/) (`verimap`)
 - all the above solvers (`--solver all`)
-> Note that in order to run `Z3`, `Eldarica` and `CVC4` one should have
-> `z3`, `eld` and `cvc4` executables accessible in the environment.
+> Note that in order to run `Z3`, `Eldarica`, `CVC4` and `VeriMAP` one should have
+> `z3`, `eld`, `cvc4` and `VeriMAP-iddt` executables accessible in the environment.
+> The easiest way to do that is to prefix tool running with:
+> 
+> `env 'VeriMAP-iddt=/FULL/PATH/TO/VeriMAP-iddt-linux_x86_64/VeriMAP-iddt'`
 
 ### `-t`, `--timelimit`
 Time limit for the specified `--solver`, in seconds (default `300`).
-
-### `-q`, `--quiet`
-Quiet mode, to be run as solver. Only outputs are `sat`, `unsat` and `unknown` -
-satisfiability result for translated Horn clauses, obtained from `--solver`.
-
-### `--help`, `--version`
    
 ## Examples
-### Convert benchmarks without `define`s from `DIRECTORY` into Horn clauses
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll --directory /FULL/PATH/TO/DIRECTORY`
+### Convert benchmarks from `DIRECTORY` into Horn clauses
+`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll transform /FULL/PATH/TO/DIRECTORY`
 
-Obtained clauses are in the `/FULL/PATH/TO/DIRECTORY.Z3` folder.
-### Convert benchmarks with `define`s from `DIRECTORY` into Horn clauses
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll --tipToHorn --directory /FULL/PATH/TO/DIRECTORY`
+Obtained clauses are in the `/FULL/PATH/TO/DIRECTORY.Transformed` folder.
 
-Obtained clauses are in the `/FULL/PATH/TO/DIRECTORY.Z3` folder.
-
-### Convert benchmark into Horn clauses and run z3 over the result with timelimit 5 sec
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll --solver z3 --timelimit 5 --file ~/RInGen/samples/one-zeroary-constr.smt2`
+### Convert benchmark into Horn clauses and run Z3 over the result with timelimit 5 sec
+`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll solve --timelimit 5 z3 ~/RInGen/samples/one-zeroary-constr.smt2`
 
 Obtained clauses are in the `~/RInGen/samples/one-zeroary-constr.Z3.0.smt2` file.
 
 Result of the `z3` run will be output to `stdout`. For `one-zeroary-constr.Z3.0.smt2` example it is `SAT`.
 
-### Use the finite-model finder in cvc4 as an ADT Horn-solver
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll --sorts --solver cvc4f --tipToHorn --quiet  --file ~/RInGen/samples/prop_20.smt2`
+### Use the finite-model finder in CVC4 as an ADT Horn-solver on a TIP benchmark
+`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll solve --tipToHorn --quiet cvc4f ~/RInGen/samples/prop_20.smt2`
 
 The output is `sat`.

@@ -259,11 +259,14 @@ module private DefinitionsToDeclarations =
         | t -> failwithf "Can't obtain term from expr: %O" t
     and private exprsToTerms atomsAreTerms = Choosable.combinations (exprToTerm atomsAreTerms)
 
-    and private exprToAtoms atomsAreTerms e : atom list list = // returns DNF
+    and private exprToAtoms (typer : Typer) atomsAreTerms e : atom list list = // returns DNF
         match e with
-        | Ident(name, s) when s = boolSort -> [[Equal(TIdent(name, s), truet)]]
-        | Not (Not t) -> exprToAtoms atomsAreTerms t
-        | Not e -> e |> exprToAtoms atomsAreTerms |> List.product |> List.map (List.map nota)
+        | Ident(name, s) when s = boolSort ->
+            if typer.containsKey name
+                then [[AApply(identToUserOp name s, [])]]
+                else [[Equal(TIdent(name, s), truet)]]
+        | Not (Not t) -> exprToAtoms typer atomsAreTerms t
+        | Not e -> e |> exprToAtoms typer atomsAreTerms |> List.product |> List.map (List.map nota)
         | BoolConst true -> [[Top]]
         | BoolConst false -> [[Bot]]
         | Apply(UserDefinedOperation(_, _, s) as op, ts) when s = boolSort ->
@@ -271,9 +274,9 @@ module private DefinitionsToDeclarations =
             exprsToTerms atomsAreTerms ts
             |> Choosable.map toAtom
             |> Choosable.toDNF
-        | Or ts -> List.collect (exprToAtoms atomsAreTerms) ts
+        | Or ts -> List.collect (exprToAtoms typer atomsAreTerms) ts
 //        | Hence(a, b) -> [AHence(aand <| exprToAtoms atomsAreTerms a, aand <| exprToAtoms atomsAreTerms b)]
-        | And ts -> exprsToAtoms atomsAreTerms ts
+        | And ts -> exprsToAtoms typer atomsAreTerms ts
         | Apply(ElementaryOperation("=", _, _), [t1; t2]) ->
             Choosable.map2 (fun t1 t2 -> Equal(t1, t2)) (exprToTerm atomsAreTerms t1) (exprToTerm atomsAreTerms t2) |> Choosable.toDNF
         | Apply(ElementaryOperation("distinct", _, _), [t1; t2]) ->
@@ -283,7 +286,7 @@ module private DefinitionsToDeclarations =
             |> Choosable.map (fun ts -> AApply(op, ts))
             |> Choosable.toDNF
         | t -> failwithf "Can't obtain atom from expr: %O" t
-    and private exprsToAtoms atomsAreTerms = List.map (exprToAtoms atomsAreTerms) >> List.product >> List.map List.concat
+    and private exprsToAtoms typer atomsAreTerms = List.map (exprToAtoms typer atomsAreTerms) >> List.product >> List.map List.concat
 
     let private functionExprToTerm = exprToTerm true
 
@@ -413,8 +416,8 @@ module private DefinitionsToDeclarations =
                 let! evs, ecs, er = exprToRule tes e
                 let thenBranchQuantifiers = combineQuantifiers ivs tvs
                 let elseBranchQuantifiers = combineQuantifiers ivs evs
-                let! thenBranchConditions = exprToAtoms true ir
-                let! elseBranchConditions = exprToAtoms true (note ir)
+                let! thenBranchConditions = exprToAtoms typer true ir
+                let! elseBranchConditions = exprToAtoms typer true (note ir)
                 let thenBranch = thenBranchQuantifiers, thenBranchConditions @ ics @ tcs, tr
                 let elseBranch = elseBranchQuantifiers, elseBranchConditions @ ics @ ecs, er
                 return! [thenBranch; elseBranch]
@@ -457,8 +460,8 @@ module private DefinitionsToDeclarations =
         let rec eatResultTerm conds = function
             | Hence(cond, body) -> eatResultTerm (eatCondition cond @ conds) body
             | t ->
-                let conds = exprsToAtoms assertsToQueries conds
-                let ts = exprToAtoms assertsToQueries t
+                let conds = exprsToAtoms typer assertsToQueries conds
+                let ts = exprToAtoms typer assertsToQueries t
                 conds, List.map (function [t] -> t | ts -> failwithf "Too many atoms in head: %O" ts) ts
         let rec eat vars conds = function
             | Forall(vars', body) -> eat (vars @ vars') conds body
@@ -491,11 +494,11 @@ module private DefinitionsToDeclarations =
                 collector {
                     let! bodyVars, bodyConditions, bodyResult = toRuleProduct tes conds
                     let! appVars, appConditions, appResult = exprToRule tes app
-                    let! bodyAddition = if assertsToQueries then exprToAtoms assertsToQueries (note appResult) else [[]]
+                    let! bodyAddition = if assertsToQueries then exprToAtoms typer assertsToQueries (note appResult) else [[]]
                     let headConds, heads = if assertsToQueries then [[]], [Bot] else eatResultTerm [] appResult
                     let! headCond = headConds
                     let! head = heads
-                    let! bodyResult = List.map (exprToAtoms assertsToQueries) bodyResult |> List.product |> List.map List.concat
+                    let! bodyResult = List.map (exprToAtoms typer assertsToQueries) bodyResult |> List.product |> List.map List.concat
                     let r = finalRule vars bodyVars appVars (headCond @ bodyAddition @ bodyResult @ bodyConditions @ appConditions) head
                     return TransformedCommand r
                 }

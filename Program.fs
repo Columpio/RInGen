@@ -1,76 +1,54 @@
 ﻿module RInGen.Program
 
-open RInGen.SolverResult
+open System
 open RInGen.Solvers
 open CommandLine
 
-type options = {
-    [<Option("sorts", HelpText = "Convert ADTs to sorts (preprocessing for the finite-model finder)")>] tosorts : bool
+[<Verb("solve", HelpText = "Transform and run solver")>]
+type solveOptions = {
     [<Option("tipToHorn", HelpText = "Convert TIP-like systems to Horn clauses")>] tipToHorn : bool
-    [<Option('d', "directory", HelpText = "Run on a directory")>] directory : string option
-    [<Option('f', "file", HelpText = "Run on a single file")>] filename : string option
-    [<Option('s', "solver", HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | verimap | all) after processing")>] solver : string option
     [<Option('t', "timelimit", HelpText = "Time limit, in seconds (default 300)")>] timelimit : int option
     [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
-    [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as --file)")>] output : string option
+    [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as input PATH)")>] output : string option
+    [<Value(0, MetaValue = "SOLVER_NAME", Required = true, HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | verimap | all) after processing")>] solver : string
+    [<Value(1, MetaValue = "PATH", Required = true, HelpText = "Full path to file or directory")>] path : string
 }
 
-let solverByName (solverName : string) tosorts =
-    let solverName = solverName.ToLower()
-    match tosorts with
-    | false when solverName = "z3" -> Z3Solver() :> ISolver
-    | false when solverName = "eldarica" -> EldaricaSolver() :> ISolver
-    | false when solverName = "cvc4ind" -> CVC4IndSolver() :> ISolver
-    | false when solverName = "verimap" -> VeriMAPiddtSolver() :> ISolver
-    | true when solverName = "cvc4f" -> CVC4FiniteSolver() :> ISolver
+[<Verb("transform", HelpText = "Generate CHCs based on the benchmark")>]
+type transformOptions = {
+    [<Option("sorts", HelpText = "Convert ADTs to sorts")>] tosorts : bool
+    [<Option("tipToHorn", HelpText = "Convert TIP-like systems to Horn clauses")>] tipToHorn : bool
+    [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
+    [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as input PATH)")>] output : string option
+    [<Value(0, MetaValue = "PATH", Required = true, HelpText = "Full path to file or directory")>] path : string
+}
+
+let solverByName (solverName : string) =
+    let solverName = solverName.ToLower().Trim()
+    match () with
+    | _ when solverName = "z3" -> Z3Solver() :> ISolver
+    | _ when solverName = "eldarica" -> EldaricaSolver() :> ISolver
+    | _ when solverName = "cvc4ind" -> CVC4IndSolver() :> ISolver
+    | _ when solverName = "verimap" -> VeriMAPiddtSolver() :> ISolver
+    | _ when solverName = "cvc4f" -> CVC4FiniteSolver() :> ISolver
     | _ when solverName = "all" -> AllSolver() :> ISolver
-    | _ when List.contains solverName ["z3"; "eldarica"; "cvc4f"; "cvc4ind"; "verimap"; "all"] ->
-        failwithf "Invalid combination of --sorts and --solver flags."
     | _ -> failwithf "Unknown solver: %s. Specify one of: z3, eldarica, cvc4f, cvc4ind, verimap, all." solverName
 
-let solverOrPreprocessor solverName tosorts =
-    match solverName, tosorts with
-    | Some solverName, _ -> solverByName solverName tosorts
-    | None, true -> CVC4FiniteSolver() :> ISolver
-    | None, false -> Z3Solver() :> ISolver
+let solve (solveOptions : solveOptions) =
+    match solveOptions.timelimit with
+    | Some timelimit -> SolverResult.SECONDS_TIMEOUT <- timelimit
+    | None -> ()
+    let solver = solverByName solveOptions.solver
+    solver.TransformAndRunOnBenchmark solveOptions.tipToHorn solveOptions.quiet false solveOptions.path solveOptions.output
+
+let transform (transformOptions : transformOptions) =
+    let solver = if transformOptions.tosorts then SortHornTransformer() :> ITransformer else ADTHornTransformer() :> ITransformer
+    solver.TransformBenchmark transformOptions.tipToHorn transformOptions.quiet false transformOptions.path transformOptions.output
 
 [<EntryPoint>]
 let main args =
-    let result = Parser.Default.ParseArguments<options>(args)
-    match result with
-    | :? Parsed<options> as parsed ->
-        match parsed.Value.timelimit with
-        | Some timelimit -> SolverResult.SECONDS_TIMEOUT <- timelimit
-        | None -> ()
-        match parsed.Value with
-        | {directory=Some _; filename=Some _}
-        | {directory=None; filename=None} ->
-            failwith "Should specify either --directory or --file"
-        | {tosorts=tosorts; tipToHorn=tipToHorn; directory=Some directory; filename=None; solver=solverName} ->
-            let solver = solverOrPreprocessor solverName tosorts
-            let outputDirectory = solver.GenerateClauses tipToHorn (not tipToHorn) directory
-            printfn "CHC systems of directory %s are preprocessed and saved in %s" directory outputDirectory
-            if Option.isSome solverName then
-                let resultsDirectory = solver.RunOnBenchmarkSet false outputDirectory
-                printfn "Solver run on %s and saved results in %s" outputDirectory resultsDirectory
-        | {tosorts=tosorts; tipToHorn=tipToHorn; directory=None; filename=Some filename; solver=solverName; quiet = quiet; output=output} ->
-            let solver = solverOrPreprocessor solverName tosorts
-            let outputFiles = solver.GenerateClausesSingle tipToHorn filename output
-            match outputFiles with
-            | [] -> printfn "unknown"
-            | [outputFile] ->
-                if not <| quiet then printfn "CHC system in %s is preprocessed and saved in %s" filename outputFile
-                if Option.isSome solverName then
-                    let result, time = solver.SolveWithTime(quiet, outputFile)
-                    if quiet then printfn "%s" <| quietModeToString result else
-                    printfn "Solver run on %s and the result is %O which was obtained in %d msec." outputFile result time
-            | _ ->
-                if not <| quiet then printfn "Preprocessing of %s produced %d files:" filename (List.length outputFiles)
-                if not <| quiet then List.iter (printfn "%s") outputFiles
-                if Option.isSome solverName then
-                    for outputFile in outputFiles do
-                        let result, time = solver.SolveWithTime(quiet, outputFile)
-                        if not <| quiet then printfn "Solver run on %s and the result is %O which was obtained in %d msec." outputFile result time
-    | :? NotParsed<options> -> ()
-    | _ -> failwith "Fail during argument parsing"
+    Parser.Default.ParseArguments<solveOptions,transformOptions>(args)
+        .WithParsed<solveOptions>(Action<_> solve)
+        .WithParsed<transformOptions>(Action<_> transform)
+    |> ignore
     0

@@ -7,13 +7,22 @@ open SolverResult
 
 let private resultRegex = Regex @"(\d+),(\w+)"
 
-let private GenerateResultTable writeSolverResult writeEmptyResult directories =
+let private substituteRelations exts filenames =
+    List.map2 (fun ext filename -> Path.ChangeExtension(filename, ext)) exts filenames
+
+let private GenerateResultTable writeSolverResult writeEmptyResult (names : string list) (exts : string list) directories =
     let filename = Path.ChangeExtension(Path.GetTempFileName(), "csv")
     use writer = new StreamWriter(filename)
     use csv = new CsvWriter(writer, CultureInfo.InvariantCulture)
+    csv.WriteField("Filename")
+    for solverName in names do
+        csv.WriteField(sprintf "%sTime" solverName)
+        csv.WriteField(sprintf "%sResult" solverName)
+    csv.NextRecord()
     let generateResultLine testName resultFileNames =
         csv.WriteField(testName)
-        for resultFileName in resultFileNames do
+        let realFileNames = substituteRelations exts resultFileNames
+        for resultFileName in realFileNames do
             if File.Exists(resultFileName) then
                 let result = resultRegex.Match(File.ReadAllLines(resultFileName).[0]).Groups
                 let time = int <| result.[1].Value
@@ -22,7 +31,7 @@ let private GenerateResultTable writeSolverResult writeEmptyResult directories =
             else writeEmptyResult csv
         csv.NextRecord()
     walk_through_simultaneously directories generateResultLine
-    printfn "Table written to %s" filename
+    filename
 
 let GenerateReadableResultTable =
     let writeEmptyResult (csv : CsvWriter) =
@@ -31,7 +40,7 @@ let GenerateReadableResultTable =
 
     let writeSolverResult (csv : CsvWriter) time result =
         csv.WriteField(sprintf "%d" time)
-        csv.WriteField(sprintf "%O" result)
+        csv.WriteField(sprintf "%s" result)
     GenerateResultTable writeSolverResult writeEmptyResult
 
 let GenerateLaTeXResultTable =

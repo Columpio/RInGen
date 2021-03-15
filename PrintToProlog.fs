@@ -42,8 +42,10 @@ let private mapAtomInPremise vars = function
     | Top -> None
     | AApply(op, ts) ->
         let op = mapOp op
-        let ts = mapTerms vars ts
-        ts |> join ", " |> sprintf "%s(%s)" op |> Some
+        match mapTerms vars ts with
+        | [] -> op
+        | ts -> ts |> join ", " |> sprintf "%s(%s)" op
+        |> Some
     | Equal(t1, t2) -> sprintf "%s = %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
     | Distinct(t1, t2) -> sprintf "%s =\= %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
 let private mapAtomInHead vars a =
