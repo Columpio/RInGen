@@ -410,5 +410,6 @@ type AllSolver () =
         let names = solvers |> List.map (fun solver -> solver.Name)
         let exts = solvers |> List.map (fun solver -> solver.FileExtension)
         let directory = ResultTable.GenerateReadableResultTable names exts results
+        if not quiet then printfn "LaTeX table: %s" <| ResultTable.GenerateLaTeXResultTable names exts results
 //        ResultTable.PrintReadableResultTable names results
         directory

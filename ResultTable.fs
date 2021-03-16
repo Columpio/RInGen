@@ -10,14 +10,13 @@ let private resultRegex = Regex @"(\d+),(\w+)"
 let private substituteRelations exts filenames =
     List.map2 (fun ext filename -> Path.ChangeExtension(filename, ext)) exts filenames
 
-let private GenerateResultTable writeSolverResult writeEmptyResult (names : string list) (exts : string list) directories =
+let private GenerateResultTable writeHeader writeSolverResult writeEmptyResult (names : string list) (exts : string list) directories =
     let filename = Path.ChangeExtension(Path.GetTempFileName(), "csv")
     use writer = new StreamWriter(filename)
     use csv = new CsvWriter(writer, CultureInfo.InvariantCulture)
     csv.WriteField("Filename")
     for solverName in names do
-        csv.WriteField(sprintf "%sTime" solverName)
-        csv.WriteField(sprintf "%sResult" solverName)
+        writeHeader csv solverName
     csv.NextRecord()
     let generateResultLine testName resultFileNames =
         csv.WriteField(testName)
@@ -41,7 +40,12 @@ let GenerateReadableResultTable =
     let writeSolverResult (csv : CsvWriter) time result =
         csv.WriteField(sprintf "%d" time)
         csv.WriteField(sprintf "%s" result)
-    GenerateResultTable writeSolverResult writeEmptyResult
+
+    let writeHeader (csv : CsvWriter) solverName =
+        csv.WriteField(sprintf "%sTime" solverName)
+        csv.WriteField(sprintf "%sResult" solverName)
+
+    GenerateResultTable writeHeader writeSolverResult writeEmptyResult
 
 let GenerateLaTeXResultTable =
     let timeToString n = n |> sprintf "%d"
@@ -54,7 +58,11 @@ let GenerateLaTeXResultTable =
         | UNSAT
         | TIMELIMIT -> csv.WriteField(timeToString time)
         | _ -> writeEmptyResult csv
-    GenerateResultTable writeSolverResult writeEmptyResult
+
+    let writeHeader (csv : CsvWriter) solverName =
+        csv.WriteField(solverName)
+
+    GenerateResultTable writeHeader writeSolverResult writeEmptyResult
 
 let PrintReadableResultTable names directories =
     let timeWidth, resultWidth, nameWidth =
