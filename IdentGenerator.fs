@@ -19,10 +19,7 @@ type IdentGenerator() =
             symbols.Add(prefixStrLow, 1)
         sprintf "%s_%d" prefixStr !counter
 
-let mutable idgen = IdentGenerator()
-
-let setup () =
-    idgen <- IdentGenerator()
+let idgen = IdentGenerator()
 
 let gensymp (prefix : symbol) = idgen.gensymp prefix
 let gensyms = symbol >> gensymp

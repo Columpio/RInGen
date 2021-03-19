@@ -11,7 +11,7 @@ let private parseSymbol (e : SMTLIBv2Parser.SymbolContext) : string =
         match s.GetChild(0) with
         | :? SMTLIBv2Parser.PredefSymbolContext as s -> s.GetChild(0).GetText()
         | _ -> s.UndefinedSymbol().ToString()
-    | :? SMTLIBv2Parser.QuotedSymbolContext as s -> __notImplemented__()
+    | :? SMTLIBv2Parser.QuotedSymbolContext as s -> s.GetChild(0).GetText()
     | _ -> __unreachable__()
 
 let private parseSymbolAsSort (e : SMTLIBv2Parser.SymbolContext) = parseSymbol e |> PrimitiveSort

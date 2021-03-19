@@ -608,7 +608,7 @@ module DatatypesToSorts =
     let datatypesToSorts commands =
         List.collect generateConstructorDeclarations commands
 
-type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc) =
+type private MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc) =
     let mapSorts = List.mapFold mapSort
 
     let mapSortedVar arraySorts (name, sort) =
@@ -700,7 +700,7 @@ type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc) =
             TransformedCommand r, arraySorts
 
 [<Extension>]
-type Utils () =
+type private Utils () =
     [<Extension>]
     static member inline MapCommand(x: MapSorts<unit>, command) = x.FoldCommand () command |> fst
     [<Extension>]
@@ -802,14 +802,14 @@ module private SubstituteFreeSortsWithNat =
         let commands = List.map (SubstituteOperations(Map.empty, eqs, diseqs).SubstituteOperationsWithRelations) commands
         commands
 
-let toClauses needToApplyTIPfix commands =
-    IdentGenerator.setup ()
+let toClauses performTransform needToApplyTIPfix commands =
     let commands = if needToApplyTIPfix then TIPFixes.applyTIPfix commands else commands
     let commandsWithUniqueVariableNames = RemoveVariableOverlapping.removeVariableOverlapping commands
     let freeSorts = commandsWithUniqueVariableNames |> List.choose (function Command(DeclareSort(s)) -> Some s | _ -> None) |> Set.ofList
     let hornClauses, wereDefines = DefinitionsToDeclarations.definesToDeclarations needToApplyTIPfix commandsWithUniqueVariableNames
     let relHornClauses = RelativizeSymbols.relativizeSymbols wereDefines hornClauses
     let relHornClauses = BoolAxiomatization.axiomatizeBoolOperations relHornClauses
+    if not performTransform then relHornClauses else
     let commandsWithoutInts, natSort = SubstIntWithNat.substituteIntWithNat relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses

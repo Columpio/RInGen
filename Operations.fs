@@ -27,23 +27,29 @@ module Operation =
         | ElementaryOperation(name, [], ret) -> Ident(name, ret)
         | op -> failwithf "Can't create identifier from operation: %O" op
 
+let arithmeticOperations =
+    let infix = true
+    [
+        ">", [integerSort; integerSort; boolSort], (">", infix)
+        "<", [integerSort; integerSort; boolSort], ("<", infix)
+        "<=", [integerSort; integerSort; boolSort], ("=<", infix)
+        ">=", [integerSort; integerSort; boolSort], (">=", infix)
+        "+", [integerSort; integerSort; integerSort], ("+", infix)
+        "-", [integerSort; integerSort; integerSort], ("-", infix)
+        "*", [integerSort; integerSort; integerSort], ("*", infix)
+        "mod", [integerSort; integerSort; integerSort], ("mod", not infix)
+        "div", [integerSort; integerSort; integerSort], ("div", not infix)
+    ]
+
 let elementaryOperations =
-    let ops = [
+    let arithmeticOperations = List.map (fun (name, sorts, _) -> name, sorts) arithmeticOperations
+    let ops = arithmeticOperations @ [
         "=", [dummySort; dummySort; boolSort]
         "distinct", [dummySort; dummySort; boolSort]
         "and", [boolSort; boolSort; boolSort]
         "or", [boolSort; boolSort; boolSort]
         "not", [boolSort; boolSort]
         "=>", [boolSort; boolSort; boolSort]
-        ">", [integerSort; integerSort; boolSort]
-        "<", [integerSort; integerSort; boolSort]
-        "<=", [integerSort; integerSort; boolSort]
-        ">=", [integerSort; integerSort; boolSort]
-        "+", [integerSort; integerSort; integerSort]
-        "-", [integerSort; integerSort; integerSort]
-        "*", [integerSort; integerSort; integerSort]
-        "mod", [integerSort; integerSort; integerSort]
-        "div", [integerSort; integerSort; integerSort]
         "store", [ArraySort(dummySort, dummySort); dummySort; dummySort; ArraySort(dummySort, dummySort)]
         "select", [ArraySort(dummySort, dummySort); dummySort; dummySort]
     ]

@@ -1,5 +1,7 @@
 module RInGen.PrintToProlog
 
+let private arithmeticOperations = Operations.arithmeticOperations |> List.map (fun (a, _, n) -> a, n) |> Map.ofList
+
 (*
 :- type nat ---> z ; s(nat).
 
@@ -20,32 +22,34 @@ let private mapName (s : string) = s.ToLowerFirstChar()
 let private mapNames = List.map mapName
 let private mapVariable (s : string) = s.ToUpperFirstChar()
 let private mapSort = function
+    | PrimitiveSort "Int" -> "int"
+    | PrimitiveSort "Bool" -> "bool"
     | PrimitiveSort s -> mapName s
     | _ -> __notImplemented__()
 let private mapSorts = List.map mapSort
 
 let private mapOp = function
-    | ElementaryOperation(name, _, _)
-    | UserDefinedOperation(name, _, _) -> mapName name
+    | ElementaryOperation(name, _, _) ->
+        Map.tryFind name arithmeticOperations |> Option.defaultValue (mapName name, false)
+    | UserDefinedOperation(name, _, _) -> mapName name, false
 
-let rec private mapTerm vars = function
+let rec private mapApply vars op ts =
+    match mapOp op, mapTerms vars ts with
+    | (op, true), [t1; t2] -> sprintf "(%s %s %s)" t1 op t2
+    | (_, true), _ -> __unreachable__()
+    | (op, false), [] -> op
+    | (op, false), ts -> ts |> join ", " |> sprintf "%s(%s)" op
+
+and private mapTerm vars = function
     | TConst name -> mapName name
     | TIdent(name, _) -> if Set.contains name vars then mapVariable name else mapName name
-    | TApply(op, ts) ->
-        let op = mapOp op
-        let ts = mapTerms vars ts
-        ts |> join ", " |> sprintf "%s(%s)" op
+    | TApply(op, ts) -> mapApply vars op ts
 and private mapTerms vars = List.map (mapTerm vars)
 
 let private mapAtomInPremise vars = function
     | Bot -> Some queryName
     | Top -> None
-    | AApply(op, ts) ->
-        let op = mapOp op
-        match mapTerms vars ts with
-        | [] -> op
-        | ts -> ts |> join ", " |> sprintf "%s(%s)" op
-        |> Some
+    | AApply(op, ts) -> mapApply vars op ts |> Some
     | Equal(t1, t2) -> sprintf "%s = %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
     | Distinct(t1, t2) -> sprintf "%s =\= %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
 let private mapAtomInHead vars a =
@@ -104,6 +108,10 @@ let private mapOriginalCommand = function
 let private mapTransformedCommand = function
     | OriginalCommand cmnd -> mapOriginalCommand cmnd
     | TransformedCommand r -> mapRule [] r |> Option.map List.singleton
+
+let isFirstOrderPrologProgram commands =
+    let hasSortDecls = List.exists (function OriginalCommand (DeclareSort _) -> true | _ -> false) commands
+    not hasSortDecls
 
 let toPrologFile commands =
     let preamble = mapPredicateDeclaration queryName []

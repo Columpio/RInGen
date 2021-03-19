@@ -6,6 +6,7 @@ open CommandLine
 
 [<Verb("solve", HelpText = "Transform and run solver")>]
 type solveOptions = {
+    [<Option("no-transform", HelpText = "Just run a solver with no transformation")>] notransform : bool
     [<Option("tipToHorn", HelpText = "Convert TIP-like systems to Horn clauses")>] tipToHorn : bool
     [<Option('t', "timelimit", HelpText = "Time limit, in seconds (default 300)")>] timelimit : int option
     [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
@@ -39,11 +40,12 @@ let solve (solveOptions : solveOptions) =
     | Some timelimit -> SolverResult.SECONDS_TIMEOUT <- timelimit
     | None -> ()
     let solver = solverByName solveOptions.solver
-    solver.TransformAndRunOnBenchmark solveOptions.tipToHorn solveOptions.quiet false solveOptions.path solveOptions.output
+    let force = true
+    solver.TransformAndRunOnBenchmark (not solveOptions.notransform) solveOptions.tipToHorn solveOptions.quiet force solveOptions.path solveOptions.output
 
 let transform (transformOptions : transformOptions) =
     let solver = if transformOptions.tosorts then SortHornTransformer() :> ITransformer else ADTHornTransformer() :> ITransformer
-    solver.TransformBenchmark transformOptions.tipToHorn transformOptions.quiet false transformOptions.path transformOptions.output
+    solver.TransformBenchmark true transformOptions.tipToHorn transformOptions.quiet false transformOptions.path transformOptions.output
 
 [<EntryPoint>]
 let main args =
