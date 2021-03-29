@@ -459,6 +459,7 @@ module private DefinitionsToDeclarations =
             | c -> [c]
         let rec eatResultTerm conds = function
             | Hence(cond, body) -> eatResultTerm (eatCondition cond @ conds) body
+            | Not cond -> eatResultTerm (eatCondition cond @ conds) falsee
             | t ->
                 let conds = exprsToAtoms typer assertsToQueries conds
                 let ts = exprToAtoms typer assertsToQueries t
