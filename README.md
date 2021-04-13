@@ -32,7 +32,7 @@ in the environment
 ### Build standalone version (for specific platform from the [list](https://raw.githubusercontent.com/dotnet/runtime/main/src/libraries/Microsoft.NETCore.Platforms/pkg/runtime.json))
 `dotnet publish -c Release -r <RID> -p:PublishReadyToRun=true RInGen.sln`
 
-Executable then can be found in the `~/RInGen/bin/Release/netcoreapp3.1/<RID>/publish` folder.
+Executable then can be found in the `~/RInGen/bin/Release/net5.0/<RID>/publish` folder.
 
 ## Run
 ### Standalone version
@@ -49,7 +49,7 @@ Executable then can be found in the `~/RInGen/bin/Release/netcoreapp3.1/<RID>/pu
 ```
 ### Built from sources
 ```bash
-~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll ..arguments..
+~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll ..arguments..
 ```
 
 ## Modes and Options
@@ -109,18 +109,18 @@ Time limit for the specified `--solver`, in seconds (default `300`).
    
 ## Examples
 ### Convert benchmarks from `DIRECTORY` into Horn clauses
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll transform /FULL/PATH/TO/DIRECTORY`
+`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll transform /FULL/PATH/TO/DIRECTORY`
 
 Obtained clauses are in the `/FULL/PATH/TO/DIRECTORY.Transformed` folder.
 
 ### Convert benchmark into Horn clauses and run Z3 over the result with timelimit 5 sec
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll solve --timelimit 5 z3 ~/RInGen/samples/one-zeroary-constr.smt2`
+`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll solve --timelimit 5 z3 ~/RInGen/samples/one-zeroary-constr.smt2`
 
 Obtained clauses are in the `~/RInGen/samples/one-zeroary-constr.Z3.0.smt2` file.
 
 Result of the `z3` run will be output to `stdout`. For `one-zeroary-constr.Z3.0.smt2` example it is `SAT`.
 
 ### Use the finite-model finder in CVC4 as an ADT Horn-solver on a TIP benchmark
-`~/RInGen$ dotnet bin/Release/netcoreapp3.1/RInGen.dll solve --tipToHorn --quiet cvc4f ~/RInGen/samples/prop_20.smt2`
+`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll solve --tipToHorn --quiet cvc4f ~/RInGen/samples/prop_20.smt2`
 
 The output is `sat`.

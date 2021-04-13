@@ -2,7 +2,7 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>netcoreapp3.1</TargetFramework>
+        <TargetFramework>net5.0</TargetFramework>
 <!--        <FsLexToolPath>bin\$(Configuration)\netcoreapp3.1</FsLexToolPath>-->
 <!--        <FsYaccToolPath>bin\$(Configuration)\netcoreapp3.1</FsYaccToolPath>-->
     </PropertyGroup>
