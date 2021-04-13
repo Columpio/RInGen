@@ -1,4 +1,5 @@
 module RInGen.SMTcode
+open System
 open System.Runtime.CompilerServices
 open RInGen
 open RInGen.Typer
@@ -180,7 +181,7 @@ module private DefinitionsToDeclarations =
         let toCondition x : 'a conditional = [], x
         let assumeTrue x = [x], truet
         let assumeFalse x = [x], falset
-        
+
         let pair ((conds1, x1) : term conditional) ((conds2, x2) : term conditional) : (term * term) conditional = conds1 @ conds2, (x1, x2)
         let list (cnds : 'a conditional list) : ('a list) conditional =
             let cnds, xs = List.unzip cnds
@@ -215,7 +216,7 @@ module private DefinitionsToDeclarations =
             | TIdent _
             | TApply _ as t -> toChoosable t
         let toDNF : atom choosable -> atom list list = List.map Conditional.toConj
-    
+
     let private binaryApplyToOp zero one op xs =
         if List.contains one xs then one else
         let binaryApplyToOp x y = TApply(op, [x; y])
@@ -237,12 +238,12 @@ module private DefinitionsToDeclarations =
 //    let private ahence ts = TApply(DummyOperations.henceOp, ts)
     let private tnot t = TApply(DummyOperations.notOp, [t])
 //    let private anot ts = Equal(tnot ts, truet)
-    
+
     let rec private atomToTerm = function
 //        | AApply(op, ts) -> TApply(op, ts)
 //        | Distinct(t, t2) when t2 = truet -> TApply(DummyOperations.notOp, [t])
 //        | ANot t -> TApply(DummyOperations.notOp, [atomToTerm t])
-        | t -> failwithf "Can't obtain term from atom: %O" t
+        | t -> failwithf $"Can't obtain term from atom: {t}"
 
     let rec private exprToTerm atomsAreTerms : smtExpr -> term choosable = function
         | Ident(name, sort) -> TIdent(name, sort) |> toChoosable
@@ -256,7 +257,7 @@ module private DefinitionsToDeclarations =
         | Or es -> tor <| exprsToTerms atomsAreTerms es
         | And es -> tand <| exprsToTerms atomsAreTerms es
 //        | Hence(a, b) -> TApply(DummyOperations.henceOp, [exprToTerm atomsAreTerms a; exprToTerm atomsAreTerms b])
-        | t -> failwithf "Can't obtain term from expr: %O" t
+        | t -> failwithf $"Can't obtain term from expr: {t}"
     and private exprsToTerms atomsAreTerms = Choosable.combinations (exprToTerm atomsAreTerms)
 
     and private exprToAtoms (typer : Typer) atomsAreTerms e : atom list list = // returns DNF
@@ -285,7 +286,7 @@ module private DefinitionsToDeclarations =
             exprsToTerms atomsAreTerms ts
             |> Choosable.map (fun ts -> AApply(op, ts))
             |> Choosable.toDNF
-        | t -> failwithf "Can't obtain atom from expr: %O" t
+        | t -> failwithf $"Can't obtain atom from expr: {t}"
     and private exprsToAtoms typer atomsAreTerms = List.map (exprToAtoms typer atomsAreTerms) >> List.product >> List.map List.concat
 
     let private functionExprToTerm = exprToTerm true
@@ -463,7 +464,7 @@ module private DefinitionsToDeclarations =
             | t ->
                 let conds = exprsToAtoms typer assertsToQueries conds
                 let ts = exprToAtoms typer assertsToQueries t
-                conds, List.map (function [t] -> t | ts -> failwithf "Too many atoms in head: %O" ts) ts
+                conds, List.map (function [t] -> t | ts -> failwithf $"Too many atoms in head: {ts}") ts
         let rec eat vars conds = function
             | Forall(vars', body) -> eat (vars @ vars') conds body
             | Or es -> eat vars conds (hence (List.map note es) falsee)

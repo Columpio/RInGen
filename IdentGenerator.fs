@@ -17,7 +17,7 @@ type IdentGenerator() =
             symbols.[prefixStrLow] <- !counter + 1
         else
             symbols.Add(prefixStrLow, 1)
-        sprintf "%s_%d" prefixStr !counter
+        $"%s{prefixStr}_%d{!counter}"
 
 let idgen = IdentGenerator()
 

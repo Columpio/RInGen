@@ -21,7 +21,7 @@ let get (typer : Typer, env) (name, _ as vs : sorted_var) : sorted_var =
     match tryGetFromEnv env vs with
     | Some vs' -> vs'
     | None when typer.containsKey name -> vs
-    | None -> failwithf "Identifier is not found in the environment: %O" vs
+    | None -> failwithf $"Identifier is not found in the environment: {vs}"
 
 let extendOne ((typer, (env_sorts, env_vars)) : Typer * env) ((var : ident), sort) : sorted_var * (Typer * env) =
     let var', env_vars =
@@ -61,4 +61,4 @@ let typeGet (x : ident) (typer, env) =
     | None ->
         match tryTypeCheck x typer with
         | Some t -> t
-        | None -> failwithf "Unknown type: %O" x
+        | None -> failwithf $"Unknown type: {x}"

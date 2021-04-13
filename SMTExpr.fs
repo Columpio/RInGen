@@ -53,7 +53,7 @@ let private parseSymbolAndNumeralAsSort s n =
     let n = parseNumeral n
     match n with
     | 0L -> PrimitiveSort name
-    | _ -> failwithf "Generic sorts are not supported: %s %d" name n
+    | _ -> failwithf $"Generic sorts are not supported: %s{name} %d{n}"
 
 let private parseSortDec (expr : SMTLIBv2Parser.Sort_decContext) =
     parseSymbolAndNumeralAsSort (expr.symbol()) (expr.numeral())
@@ -115,7 +115,7 @@ and private parseTerm ((typer, env) as te) (e : SMTLIBv2Parser.TermContext) =
                 | "not", [arg] -> Not arg
                 | "=>", [i; t] -> Hence(i, t)
                 | "ite", [i; t; e] -> Ite(i, t, e)
-                | e -> failwithf "%O" e
+                | e -> failwithf $"{e}"
             | _ ->
                 let oper = Typer.fillOperation typer (symbol op) (List.map Typer.typeOf args)
                 match op, args with
@@ -224,7 +224,7 @@ let private parseToTerms commands =
             | :? SMTLIBv2Parser.Cmd_setLogicContext->
                 let name = e.GetChild<SMTLIBv2Parser.SymbolContext>(0)
                 SetLogic(parseSymbol name) |> Command, typer
-            | e -> failwithf "%O" e
+            | e -> failwithf $"{e}"
         comm, typer
     let commands = List.ofArray commands
     let comms, _ = List.mapFold toComm Typer.empty commands

@@ -54,7 +54,7 @@ type IDirectoryTransformer<'directory> () =
 
     member x.TransformBenchmarkAndReturn performTransform tipToHorn quiet force directory =
         let outputDirectory = x.GenerateClauses performTransform tipToHorn quiet force directory
-        if not quiet then printfn "CHC systems of directory %s are preprocessed and saved in %O" directory outputDirectory
+        if not quiet then printfn $"CHC systems of directory %s{directory} are preprocessed and saved in {outputDirectory}"
         outputDirectory
 
     interface ITransformer with
@@ -65,13 +65,13 @@ type IDirectoryTransformer<'directory> () =
                 match outputFiles with
                 | [] -> printfn "unknown"
                 | [outputFile] ->
-                    if not quiet then printfn "CHC system in %s is preprocessed and saved in %s" path outputFile
+                    if not quiet then printfn $"CHC system in %s{path} is preprocessed and saved in %s{outputFile}"
                 | _ ->
-                    if not quiet then printfn "Preprocessing of %s produced %d files:" path (List.length outputFiles)
+                    if not quiet then printfn $"Preprocessing of %s{path} produced %d{List.length outputFiles} files:"
                     if not quiet then List.iter (printfn "%s") outputFiles
                 x.GenerateClausesSingle performTransform tipToHorn path outputPath |> ignore
             | _ when Directory.Exists(path) -> x.TransformBenchmarkAndReturn performTransform tipToHorn quiet force path |> ignore
-            | _ -> failwithf "There is no such file or directory: %s" path
+            | _ -> failwithf $"There is no such file or directory: %s{path}"
         member x.TransformClauses ts = x.TransformClauses ts
 
     abstract FileExtension : string
@@ -92,7 +92,7 @@ type IDirectoryTransformer<'directory> () =
     member x.SaveClauses directory dst commands =
         let lines = List.collect x.CommandsToStrings commands
         for testIndex, newTest in List.indexed lines do
-            let path = Path.ChangeExtension(dst, sprintf ".%d%s" testIndex x.FileExtension)
+            let path = Path.ChangeExtension(dst, $".%d{testIndex}%s{x.FileExtension}")
 //            let linearityPostfix = if isNonLinearCHCSystem newTest then ".NonLin" else ".Lin"
 //            let fullPath = directory + linearityPostfix + cleanPath path
             let fullPath = Path.Join(x.DirectoryForTransformed directory, path)
@@ -112,7 +112,7 @@ type IDirectoryTransformer<'directory> () =
             seq {
                 let lines = List.collect x.CommandsToStrings transformed
                 for testIndex, newTest in List.indexed lines do
-                    let path = Path.ChangeExtension(filename, sprintf ".%s.%d%s" x.Name testIndex x.FileExtension)
+                    let path = Path.ChangeExtension(filename, $".%s{x.Name}.%d{testIndex}%s{x.FileExtension}")
                     let fullPath = outputPath path
                     File.WriteAllLines(fullPath, newTest)
                     yield fullPath
@@ -120,7 +120,7 @@ type IDirectoryTransformer<'directory> () =
         paths
 
 let private generateClauses (x : IDirectoryTransformer<string>) performTransform tipToHorn quiet force directory =
-    let referenceDirectory = sprintf "%s.Z3.Z3Answers" directory
+    let referenceDirectory = $"%s{directory}.Z3.Z3Answers"
     let shouldCompareResults = false //TODO
     let shouldBeTransformed (src : string) dst =
         let ext = Path.GetExtension(src)
@@ -133,7 +133,7 @@ let private generateClauses (x : IDirectoryTransformer<string>) performTransform
     let mutable total_generated = 0
     let mapFile (src : string) dst =
         if shouldBeTransformed src dst then
-            if not quiet then printfn "Transforming: %s" src
+            if not quiet then printfn $"Transforming: %s{src}"
             files <- files + 1
             let exprs = SMTExpr.parseFile src
             try
@@ -141,11 +141,11 @@ let private generateClauses (x : IDirectoryTransformer<string>) performTransform
                     let newTests = x.CodeTransformation performTransform tipToHorn exprs
                     total_generated <- total_generated + x.SaveClauses directory dst newTests
                 successful <- successful + 1
-            with e -> if not quiet then printfn "Exception in %s: %O" src e.Message
+            with e -> if not quiet then printfn $"Exception in %s{src}: {e.Message}"
     walk_through directory "" mapFile |> ignore
-    if not quiet then printfn "All files:       %d" files
-    if not quiet then printfn "Successful:      %d" successful
-    if not quiet then printfn "Total generated: %d" total_generated
+    if not quiet then printfn $"All files:       %d{files}"
+    if not quiet then printfn $"Successful:      %d{successful}"
+    if not quiet then printfn $"Total generated: %d{total_generated}"
     x.DirectoryForTransformed directory
 
 [<AbstractClass>]
@@ -194,7 +194,7 @@ type IDirectorySolver<'directory>() =
     abstract member Solve : string -> SolverResult
 
     member x.SolveWithTime quiet filename =
-        if not quiet then printfn "Solving %s with timelimit %d seconds" filename SECONDS_TIMEOUT
+        if not quiet then printfn $"Solving %s{filename} with timelimit %d{SECONDS_TIMEOUT} seconds"
         let timer = Stopwatch()
         timer.Start()
         let result = (x :> ISolver).Solve filename
@@ -213,22 +213,22 @@ type IDirectorySolver<'directory>() =
                 match outputFiles with
                 | [] -> printfn "unknown"
                 | [outputFile] ->
-                    if not quiet then printfn "CHC system in %s is preprocessed and saved in %s" path outputFile
+                    if not quiet then printfn $"CHC system in %s{path} is preprocessed and saved in %s{outputFile}"
                     let result, time = x.SolveWithTime quiet outputFile
                     if quiet then printfn "%s" <| quietModeToString result else
-                    printfn "Solver run on %s and the result is %O which was obtained in %d msec." outputFile result time
+                    printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
                 | _ ->
-                    if not quiet then printfn "Preprocessing of %s produced %d files:" path (List.length outputFiles)
+                    if not quiet then printfn $"Preprocessing of %s{path} produced %d{List.length outputFiles} files:"
                     if not quiet then List.iter (printfn "%s") outputFiles
                     for outputFile in outputFiles do
                         let result, time = x.SolveWithTime quiet outputFile
-                        if not quiet then printfn "Solver run on %s and the result is %O which was obtained in %d msec." outputFile result time
+                        if not quiet then printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
                 x.GenerateClausesSingle performTransform tipToHorn path outputPath |> ignore
             | _ when Directory.Exists(path) ->
                 let outputDirectory = x.TransformBenchmarkAndReturn performTransform tipToHorn quiet force path
                 let resultsDirectory = x.RunOnBenchmarkSet force quiet outputDirectory
-                if not quiet then printfn "Solver run on %O and saved results in %s" outputDirectory resultsDirectory
-            | _ -> failwithf "There is no such file or directory: %s" path
+                if not quiet then printfn $"Solver run on {outputDirectory} and saved results in %s{resultsDirectory}"
+            | _ -> failwithf $"There is no such file or directory: %s{path}"
 
 [<AbstractClass>]
 type IConcreteSolver () =
@@ -237,7 +237,7 @@ type IConcreteSolver () =
     override x.GenerateClauses performTransform tipToHorn quiet force directory =
         generateClauses x performTransform tipToHorn quiet force directory
 
-    member x.AnswersDirectory directory = sprintf "%s.%sAnswers" directory x.Name
+    member x.AnswersDirectory directory = $"%s{directory}.%s{x.Name}Answers"
 
     abstract member WorkingDirectory : string -> string
     default x.WorkingDirectory (filename : string) = Path.GetDirectoryName(filename)
@@ -269,12 +269,12 @@ type IConcreteSolver () =
             Directory.CreateDirectory(Path.GetDirectoryName(dst)) |> ignore
             if Path.GetExtension(src) = x.FileExtension && (overwrite || not <| File.Exists(dst)) then
                 try
-                    if not quiet then printfn "Running %s on %s" x.Name src
+                    if not quiet then printfn $"Running %s{x.Name} on %s{src}"
                     let answer, time = x.SolveWithTime false src
-                    File.WriteAllText(dst, sprintf "%d,%O" time answer)
-                with e -> if not quiet then printfn "Exception in %s: %s" src dst
-            elif not quiet then printfn "%s skipping %s (answer exists)" x.Name src
-        walk_through dir (sprintf ".%sAnswers" x.Name) run_file
+                    File.WriteAllText(dst, $"%d{time},{answer}")
+                with e -> if not quiet then printfn $"Exception in %s{src}: %s{dst}"
+            elif not quiet then printfn $"%s{x.Name} skipping %s{src} (answer exists)"
+        walk_through dir $".%s{x.Name}Answers" run_file
 
 type CVC4FiniteSolver () =
     inherit IConcreteSolver ()
@@ -282,7 +282,7 @@ type CVC4FiniteSolver () =
 
     override x.Name = "CVC4Finite"
     override x.BinaryName = "cvc4"
-    override x.BinaryOptions filename = sprintf "--finite-model-find --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
+    override x.BinaryOptions filename = $"--finite-model-find --tlimit=%d{MSECONDS_TIMEOUT ()} %s{filename}"
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
@@ -301,7 +301,7 @@ type EldaricaSolver () =
 
     override x.Name = "Eldarica"
     override x.BinaryName = "eld"
-    override x.BinaryOptions filename = sprintf "-horn -hsmt -t:%d %s" SECONDS_TIMEOUT filename
+    override x.BinaryOptions filename = $"-horn -hsmt -t:%d{SECONDS_TIMEOUT} %s{filename}"
 
     override x.InterpretResult error raw_output =
         let output = Environment.split raw_output
@@ -318,7 +318,7 @@ type Z3Solver () =
 
     override x.Name = "Z3"
     override x.BinaryName = "z3"
-    override x.BinaryOptions filename = sprintf "-smt2 -nw -memory:%d -T:%d %s" MEMORY_LIMIT_MB SECONDS_TIMEOUT filename
+    override x.BinaryOptions filename = $"-smt2 -nw -memory:%d{MEMORY_LIMIT_MB} -T:%d{SECONDS_TIMEOUT} %s{filename}"
 
     override x.InterpretResult error raw_output =
         let output = Environment.split raw_output
@@ -337,7 +337,7 @@ type CVC4IndSolver () =
     override x.Name = "CVC4Ind"
     override x.BinaryName = "cvc4"
     override x.BinaryOptions filename =
-        sprintf "--quant-ind --quant-cf --conjecture-gen --conjecture-gen-per-round=3 --full-saturate-quant --tlimit=%d %s" (MSECONDS_TIMEOUT ()) filename
+        $"--quant-ind --quant-cf --conjecture-gen --conjecture-gen-per-round=3 --full-saturate-quant --tlimit=%d{MSECONDS_TIMEOUT ()} %s{filename}"
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
@@ -369,7 +369,7 @@ type VeriMAPiddtSolver () =
 
     override x.Name = binaryName
     override x.BinaryName = binaryName
-    override x.BinaryOptions filename = sprintf "--timeout=%d --check-sat %s" SECONDS_TIMEOUT filename
+    override x.BinaryOptions filename = $"--timeout=%d{SECONDS_TIMEOUT} --check-sat %s{filename}"
     override x.FileExtension = ".pl"
     override x.TransformClauses chcSystem = adtTransformClauses chcSystem
 
@@ -399,10 +399,9 @@ type AllSolver () =
         UNKNOWN "All solvers"
 
     override x.GenerateClauses performTransform tipToHorn quiet force directory =
-        let force = true
         let forceGenerateClauses (solver : IConcreteSolver) =
-            if not quiet then printfn "Generating clauses for %s" solver.Name
-            solver.GenerateClauses performTransform tipToHorn quiet force directory
+            if not quiet then printfn $"Generating clauses for %s{solver.Name}"
+            solver.GenerateClauses performTransform tipToHorn quiet false directory
         let paths =
             if force
                 then solvers |> List.map forceGenerateClauses

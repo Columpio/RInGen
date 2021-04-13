@@ -37,7 +37,7 @@ let tryTypeCheck f (typer : Typer) = Option.map Operation.returnType (typer.tryF
 let getOperation (typer : Typer) opName =
     match typer.tryFind opName with
     | Some r -> r
-    | _ -> failwithf "Unknown operation: %O" opName
+    | _ -> failwithf $"Unknown operation: {opName}"
 let fillOperation (typer : Typer) opName argTypes =
     let op = getOperation typer opName
     fillDummyOperationTypes op argTypes

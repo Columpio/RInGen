@@ -5,7 +5,7 @@ open System.IO
 let __notImplemented__() = failwith "Not implemented!"
 let __unreachable__() = failwith "Unreachable!"
 
-let private mapFirstChar x f = if x = "" then "" else sprintf "%c%s" (f(x.Chars(0))) (x.Substring(1))
+let private mapFirstChar x f = if x = "" then "" else $"%c{f(x.Chars(0))}%s{x.Substring(1)}"
 type System.String with
     member x.ToLowerFirstChar() = mapFirstChar x System.Char.ToLower
     member x.ToUpperFirstChar() = mapFirstChar x System.Char.ToUpper
@@ -161,27 +161,27 @@ type smtExpr =
     override x.ToString() =
         let term_list_to_string = List.map toString >> join " "
         let atom_list_to_string = List.map toString >> join " "
-        let sorted_vars_to_string = List.map (fun (v, e) -> sprintf "(%O %O)" v e) >> join " "
-        let bindings_to_string = List.map (fun ((v, _), e) -> sprintf "(%O %O)" v e) >> join " "
+        let sorted_vars_to_string = List.map (fun (v, e) -> $"({v} {e})") >> join " "
+        let bindings_to_string = List.map (fun ((v, _), e) -> $"({v} {e})") >> join " "
         match x with
-        | Apply(f, xs) -> sprintf "(%O %s)" f (term_list_to_string xs)
+        | Apply(f, xs) -> $"({f} %s{term_list_to_string xs})"
         | Number n -> toString n
         | BoolConst true -> "true"
         | BoolConst false -> "false"
         | Ident(x, _) -> x.ToString()
         | Let(bindings, body) ->
-            sprintf "(let (%s) %O)" (bindings_to_string bindings) body
+            $"(let (%s{bindings_to_string bindings}) {body})"
         | Match(t, cases) ->
-            sprintf "(match %O (%s))" t (cases |> List.map (fun (pat, t) -> sprintf "(%O %O)" pat t) |> join " ")
-        | Ite(i, t, e) -> sprintf "(ite %O %O %O)" i t e
-        | And xs -> sprintf "(and %s)" (atom_list_to_string xs)
-        | Or xs -> sprintf "(or %s)" (atom_list_to_string xs)
-        | Not x -> sprintf "(not %O)" x
-        | Hence(i, t) -> sprintf "(=> %O %O)" i t
+            sprintf "(match %O (%s))" t (cases |> List.map (fun (pat, t) -> $"({pat} {t})") |> join " ")
+        | Ite(i, t, e) -> $"(ite {i} {t} {e})"
+        | And xs -> $"(and %s{atom_list_to_string xs})"
+        | Or xs -> $"(or %s{atom_list_to_string xs})"
+        | Not x -> $"(not {x})"
+        | Hence(i, t) -> $"(=> {i} {t})"
         | Forall(vars, body) ->
-            sprintf "(forall (%s) %O)" (sorted_vars_to_string vars) body
+            $"(forall (%s{sorted_vars_to_string vars}) {body})"
         | Exists(vars, body) ->
-            sprintf "(exists (%s) %O)" (sorted_vars_to_string vars) body
+            $"(exists (%s{sorted_vars_to_string vars}) {body})"
 type function_def = symbol * sorted_var list * sort * smtExpr
 type term =
     | TConst of ident
@@ -198,7 +198,7 @@ let typeOfTerm = function
     | TConst(("false")) -> boolSort
     | TConst c ->
         let r = ref 0
-        if System.Int32.TryParse(c, r) then integerSort else failwithf "Unknown constant type: %O" c
+        if System.Int32.TryParse(c, r) then integerSort else failwithf $"Unknown constant type: {c}"
     | TIdent(_, typ)
     | TApply(ElementaryOperation(_, _, typ), _)
     | TApply(UserDefinedOperation(_, _, typ), _) -> typ
@@ -212,8 +212,8 @@ type atom =
         match x with
         | Top -> "true"
         | Bot -> "false"
-        | Equal(t1, t2) -> sprintf "(= %O %O)" t1 t2
-        | Distinct(t1, t2) -> sprintf "(not (= %O %O))" t1 t2
+        | Equal(t1, t2) -> $"(= {t1} {t2})"
+        | Distinct(t1, t2) -> $"(not (= {t1} {t2}))"
         | AApply(op, []) -> op.ToString()
         | AApply(op, ts) -> sprintf "(%O %s)" op (ts |> List.map toString |> join " ")
 type rule =
@@ -221,17 +221,17 @@ type rule =
     | ForallRule of sorted_var list * rule
     | ExistsRule of sorted_var list * rule
     override x.ToString() =
-        let quant quantName vars = if List.isEmpty vars then id else vars |> List.map (fun (v, e) -> sprintf "(%O %O)" v e) |> join " " |> sprintf "(%s (%s)\n\t%s)" quantName
+        let quant quantName vars = if List.isEmpty vars then id else vars |> List.map (fun (v, e) -> $"({v} {e})") |> join " " |> sprintf "(%s (%s)\n\t%s)" quantName
         let rec basicPrint x =
             match x with
             | BaseRule(xs, x) ->
                 match xs with
-                | [] -> sprintf "%O" x
-                | [y] -> sprintf "(=> %O\n\t    %O)" y x
+                | [] -> $"{x}"
+                | [y] -> $"(=> {y}\n\t    {x})"
                 | _ -> sprintf "(=>\t(and %s)\n\t\t%O)" (xs |> List.map toString |> join "\n\t\t\t") x
             | ForallRule(vars, body) -> quant "forall" vars (basicPrint body)
             | ExistsRule(vars, body) -> quant "exists" vars (basicPrint body)
-        sprintf "(assert %s)" (basicPrint x)
+        $"(assert %s{basicPrint x})"
 let rec forallrule = function
     | [] -> id
     | vars -> function
@@ -248,7 +248,7 @@ let (|Rule|_|) = function
     | ForallRule(vars, BaseRule(f, t)) -> Some(vars, f, t)
     | BaseRule(f, t) -> Some([], f, t)
     | _ -> None
-let private sorted_var_to_string = List.map (fun (v, s) -> sprintf "(%O %O)" v s) >> join " "
+let private sorted_var_to_string = List.map (fun (v, s) -> $"({v} {s})") >> join " "
 type definition =
     | DefineFun of function_def
     | DefineFunRec of function_def
@@ -256,14 +256,14 @@ type definition =
     override x.ToString() =
         match x with
         | DefineFunRec(name, vars, returnType, body) ->
-            sprintf "(define-fun-rec %O (%s) %O %O)" (Symbols.sprintForDeclare name) (sorted_var_to_string vars) returnType body
+            $"(define-fun-rec {Symbols.sprintForDeclare name} (%s{sorted_var_to_string vars}) {returnType} {body})"
         | DefineFun(name, vars, returnType, body) ->
-            sprintf "(define-fun %O (%s) %O %O)" (Symbols.sprintForDeclare name) (sorted_var_to_string vars) returnType body
+            $"(define-fun {Symbols.sprintForDeclare name} (%s{sorted_var_to_string vars}) {returnType} {body})"
         | DefineFunsRec fs ->
             let signs, bodies = List.map (fun (n, vs, s, b) -> (n, vs, s), b) fs |> List.unzip
-            let signs = signs |> List.map (fun (name, vars, sort) -> sprintf "(%s (%s) %O)" (Symbols.sprintForDeclare name) (sorted_var_to_string vars) sort) |> join " "
+            let signs = signs |> List.map (fun (name, vars, sort) -> $"(%s{Symbols.sprintForDeclare name} (%s{sorted_var_to_string vars}) {sort})") |> join " "
             let bodies = bodies |> List.map toString |> join " "
-            sprintf "(define-funs-rec (%s) (%s))" signs bodies
+            $"(define-funs-rec (%s{signs}) (%s{bodies}))"
 type command =
     | CheckSat
     | GetModel
@@ -277,7 +277,7 @@ type command =
     | DeclareConst of symbol * sort
     override x.ToString() =
         let constrs_to_string =
-            List.map (fun (c, args) -> sprintf "(%O %s)" c (sorted_var_to_string args)) >> join " " >> sprintf "(%s)"
+            List.map (fun (c, args) -> $"({c} %s{sorted_var_to_string args})") >> join " " >> sprintf "(%s)"
         let dtsToString dts =
             let sorts, decs = List.unzip dts
             let sorts = sorts |> List.map (sprintf "(%O 0)") |> join " "
@@ -286,10 +286,10 @@ type command =
         | Exit -> "(exit)"
         | CheckSat -> "(check-sat)"
         | GetModel -> "(get-model)"
-        | GetInfo s -> sprintf "(get-info %s)" s
-        | SetLogic l -> sprintf "(set-logic %s)" l
-        | DeclareConst(name, sort) -> sprintf "(declare-const %O %O)" name sort
-        | DeclareSort sort -> sprintf "(declare-sort %O 0)" sort
+        | GetInfo s -> $"(get-info %s{s})"
+        | SetLogic l -> $"(set-logic %s{l})"
+        | DeclareConst(name, sort) -> $"(declare-const {name} {sort})"
+        | DeclareSort sort -> $"(declare-sort {sort} 0)"
         | DeclareFun(name, args, ret) -> sprintf "(declare-fun %s (%s) %O)" (Symbols.sprintForDeclare name) (args |> List.map toString |> join " ") ret
         | DeclareDatatype(name, constrs) -> dtsToString [name, constrs]
             // sprintf "(declare-datatype %O %s)" name (constrs_to_string constrs)
@@ -302,7 +302,7 @@ type originalCommand =
         match x with
         | Definition df -> df.ToString()
         | Command cmnd -> cmnd.ToString()
-        | Assert f -> sprintf "(assert %O)" f
+        | Assert f -> $"(assert {f})"
 type transformedCommand =
     | OriginalCommand of command
     | TransformedCommand of rule

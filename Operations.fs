@@ -25,7 +25,7 @@ module Operation =
     let private operationToIdent = function
         | UserDefinedOperation(name, [], ret) -> Ident(name, ret)
         | ElementaryOperation(name, [], ret) -> Ident(name, ret)
-        | op -> failwithf "Can't create identifier from operation: %O" op
+        | op -> failwithf $"Can't create identifier from operation: {op}"
 
 let arithmeticOperations =
     let infix = true
@@ -79,14 +79,14 @@ let opSubstitutor empty opMap t1 t2 =
     let typ1 = typeOfTerm t1
     let typ2 = typeOfTerm t2
     if typ1 <> typ2
-        then failwithf "Disequality of different sorts: %O and %O" typ1 typ2
+        then failwithf $"Disequality of different sorts: {typ1} and {typ2}"
         else congruenceBySort empty opMap typ1 t1 t2
 
 
 let identToUserOp name sort = Operation.makeUserOperationFromSorts name [] sort
 let userOpToIdent = function
     | UserDefinedOperation(name, [], sort) -> TIdent(name, sort)
-    | op -> failwithf "Can't create identifier from operation: %O" op
+    | op -> failwithf $"Can't create identifier from operation: {op}"
 
 let selectFromArraySort arraySort =
     let indexSort, itemSort = argumentSortsOfArraySort arraySort

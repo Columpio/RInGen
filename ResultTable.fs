@@ -38,12 +38,12 @@ let GenerateReadableResultTable =
         csv.WriteField("")
 
     let writeSolverResult (csv : CsvWriter) time result =
-        csv.WriteField(sprintf "%d" time)
-        csv.WriteField(sprintf "%s" result)
+        csv.WriteField$"%d{time}"
+        csv.WriteField$"%s{result}"
 
     let writeHeader (csv : CsvWriter) solverName =
-        csv.WriteField(sprintf "%sTime" solverName)
-        csv.WriteField(sprintf "%sResult" solverName)
+        csv.WriteField$"%s{solverName}Time"
+        csv.WriteField$"%s{solverName}Result"
 
     GenerateResultTable writeHeader writeSolverResult writeEmptyResult
 
@@ -92,7 +92,7 @@ let PrintReadableResultTable names directories =
                 else "", ""
             let time = time.PadRight(timeWidth)
             let answer = answer.PadRight(resultWidth)
-            printf "%s %s " time answer
+            printf $"%s{time} %s{answer} "
         printfn ""
     printf "%s " ("Name".PadRight(nameWidth))
     names |> List.map (fun (name : string) -> name.PadRight(timeWidth + resultWidth + 2)) |> join "" |> printfn "%s"

@@ -35,7 +35,7 @@ let private mapOp = function
 
 let rec private mapApply vars op ts =
     match mapOp op, mapTerms vars ts with
-    | (op, true), [t1; t2] -> sprintf "(%s %s %s)" t1 op t2
+    | (op, true), [t1; t2] -> $"(%s{t1} %s{op} %s{t2})"
     | (_, true), _ -> __unreachable__()
     | (op, false), [] -> op
     | (op, false), ts -> ts |> join ", " |> sprintf "%s(%s)" op
@@ -50,8 +50,8 @@ let private mapAtomInPremise vars = function
     | Bot -> Some queryName
     | Top -> None
     | AApply(op, ts) -> mapApply vars op ts |> Some
-    | Equal(t1, t2) -> sprintf "%s = %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
-    | Distinct(t1, t2) -> sprintf "%s =\= %s" (mapTerm vars t1) (mapTerm vars t2) |> Some
+    | Equal(t1, t2) -> $"%s{mapTerm vars t1} = %s{mapTerm vars t2}" |> Some
+    | Distinct(t1, t2) -> $"%s{mapTerm vars t1} =\= %s{mapTerm vars t2}" |> Some
 let private mapAtomInHead vars a =
     match mapAtomInPremise vars a with
     | None ->
@@ -73,7 +73,7 @@ let rec private mapRule vars = function
                 match premises with
                 | [] -> head
                 | _ -> premises |> join ", " |> sprintf "%s :- %s" head
-            Some (sprintf "%s." clause)
+            Some $"%s{clause}."
 
 let private mapDatatypeDeclaration (name, cs) =
     let handleConstr (constr, selectors) =
@@ -93,7 +93,7 @@ let private mapPredicateDeclaration name args =
         match args with
         | [] -> name
         | _ -> args |> join ", " |> sprintf "%s(%s)" name
-    sprintf ":- pred %s." def
+    $":- pred %s{def}."
 
 let private mapFunctionDeclaration name args ret =
     if ret <> boolSort then None else Some [mapPredicateDeclaration name args]

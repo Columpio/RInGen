@@ -33,7 +33,7 @@ let solverByName (solverName : string) =
     | _ when solverName = "verimap" -> VeriMAPiddtSolver() :> ISolver
     | _ when solverName = "cvc4f" -> CVC4FiniteSolver() :> ISolver
     | _ when solverName = "all" -> AllSolver() :> ISolver
-    | _ -> failwithf "Unknown solver: %s. Specify one of: z3, eldarica, cvc4f, cvc4ind, verimap, all." solverName
+    | _ -> failwithf $"Unknown solver: %s{solverName}. Specify one of: z3, eldarica, cvc4f, cvc4ind, verimap, all."
 
 let solve (solveOptions : solveOptions) =
     match solveOptions.timelimit with
