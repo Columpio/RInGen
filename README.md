@@ -8,7 +8,8 @@ It can optionally run a number of CHC and other solvers over output clauses, cur
 [Eldarica](https://github.com/uuverifiers/eldarica),
 [CVC4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf),
 [CVC4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/),
-[VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/).
+[VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/),
+[Vampire](https://vprover.github.io/).
 
 ## Features
 - [x] Supports `define-fun`, `define-fun-rec` and `define-funs-rec` translation to
@@ -24,7 +25,7 @@ predicates
 
 ## Requirements
 - [`.NET core >= 3.1`](https://dotnet.microsoft.com/download/dotnet/3.1)
-- (optionally, to run solvers) `z3`, `eldarica`, `cvc4`, `VeriMAP-iddt` executables accessible
+- (optionally, to run solvers) `z3`, `eldarica`, `cvc4`, `VeriMAP-iddt`, `vampire` executables accessible
 in the environment
 
 ## Build
@@ -97,9 +98,10 @@ Run a specific solver after processing. Available options:
 - [CVC4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf) (`cvc4f`)
 - [CVC4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/) (`cvc4ind`)
 - [VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/) (`verimap`)
+- [Vampire in SMTLIB2 mode](https://vprover.github.io/)
 - all the above solvers (`--solver all`)
-> Note that in order to run `Z3`, `Eldarica`, `CVC4` and `VeriMAP` one should have
-> `z3`, `eld`, `cvc4` and `VeriMAP-iddt` executables accessible in the environment.
+> Note that in order to run `Z3`, `Eldarica`, `CVC4`, `Vampire` and `VeriMAP` one should have
+> `z3`, `eld`, `cvc4`, `vampire` and `VeriMAP-iddt` executables accessible in the environment.
 > The easiest way to do that is to prefix tool running with:
 > 
 > `env 'VeriMAP-iddt=/FULL/PATH/TO/VeriMAP-iddt-linux_x86_64/VeriMAP-iddt'`

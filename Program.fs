@@ -11,7 +11,7 @@ type solveOptions = {
     [<Option('t', "timelimit", HelpText = "Time limit, in seconds (default 300)")>] timelimit : int option
     [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
     [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as input PATH)")>] output : string option
-    [<Value(0, MetaValue = "SOLVER_NAME", Required = true, HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | verimap | all) after processing")>] solver : string
+    [<Value(0, MetaValue = "SOLVER_NAME", Required = true, HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | verimap | vampire | all) after processing")>] solver : string
     [<Value(1, MetaValue = "PATH", Required = true, HelpText = "Full path to file or directory")>] path : string
 }
 
@@ -31,9 +31,10 @@ let solverByName (solverName : string) =
     | _ when solverName = "eldarica" -> EldaricaSolver() :> ISolver
     | _ when solverName = "cvc4ind" -> CVC4IndSolver() :> ISolver
     | _ when solverName = "verimap" -> VeriMAPiddtSolver() :> ISolver
+    | _ when solverName = "vampire" -> VampireSolver() :> ISolver
     | _ when solverName = "cvc4f" -> CVC4FiniteSolver() :> ISolver
     | _ when solverName = "all" -> AllSolver() :> ISolver
-    | _ -> failwithf $"Unknown solver: %s{solverName}. Specify one of: z3, eldarica, cvc4f, cvc4ind, verimap, all."
+    | _ -> failwithf $"Unknown solver: %s{solverName}. Specify one of: z3, eldarica, cvc4f, cvc4ind, verimap, vampire, all."
 
 let solve (solveOptions : solveOptions) =
     match solveOptions.timelimit with

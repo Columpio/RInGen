@@ -239,8 +239,13 @@ type IConcreteSolver () =
 
     member x.AnswersDirectory directory = $"%s{directory}.%s{x.Name}Answers"
 
-    abstract member WorkingDirectory : string -> string
-    default x.WorkingDirectory (filename : string) = Path.GetDirectoryName(filename)
+    abstract member ShouldSearchForBinaryInEnvironment : bool
+
+    member private x.WorkingDirectory (filename : string) =
+        if x.ShouldSearchForBinaryInEnvironment
+            then Environment.GetEnvironmentVariable(x.BinaryName)
+            else filename
+        |> Path.GetDirectoryName
 
     member private x.SetupProcess (psinfo : ProcessStartInfo) filename =
         let path = ref ""
@@ -278,6 +283,7 @@ type IConcreteSolver () =
 
 type CVC4FiniteSolver () =
     inherit IConcreteSolver ()
+    override x.ShouldSearchForBinaryInEnvironment = false
     override x.TransformClauses chcSystem = sortTransformClauses chcSystem
 
     override x.Name = "CVC4Finite"
@@ -297,6 +303,7 @@ type CVC4FiniteSolver () =
 
 type EldaricaSolver () =
     inherit IConcreteSolver ()
+    override x.ShouldSearchForBinaryInEnvironment = true
     override x.TransformClauses chcSystem = adtTransformClauses chcSystem
 
     override x.Name = "Eldarica"
@@ -314,6 +321,7 @@ type EldaricaSolver () =
 
 type Z3Solver () =
     inherit IConcreteSolver ()
+    override x.ShouldSearchForBinaryInEnvironment = false
     override x.TransformClauses chcSystem = adtTransformClauses chcSystem
 
     override x.Name = "Z3"
@@ -332,6 +340,7 @@ type Z3Solver () =
 
 type CVC4IndSolver () =
     inherit IConcreteSolver ()
+    override x.ShouldSearchForBinaryInEnvironment = false
     override x.TransformClauses chcSystem = adtTransformClauses chcSystem
 
     override x.Name = "CVC4Ind"
@@ -364,9 +373,8 @@ type VeriMAPiddtSolver () =
         | _ -> true
 
     let binaryName = "VeriMAP-iddt"
-    let solverDirectory = Path.GetDirectoryName(Environment.GetEnvironmentVariable(binaryName))
-    override x.WorkingDirectory (filename : string) = solverDirectory
 
+    override x.ShouldSearchForBinaryInEnvironment = true
     override x.Name = binaryName
     override x.BinaryName = binaryName
     override x.BinaryOptions filename = $"--timeout=%d{SECONDS_TIMEOUT} --check-sat %s{filename}"
@@ -384,9 +392,33 @@ type VeriMAPiddtSolver () =
         | _::line::_ when line.Contains("Answer") && line.EndsWith("false") -> UNSAT
         | _ -> UNKNOWN raw_output
 
+type VampireSolver () =
+    inherit IConcreteSolver ()
+
+    override x.ShouldSearchForBinaryInEnvironment = true
+    override x.Name = "Vampire"
+    override x.BinaryName = "vampire"
+    override x.BinaryOptions filename =
+        $"--input_syntax smtlib2 --output_mode smtcomp --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"
+
+    override x.TransformClauses chcSystem =
+        let chcs = adtTransformClauses chcSystem
+        let setlogic = OriginalCommand <| SetLogic "UFDT"
+        List.map (List.map (function OriginalCommand (SetLogic _) -> setlogic | c -> c)) chcs
+
+    override x.InterpretResult error raw_output =
+        if error <> "" then ERROR(error) else
+        let output = Environment.split raw_output
+        match output with
+        | _ when raw_output = "" -> TIMELIMIT
+        | "unknown"::_ -> UNKNOWN ""
+        | "unsat"::_ -> UNSAT
+        | "sat"::_ -> SAT
+        | _ -> UNKNOWN raw_output
+
 type AllSolver () =
     inherit IDirectorySolver<string list>()
-    let solvers : IConcreteSolver list = [Z3Solver(); EldaricaSolver(); CVC4IndSolver(); CVC4FiniteSolver(); VeriMAPiddtSolver()]
+    let solvers : IConcreteSolver list = [Z3Solver(); EldaricaSolver(); CVC4IndSolver(); CVC4FiniteSolver(); VeriMAPiddtSolver(); VampireSolver()]
 
     override x.Name = "AllSolvers"
     override x.BinaryName = "AllSolvers"
