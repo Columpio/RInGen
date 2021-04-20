@@ -7,10 +7,17 @@ open SolverResult
 
 let private resultRegex = Regex @"(\d+),(\w+)"
 
+let rawFileResult filename =
+    if not <| File.Exists(filename) then None else
+    let result = resultRegex.Match(File.ReadAllLines(filename).[0]).Groups
+    let time = result.[1].Value
+    let answer = result.[2].Value
+    Some (time, answer)
+
 let private substituteRelations exts filenames =
     List.map2 (fun ext filename -> Path.ChangeExtension(filename, ext)) exts filenames
 
-let private GenerateResultTable writeHeader writeSolverResult writeEmptyResult (names : string list) (exts : string list) directories =
+let private GenerateResultTable writeHeader writeResult (names : string list) (exts : string list) directories =
     let filename = Path.ChangeExtension(Path.GetTempFileName(), "csv")
     use writer = new StreamWriter(filename)
     use csv = new CsvWriter(writer, CultureInfo.InvariantCulture)
@@ -22,47 +29,42 @@ let private GenerateResultTable writeHeader writeSolverResult writeEmptyResult (
         csv.WriteField(testName)
         let realFileNames = substituteRelations exts resultFileNames
         for resultFileName in realFileNames do
-            if File.Exists(resultFileName) then
-                let result = resultRegex.Match(File.ReadAllLines(resultFileName).[0]).Groups
-                let time = int <| result.[1].Value
-                let answer = result.[2].Value
-                writeSolverResult csv time answer
-            else writeEmptyResult csv
+            writeResult csv <| rawFileResult resultFileName
         csv.NextRecord()
     walk_through_simultaneously directories generateResultLine
     filename
 
 let GenerateReadableResultTable =
-    let writeEmptyResult (csv : CsvWriter) =
-        csv.WriteField("")
-        csv.WriteField("")
-
-    let writeSolverResult (csv : CsvWriter) time result =
-        csv.WriteField$"%d{time}"
-        csv.WriteField$"%s{result}"
+    let writeResult (csv : CsvWriter) result =
+        let time, answer = Option.defaultValue ("", "") result
+        csv.WriteField($"%s{time}")
+        csv.WriteField($"%s{answer}")
 
     let writeHeader (csv : CsvWriter) solverName =
         csv.WriteField$"%s{solverName}Time"
         csv.WriteField$"%s{solverName}Result"
 
-    GenerateResultTable writeHeader writeSolverResult writeEmptyResult
+    GenerateResultTable writeHeader writeResult
 
 let GenerateLaTeXResultTable =
     let timeToString n = n |> sprintf "%d"
+    let TIMEOUT = timeToString <| 2 * (MSECONDS_TIMEOUT ())
     let writeEmptyResult (csv : CsvWriter) =
-        csv.WriteField(timeToString <| 2 * (MSECONDS_TIMEOUT ()))
+        csv.WriteField(TIMEOUT)
 
-    let writeSolverResult (csv : CsvWriter) time result =
-        match parseSolverResult result with
-        | SAT
-        | UNSAT
-        | TIMELIMIT -> csv.WriteField(timeToString time)
-        | _ -> writeEmptyResult csv
+    let writeResult (csv : CsvWriter) = parseResultPair >> function
+        | Some (time, answer) ->
+            match answer with
+            | SAT
+            | UNSAT
+            | TIMELIMIT -> csv.WriteField(timeToString time)
+            | _ -> writeEmptyResult csv
+        | None -> writeEmptyResult csv
 
     let writeHeader (csv : CsvWriter) solverName =
         csv.WriteField(solverName)
 
-    GenerateResultTable writeHeader writeSolverResult writeEmptyResult
+    GenerateResultTable writeHeader writeResult
 
 let PrintReadableResultTable names directories =
     let timeWidth, resultWidth, nameWidth =
@@ -72,24 +74,17 @@ let PrintReadableResultTable names directories =
         let calcWidths (testName : string) resultFileNames =
             nameWidth <- max nameWidth testName.Length
             for resultFileName in resultFileNames do
-                if File.Exists(resultFileName) then
-                    let result = resultRegex.Match(File.ReadAllLines(resultFileName).[0]).Groups
-                    let time = result.[1].Value.Length
-                    let answer = result.[2].Value.Length
-                    timeWidth <- max timeWidth time
-                    resultWidth <- max resultWidth answer
+                match rawFileResult resultFileName with
+                | Some (time, answer) ->
+                    timeWidth <- max timeWidth time.Length
+                    resultWidth <- max resultWidth answer.Length
+                | None -> ()
         walk_through_simultaneously directories calcWidths
         timeWidth, resultWidth, nameWidth
     let printResultLine (testName : string) resultFileNames =
         printf "%s " <| testName.PadRight(nameWidth)
         for resultFileName in resultFileNames do
-            let time, answer =
-                if File.Exists(resultFileName) then
-                    let result = resultRegex.Match(File.ReadAllLines(resultFileName).[0]).Groups
-                    let time = result.[1].Value
-                    let answer = result.[2].Value
-                    time, answer
-                else "", ""
+            let time, answer = Option.defaultValue ("", "") (rawFileResult resultFileName)
             let time = time.PadRight(timeWidth)
             let answer = answer.PadRight(resultWidth)
             printf $"%s{time} %s{answer} "

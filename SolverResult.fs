@@ -21,3 +21,7 @@ let parseSolverResult s =
     | _ when s = "TIMELIMIT" -> TIMELIMIT
     | _ when s = "OUTOFMEMORY" -> OUTOFMEMORY
     | _ -> __notImplemented__()
+
+let parseResultPair = function
+    | Some (time : string, answer) -> Some (int time, parseSolverResult answer)
+    | None -> None

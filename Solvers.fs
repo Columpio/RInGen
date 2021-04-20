@@ -226,13 +226,20 @@ type IDirectorySolver<'directory>() =
                 x.GenerateClausesSingle performTransform tipToHorn path outputPath |> ignore
             | _ when Directory.Exists(path) ->
                 let outputDirectory = x.TransformBenchmarkAndReturn performTransform tipToHorn quiet force path
-                let resultsDirectory = x.RunOnBenchmarkSet force quiet outputDirectory
+                let resultsDirectory = x.RunOnBenchmarkSet false quiet outputDirectory
                 if not quiet then printfn $"Solver run on {outputDirectory} and saved results in %s{resultsDirectory}"
             | _ -> failwithf $"There is no such file or directory: %s{path}"
 
 [<AbstractClass>]
 type IConcreteSolver () =
     inherit IDirectorySolver<string> ()
+
+    member x.RerunSat quiet directory =
+        let shouldRerun dst =
+            match parseResultPair <| ResultTable.rawFileResult dst with
+            | Some (_, SAT) -> true
+            | _ -> false
+        x.ConditionalRunOnBenchmarkSet shouldRerun quiet directory
 
     override x.GenerateClauses performTransform tipToHorn quiet force directory =
         generateClauses x performTransform tipToHorn quiet force directory
@@ -268,11 +275,11 @@ type IConcreteSolver () =
             TIMELIMIT
         else x.InterpretResult error output
 
-    override x.RunOnBenchmarkSet overwrite quiet dir =
-        let run_file (src : string) dst =
+    member private x.ConditionalRunOnBenchmarkSet overwrite quiet dir =
+        let run_file (src : string) (dst : string) =
             let dst = dir + dst
             Directory.CreateDirectory(Path.GetDirectoryName(dst)) |> ignore
-            if Path.GetExtension(src) = x.FileExtension && (overwrite || not <| File.Exists(dst)) then
+            if Path.GetExtension(src) = x.FileExtension && overwrite dst then
                 try
                     if not quiet then printfn $"Running %s{x.Name} on %s{src}"
                     let answer, time = x.SolveWithTime false src
@@ -280,6 +287,10 @@ type IConcreteSolver () =
                 with e -> if not quiet then printfn $"Exception in %s{src}: %s{dst}"
             elif not quiet then printfn $"%s{x.Name} skipping %s{src} (answer exists)"
         walk_through dir $".%s{x.Name}Answers" run_file
+
+    override x.RunOnBenchmarkSet overwrite quiet dir =
+        let overwrite dst = overwrite || not <| File.Exists(dst)
+        x.ConditionalRunOnBenchmarkSet overwrite quiet dir
 
 type CVC4FiniteSolver () =
     inherit IConcreteSolver ()
@@ -399,11 +410,13 @@ type VampireSolver () =
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        $"--input_syntax smtlib2 --output_mode smtcomp --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"
+        $"--input_syntax smtlib2 --output_mode smtcomp --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"
 
     override x.TransformClauses chcSystem =
-        let chcs = adtTransformClauses chcSystem
-        let setlogic = OriginalCommand <| SetLogic "UFDT"
+        let sortMode = true //TODO: add option?
+        let transform, logic = if sortMode then sortTransformClauses, "UF" else adtTransformClauses, "UFDT"
+        let chcs = transform chcSystem
+        let setlogic = OriginalCommand <| SetLogic logic
         List.map (List.map (function OriginalCommand (SetLogic _) -> setlogic | c -> c)) chcs
 
     override x.InterpretResult error raw_output =
@@ -412,8 +425,10 @@ type VampireSolver () =
         match output with
         | _ when raw_output = "" -> TIMELIMIT
         | "unknown"::_ -> UNKNOWN ""
-        | "unsat"::_ -> UNSAT
         | "sat"::_ -> SAT
+        | "unsat"::_ -> UNSAT
+        | _ when List.contains "% Termination reason: Satisfiable" output -> SAT
+        | _ when List.contains "% Termination reason: Refutation" output -> UNSAT
         | _ -> UNKNOWN raw_output
 
 type AllSolver () =
