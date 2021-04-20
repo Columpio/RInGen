@@ -108,7 +108,10 @@ Run a specific solver after processing. Available options:
 
 ### `-t`, `--timelimit`
 Time limit for the specified `--solver`, in seconds (default `300`).
-   
+ 
+### `-f`, `--force`
+Force transformed file generation. If omitted, no transformation will be performed if other transformed file already exist in the output directory.
+
 ## Examples
 ### Convert benchmarks from `DIRECTORY` into Horn clauses
 `~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll transform /FULL/PATH/TO/DIRECTORY`
