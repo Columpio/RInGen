@@ -117,17 +117,3 @@ let (|NotT|_|) = function
             return! Map.tryFind negname elementaryOperations
         }
     | _ -> None
-
-let rec nota = function
-    | Top -> Bot
-    | Bot -> Top
-//    | ANot e -> e
-    | Equal(t1, t2) -> Distinct(t1, t2)
-    | Distinct(t1, t2) -> Equal(t1, t2)
-    | AApply(NotT negop, ts) -> AApply(negop, ts) //TODO: approximates too much: see CHC-LIA-LIN-Arrays_001.smt2
-//    | AApply(ElementaryOperation _, _) as e -> ANot e
-//    | AApply(UserDefinedOperation _, []) as e -> ANot e
-//    | AApply(UserDefinedOperation _, _) as e -> ANot e // TODO: failwithf "Trying to obtain negation of user defined predicate: %O" e
-//    | AAnd ts -> ts |> List.map nota |> AOr
-//    | AOr ts -> ts |> List.map nota |> AAnd
-    | _ -> __notImplemented__()

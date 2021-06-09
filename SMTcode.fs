@@ -127,6 +127,10 @@ module private RemoveVariableOverlapping =
         let newName = IdentGenerator.gensymsort name
         (nameMap, Map.add name newName sortMap)
     let private substDatatypeSorts (nameMap, sortMap) (name, cs) =
+        let mapTester nameMap constr newConstr =
+            let tester = testerNameOf constr
+            let newTester = testerNameOf newConstr
+            Map.add tester newTester nameMap
         let mapSelector (nameMap, sortMap) (sel, sort) =
             let newSel = IdentGenerator.gensymp sel
             (newSel, substWithSortMap sortMap sort), (Map.add sel newSel nameMap, sortMap)
@@ -134,6 +138,7 @@ module private RemoveVariableOverlapping =
             let newConstr = IdentGenerator.gensymp constr
             let nameMap = Map.add constr newConstr nameMap
             let selectors, (nameMap, sortMap) = List.mapFold mapSelector (nameMap, sortMap) selectors
+            let nameMap = mapTester nameMap constr newConstr
             (newConstr, selectors), (nameMap, sortMap)
         let cs, (nameMap, sortMap) = List.mapFold mapConstr (nameMap, sortMap) cs
         (substWithSortMap sortMap name, cs), (nameMap, sortMap)
@@ -192,7 +197,7 @@ module private DefinitionsToDeclarations =
             let conds2, y = f x
             conds1 @ conds2, y
         let map2 f ((conds1, x) : 'a conditional) ((conds2, y) : 'b conditional) = conds1 @ conds2, f x y
-        let toConj ((conds, x) : atom conditional) : atom list = x :: conds
+        let toConj ((conds, x) : atom conditional) : atom conjunction = Conjunction <| x :: conds
 
     [<AutoOpen>]
     module private Choosable =
@@ -215,7 +220,7 @@ module private DefinitionsToDeclarations =
             | TConst _
             | TIdent _
             | TApply _ as t -> toChoosable t
-        let toDNF : atom choosable -> atom list list = List.map Conditional.toConj
+        let toDNF : atom choosable -> dnf = Disjunction << List.map Conditional.toConj
 
     let private binaryApplyToOp zero one op xs =
         if List.contains one xs then one else
@@ -239,6 +244,13 @@ module private DefinitionsToDeclarations =
     let private tnot t = TApply(DummyOperations.notOp, [t])
 //    let private anot ts = Equal(tnot ts, truet)
 
+    let private negateDNF typer e =                     // expr   !((is-A x /\ is-B y) \/ (is-A z /\ is-B t))
+        let dnf_e = e                                   //          (is-A x /\ is-B y) \/ (is-A z /\ is-B t)
+        let cnf_e = DNF.flip dnf_e                      // ~flip~>  (is-A x \/ is-B y) /\ (is-A z \/ is-B t)
+        let neg_cnf_e = Conj.bind (nota typer) cnf_e    // ~not~>   (is-B x \/ is-A y) /\ (is-B z \/ is-A t)
+        let dnf_neg_e = Conj.exponent neg_cnf_e         // ~dnf~>   (is-B x /\ is-b z) \/ (is-B x /\ is-A t) \/ ...
+        dnf_neg_e
+
     let rec private atomToTerm = function
 //        | AApply(op, ts) -> TApply(op, ts)
 //        | Distinct(t, t2) when t2 = truet -> TApply(DummyOperations.notOp, [t])
@@ -260,22 +272,22 @@ module private DefinitionsToDeclarations =
         | t -> failwithf $"Can't obtain term from expr: {t}"
     and private exprsToTerms atomsAreTerms = Choosable.combinations (exprToTerm atomsAreTerms)
 
-    and private exprToAtoms (typer : Typer) atomsAreTerms e : atom list list = // returns DNF
+    and private exprToAtoms (typer : Typer) atomsAreTerms e : dnf =
         match e with
         | Ident(name, s) when s = boolSort ->
             if typer.containsKey name
-                then [[AApply(identToUserOp name s, [])]]
-                else [[Equal(TIdent(name, s), truet)]]
+                then DNF.singleton <| AApply(identToUserOp name s, [])
+                else DNF.singleton <| Equal(TIdent(name, s), truet)
         | Not (Not t) -> exprToAtoms typer atomsAreTerms t
-        | Not e -> e |> exprToAtoms typer atomsAreTerms |> List.product |> List.map (List.map nota)
-        | BoolConst true -> [[Top]]
-        | BoolConst false -> [[Bot]]
+        | Not e -> exprToAtoms typer atomsAreTerms e |> negateDNF typer
+        | BoolConst true -> DNF.singleton <| Top
+        | BoolConst false -> DNF.singleton <| Bot
         | Apply(UserDefinedOperation(_, _, s) as op, ts) when s = boolSort ->
             let toAtom = if atomsAreTerms then fun ts -> Equal(TApply(op, ts), truet) else fun ts -> AApply(op, ts)
             exprsToTerms atomsAreTerms ts
             |> Choosable.map toAtom
             |> Choosable.toDNF
-        | Or ts -> List.collect (exprToAtoms typer atomsAreTerms) ts
+        | Or ts -> Disj.disj <| List.map (exprToAtoms typer atomsAreTerms) ts
 //        | Hence(a, b) -> [AHence(aand <| exprToAtoms atomsAreTerms a, aand <| exprToAtoms atomsAreTerms b)]
         | And ts -> exprsToAtoms typer atomsAreTerms ts
         | Apply(ElementaryOperation("=", _, _), [t1; t2]) ->
@@ -287,7 +299,7 @@ module private DefinitionsToDeclarations =
             |> Choosable.map (fun ts -> AApply(op, ts))
             |> Choosable.toDNF
         | t -> failwithf $"Can't obtain atom from expr: {t}"
-    and private exprsToAtoms typer atomsAreTerms = List.map (exprToAtoms typer atomsAreTerms) >> List.product >> List.map List.concat
+    and private exprsToAtoms typer atomsAreTerms = List.map (exprToAtoms typer atomsAreTerms) >> Disj.conj
 
     let private functionExprToTerm = exprToTerm true
 
@@ -417,8 +429,8 @@ module private DefinitionsToDeclarations =
                 let! evs, ecs, er = exprToRule tes e
                 let thenBranchQuantifiers = combineQuantifiers ivs tvs
                 let elseBranchQuantifiers = combineQuantifiers ivs evs
-                let! thenBranchConditions = exprToAtoms typer true ir
-                let! elseBranchConditions = exprToAtoms typer true (note ir)
+                let! Conjunction thenBranchConditions = exprToAtoms typer true ir |> Disj.get
+                let! Conjunction elseBranchConditions = exprToAtoms typer true (note ir) |> Disj.get
                 let thenBranch = thenBranchQuantifiers, thenBranchConditions @ ics @ tcs, tr
                 let elseBranch = elseBranchQuantifiers, elseBranchConditions @ ics @ ecs, er
                 return! [thenBranch; elseBranch]
@@ -458,13 +470,39 @@ module private DefinitionsToDeclarations =
         let rec eatCondition = function
             | And cs -> List.collect eatCondition cs
             | c -> [c]
+        let isPredicate = function AApply(UserDefinedOperation _, _) -> true | _ -> false
+//        let resultTerm t =
+//            let (Disjunction conjs) = exprToAtoms typer assertsToQueries t
+//            let predicates, constraints = List.partition hasPredicate conjs
+//            let constraint_in_body = negateDNF typer <| Disjunction constraints
+//            match predicates with
+//            | [] -> constraint_in_body, Bot
+//            | [Conjunction [pred]] -> constraint_in_body, pred
+//            | ts -> failwithf $"Too many atoms in head: {ts}"
+        let takeHead = function
+            | Disjunction [Conjunction [pred]] -> [[], pred]
+            | ts ->
+                match Disj.exponent ts with
+                | Conjunction [Disjunction ts] ->
+                    // P \/ Q -> T = !(P \/ Q) \/ T = (!P /\ !Q) \/ T = !P \/ T, !Q \/ T = P -> T, Q -> T
+                    // is-A x \/ is-B y
+                    // !(is-A x) /\ !(is-B y) -> _|_
+                    // (is-B x \/ is-C x) /\ (is-A y \/ is-C y) -> _|_
+                    // is-B x /\ is-A y \/ is-B x /\ is-C y \/ is-C x /\ is-A y \/ is-C x /\ is-C y -> _|_
+                    let predicates, constraints = List.partition isPredicate ts
+                    let (Disjunction constraints) = Conj.map (nota typer) (Conjunction constraints) |> Conj.exponent
+                    match predicates with
+                    | [] -> List.map (function Conjunction constraints -> constraints, Bot) constraints
+                    | [pred] -> List.map (function Conjunction constraints -> constraints, pred) constraints
+                    | ts -> failwithf $"Too many atoms in head: {ts}"
+                | ts -> failwithf $"Too many atoms in head: {ts}"
         let rec eatResultTerm conds = function
             | Hence(cond, body) -> eatResultTerm (eatCondition cond @ conds) body
             | Not cond -> eatResultTerm (eatCondition cond @ conds) falsee
-            | t ->
-                let conds = exprsToAtoms typer assertsToQueries conds
-                let ts = exprToAtoms typer assertsToQueries t
-                conds, List.map (function [t] -> t | ts -> failwithf $"Too many atoms in head: {ts}") ts
+            | And _ as ts -> //TODO: something is completely wrong here. test result has (assert false) things...
+                let ts = eatCondition ts
+                List.map (fun t -> conds, t) ts
+            | t -> [conds, t]
         let rec eat vars conds = function
             | Forall(vars', body) -> eat (vars @ vars') conds body
             | Or es -> eat vars conds (hence (List.map note es) falsee)
@@ -494,14 +532,13 @@ module private DefinitionsToDeclarations =
             | app ->
                 let tes = VarEnv.create typer vars, Map.empty
                 collector {
-                    let! bodyVars, bodyConditions, bodyResult = toRuleProduct tes conds
                     let! appVars, appConditions, appResult = exprToRule tes app
-                    let! bodyAddition = if assertsToQueries then exprToAtoms typer assertsToQueries (note appResult) else [[]]
-                    let headConds, heads = if assertsToQueries then [[]], [Bot] else eatResultTerm [] appResult
-                    let! headCond = headConds
-                    let! head = heads
-                    let! bodyResult = List.map (exprToAtoms typer assertsToQueries) bodyResult |> List.product |> List.map List.concat
-                    let r = finalRule vars bodyVars appVars (headCond @ bodyAddition @ bodyResult @ bodyConditions @ appConditions) head
+                    let! bodyAddition = if assertsToQueries then exprToAtoms typer assertsToQueries (note appResult) else DNF.empty
+                    let! headConds, head = if assertsToQueries then [[], falsee] else eatResultTerm [] appResult
+                    let! bodyVars, bodyConditions, bodyResult = toRuleProduct tes (conds @ headConds)
+                    let! bodyResult = List.map (exprToAtoms typer assertsToQueries) bodyResult |> Disj.conj
+                    let! headConstraints, head_atom = exprToAtoms typer assertsToQueries head |> takeHead
+                    let r = finalRule vars bodyVars appVars (headConstraints @ bodyAddition @ bodyResult @ bodyConditions @ appConditions) head_atom // TODO: not Bot
                     return TransformedCommand r
                 }
         eat [] []

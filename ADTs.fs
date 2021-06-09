@@ -28,7 +28,7 @@ module SupplementaryADTAxioms =
         List.concat decls, List.concat defs, selectorsMap
 
     let private generateTesterHeader substs sort constructorName =
-        let testerName = Symbols.addPrefix "is-" constructorName
+        let testerName = Typer.testerNameOf constructorName
         let relTesterName = IdentGenerator.gensymp testerName
         let op = Operation.makeElementaryRelationFromSorts testerName [sort]
         let relOp = Operation.makeElementaryRelationFromSorts relTesterName [sort]

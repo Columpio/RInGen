@@ -29,13 +29,6 @@ type OptionalBuilder =
     member __.ReturnFrom(value) = value
 let opt = OptionalBuilder()
 
-[<Struct>]
-type ListCollectBuilder =
-    member __.Bind(xs, binder) = List.collect binder xs
-    member __.Return(value) = [value]
-    member __.ReturnFrom(value) = value
-let collector = ListCollectBuilder()
-
 let inline join s (xs : string seq) = System.String.Join(s, xs)
 let inline split (c : string) (s : string) = s.Split(c.ToCharArray()) |> List.ofArray
 let inline fst3 (a, _, _) = a
@@ -374,6 +367,47 @@ and private simplee = function
     | e -> e
 let forall vars e = if List.isEmpty vars then e else Forall(vars, e)
 let exists vars e = if List.isEmpty vars then e else Exists(vars, e)
+
+type 'a conjunction = Conjunction of 'a list
+type 'a disjunction = Disjunction of 'a list
+type dnf = atom conjunction disjunction
+type cnf = atom disjunction conjunction
+
+module Conj =
+    let singleton x = Conjunction [x]
+    let exponent (Conjunction cs : 'a disjunction conjunction) : 'a conjunction disjunction =
+        List.map (function Disjunction cs -> cs) cs |> List.product |> List.map Conjunction |> Disjunction
+    let map produce_disjunction (Conjunction dss) =
+        List.map (produce_disjunction >> Disjunction) dss |> Conjunction
+    let bind (produce_disjunction : atom -> atom list) =
+        map (function Disjunction ds -> List.collect produce_disjunction ds)
+    let flatten (Conjunction css : 'a conjunction conjunction) = List.collect (function Conjunction cs -> cs) css |> Conjunction
+
+module Disj =
+    let singleton x = Disjunction [x]
+    let get (Disjunction d) = d
+    let map f (Disjunction ds) = List.map f ds |> Disjunction
+    let exponent (Disjunction cs : 'a conjunction disjunction) : 'a disjunction conjunction =
+        List.map (function Conjunction cs -> cs) cs |> List.product |> List.map Disjunction |> Conjunction
+    let disj dss = List.collect (function Disjunction ds -> ds) dss |> Disjunction
+    let conj (dss : 'a conjunction disjunction list) =
+        let css = Conj.exponent (Conjunction dss)
+        let cs = map Conj.flatten css
+        cs
+    let union (Disjunction d1) (Disjunction d2) = Disjunction (d1 @ d2)
+
+module DNF =
+    let empty : dnf = Disjunction [Conjunction []]
+    let singleton : atom -> dnf = Conj.singleton >> Disj.singleton
+    let flip (Disjunction cs : dnf) : cnf = cs |> List.map (function Conjunction cs -> Disjunction cs) |> Conjunction
+
+[<Struct>]
+type CollectBuilder =
+    member __.Bind(xs, binder) = List.collect binder xs
+    member __.Bind(Disjunction dss : dnf, binder) = List.collect (function Conjunction cs -> binder cs) dss
+    member __.Return(value) = [value]
+    member __.ReturnFrom(value) = value
+let collector = CollectBuilder()
 
 let walk_through (directory : string) postfix transform =
     let rec walk sourceFolder destFolder =

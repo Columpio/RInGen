@@ -439,6 +439,7 @@ type VampireSolver () =
             | _ -> __notImplemented__()
             |> SAT |> Some
         | "Refutation" -> Some UNSAT
+        | "Inappropriate"
         | "Time limit" -> None
         | _ -> __notImplemented__()
 
@@ -454,7 +455,7 @@ type VampireSolver () =
         $"--input_syntax smtlib2 --output_mode smtcomp --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"
 
     override x.TransformClauses chcSystem =
-        let sortMode = true //TODO: add option?
+        let sortMode = false //TODO: add option?
         let transform, logic = if sortMode then sortTransformClauses, "UF" else adtTransformClauses, "UFDT"
         let chcs = transform chcSystem
         let setlogic = OriginalCommand <| SetLogic logic

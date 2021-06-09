@@ -76,10 +76,7 @@ let private parseDatatypeDeclaration typer adtname (dec : SMTLIBv2Parser.Datatyp
     let handle_constr typer (constr : SMTLIBv2Parser.Constructor_decContext) =
         let fname = parseSymbol <| constr.symbol()
         let selectors = constr.selector_dec() |> List.ofArray |> List.map parseSelector
-        let typer = List.fold (fun typer (pr, s) -> Typer.addOperation pr (Operation.makeElementaryOperationFromSorts pr [adtname] s) typer) typer selectors
-        let typer = Typer.addOperation fname (Operation.makeElementaryOperationFromVars fname selectors adtname) typer
-        let testerName = Symbols.addPrefix "is-" fname
-        let typer = Typer.addOperation testerName (Operation.makeElementaryOperationFromSorts testerName [adtname] boolSort) typer
+        let _, typer = Typer.addADTOperations typer adtname fname selectors
         (fname, selectors), typer
     let constrs = dec.constructor_dec() |> List.ofArray
     match constrs with
