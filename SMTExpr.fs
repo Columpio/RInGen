@@ -181,6 +181,11 @@ let parseFunctionDefinition typer (e : SMTLIBv2Parser.Function_defContext) defin
     let body = e.term() |> parseTerm te
     Definition(defineFunTermConstr(name, vars, sort, body)), typer
 
+let private parseAttribute (attr : SMTLIBv2Parser.AttributeContext) =
+    let keyword = attr.keyword().GetText()
+    let value = if attr.ChildCount = 1 then None else Some <| attr.attribute_value().GetText()
+    keyword, value
+
 let private parseToTerms commands =
     let toComm typer (e : SMTLIBv2Parser.CommandContext) =
         let comm, typer =
@@ -207,6 +212,7 @@ let private parseToTerms commands =
             | :? SMTLIBv2Parser.Cmd_checkSatContext -> Command CheckSat, typer
             | :? SMTLIBv2Parser.Cmd_getModelContext -> Command GetModel, typer
             | :? SMTLIBv2Parser.Cmd_getInfoContext -> Command (GetInfo(e.info_flag().GetText())), typer
+            | :? SMTLIBv2Parser.Cmd_setInfoContext -> Command (SetInfo(parseAttribute <| e.attribute())), typer
             | :? SMTLIBv2Parser.Cmd_assertContext ->
                 let expr = e.GetChild<SMTLIBv2Parser.TermContext>(0)
                 Assert(parseTerm (typer, VarEnv.empty) expr), typer

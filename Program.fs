@@ -11,6 +11,7 @@ type solveOptions = {
     [<Option('t', "timelimit", HelpText = "Time limit, in seconds (default 300)")>] timelimit : int option
     [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
     [<Option('f', "force", HelpText = "Force benchmark generation")>] force : bool
+    [<Option('r', "rerun", HelpText = "Rerun if answer was SAT")>] rerun : bool
     [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as input PATH)")>] output : string option
     [<Value(0, MetaValue = "SOLVER_NAME", Required = true, HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | verimap | vampire | all) after processing")>] solver : string
     [<Value(1, MetaValue = "PATH", Required = true, HelpText = "Full path to file or directory")>] path : string
@@ -42,11 +43,13 @@ let solve (solveOptions : solveOptions) =
     | Some timelimit -> SolverResult.SECONDS_TIMEOUT <- timelimit
     | None -> ()
     let solver = solverByName solveOptions.solver
-    solver.TransformAndRunOnBenchmark (not solveOptions.notransform) solveOptions.tipToHorn solveOptions.quiet solveOptions.force solveOptions.path solveOptions.output
+    let options = {transform=not solveOptions.notransform; tipToHorn=solveOptions.tipToHorn; quiet=solveOptions.quiet; force=solveOptions.force; path=solveOptions.path; output=solveOptions.output; rerun=solveOptions.rerun}
+    solver.TransformAndRunOnBenchmark options
 
 let transform (transformOptions : transformOptions) =
     let solver = if transformOptions.tosorts then SortHornTransformer() :> ITransformer else ADTHornTransformer() :> ITransformer
-    solver.TransformBenchmark true transformOptions.tipToHorn transformOptions.quiet false transformOptions.path transformOptions.output
+    let options = {transform=true; tipToHorn=transformOptions.tipToHorn; quiet=transformOptions.quiet; force=false; path=transformOptions.path; output=transformOptions.output; rerun=false}
+    solver.TransformBenchmark options
 
 [<EntryPoint>]
 let main args =

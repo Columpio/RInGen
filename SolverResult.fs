@@ -5,21 +5,28 @@ let mutable SECONDS_TIMEOUT = 5 * 60
 let MSECONDS_TIMEOUT () = SECONDS_TIMEOUT * 1000
 let MEMORY_LIMIT_MB = 12 * 1024
 
-type SolverResult = SAT | UNSAT | ERROR of string | UNKNOWN of string | TIMELIMIT | OUTOFMEMORY
+type Model = ElemFormula | SizeElemFormula | FiniteModel | Saturation | NoModel
+type SolverResult = SAT of Model | UNSAT | ERROR of string | UNKNOWN of string | TIMELIMIT | OUTOFMEMORY
 
 let quietModeToString = function
-    | SAT -> "sat"
+    | SAT _ -> "sat"
     | UNSAT -> "unsat"
     | _ -> "unknown"
 
 let parseSolverResult s =
-    match () with
-    | _ when s = "SAT" -> SAT
-    | _ when s = "UNSAT" -> UNSAT
-    | _ when s = "ERROR" -> ERROR ""
-    | _ when s = "UNKNOWN" -> UNKNOWN ""
-    | _ when s = "TIMELIMIT" -> TIMELIMIT
-    | _ when s = "OUTOFMEMORY" -> OUTOFMEMORY
+    match split " " s with
+    | "SAT":: model ->
+        match model with
+        | ["ElemFormula"] -> SAT ElemFormula
+        | ["SizeElemFormula"] -> SAT SizeElemFormula
+        | ["FiniteModel"] -> SAT FiniteModel
+        | ["Saturation"] -> SAT Saturation
+        | _ -> SAT NoModel
+    | "UNSAT"::_ -> UNSAT
+    | "ERROR"::reason -> ERROR (join " " reason)
+    | "UNKNOWN"::reason -> UNKNOWN (join " " reason)
+    | "TIMELIMIT"::_ -> TIMELIMIT
+    | "OUTOFMEMORY"::_ -> OUTOFMEMORY
     | _ -> __notImplemented__()
 
 let parseResultPair = function

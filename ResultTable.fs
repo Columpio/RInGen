@@ -5,7 +5,7 @@ open System.Text.RegularExpressions
 open CsvHelper
 open SolverResult
 
-let private resultRegex = Regex @"(\d+),(\w+)"
+let private resultRegex = Regex @"(\d+),([\w ]+\w)"
 
 let rawFileResult filename =
     if not <| File.Exists(filename) then None else
@@ -55,7 +55,7 @@ let GenerateLaTeXResultTable =
     let writeResult (csv : CsvWriter) = parseResultPair >> function
         | Some (time, answer) ->
             match answer with
-            | SAT
+            | SAT _
             | UNSAT
             | TIMELIMIT -> csv.WriteField(timeToString time)
             | _ -> writeEmptyResult csv

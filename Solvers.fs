@@ -5,6 +5,17 @@ open System.Diagnostics
 open System.Text.RegularExpressions
 open SolverResult
 
+type solvingOptions =
+    {
+        transform : bool
+        tipToHorn : bool
+        rerun : bool
+        quiet : bool
+        force : bool
+        path : string
+        output : string option
+    }
+
 let private isBadBenchmark cmnds =
     let hasDefines = List.exists (function Definition _ -> true | _ -> false) cmnds
     let hasDeclareFuns = List.exists (function Command (DeclareFun _) -> true | _ -> false) cmnds
@@ -44,34 +55,34 @@ let private cleanCommands set_logic chcSystem =
     if containsExistentialClauses commands then [] else [commands]
 
 type ITransformer =
-    abstract member TransformBenchmark : bool -> bool -> bool -> bool -> string -> string option -> unit
+    abstract member TransformBenchmark : solvingOptions -> unit
     abstract member TransformClauses : transformedCommand list -> transformedCommand list list
 
 [<AbstractClass>]
 type IDirectoryTransformer<'directory> () =
-    abstract member GenerateClauses : bool -> bool -> bool -> bool -> string -> 'directory
+    abstract member GenerateClauses : solvingOptions -> 'directory
     abstract member TransformClauses : transformedCommand list -> transformedCommand list list
 
-    member x.TransformBenchmarkAndReturn performTransform tipToHorn quiet force directory =
-        let outputDirectory = x.GenerateClauses performTransform tipToHorn quiet force directory
-        if not quiet then printfn $"CHC systems of directory %s{directory} are preprocessed and saved in {outputDirectory}"
+    member x.TransformBenchmarkAndReturn (opts : solvingOptions) =
+        let outputDirectory = x.GenerateClauses opts
+        if not opts.quiet then printfn $"CHC systems of directory %s{opts.path} are preprocessed and saved in {outputDirectory}"
         outputDirectory
 
     interface ITransformer with
-        member x.TransformBenchmark performTransform tipToHorn quiet force path outputPath =
+        member x.TransformBenchmark opts =
             match () with
-            | _ when File.Exists(path) ->
-                let outputFiles = x.GenerateClausesSingle performTransform tipToHorn path outputPath
+            | _ when File.Exists(opts.path) ->
+                let outputFiles = x.GenerateClausesSingle opts
                 match outputFiles with
                 | [] -> printfn "unknown"
                 | [outputFile] ->
-                    if not quiet then printfn $"CHC system in %s{path} is preprocessed and saved in %s{outputFile}"
+                    if not opts.quiet then printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
                 | _ ->
-                    if not quiet then printfn $"Preprocessing of %s{path} produced %d{List.length outputFiles} files:"
-                    if not quiet then List.iter (printfn "%s") outputFiles
-                x.GenerateClausesSingle performTransform tipToHorn path outputPath |> ignore
-            | _ when Directory.Exists(path) -> x.TransformBenchmarkAndReturn performTransform tipToHorn quiet force path |> ignore
-            | _ -> failwithf $"There is no such file or directory: %s{path}"
+                    if not opts.quiet then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
+                    if not opts.quiet then List.iter (printfn "%s") outputFiles
+                x.GenerateClausesSingle opts |> ignore
+            | _ when Directory.Exists(opts.path) -> x.TransformBenchmarkAndReturn opts |> ignore
+            | _ -> failwithf $"There is no such file or directory: %s{opts.path}"
         member x.TransformClauses ts = x.TransformClauses ts
 
     abstract FileExtension : string
@@ -100,27 +111,27 @@ type IDirectoryTransformer<'directory> () =
             File.WriteAllLines(fullPath, newTest)
         List.length lines
 
-    member x.GenerateClausesSingle performTransform tipToHorn filename outputPath =
+    member x.GenerateClausesSingle (opts : solvingOptions) =
         let outputPath =
-            match outputPath with
+            match opts.output with
             | Some outputPath ->
                 fun (path : string) -> Path.Join(outputPath, Path.GetFileName(path))
             | None -> id
-        let exprs = SMTExpr.parseFile filename
-        let transformed = x.CodeTransformation performTransform tipToHorn exprs
+        let exprs = SMTExpr.parseFile opts.path
+        let transformed = x.CodeTransformation opts.transform opts.tipToHorn exprs
         let paths =
             seq {
                 let lines = List.collect x.CommandsToStrings transformed
                 for testIndex, newTest in List.indexed lines do
-                    let path = Path.ChangeExtension(filename, $".%s{x.Name}.%d{testIndex}%s{x.FileExtension}")
+                    let path = Path.ChangeExtension(opts.path, $".%s{x.Name}.%d{testIndex}%s{x.FileExtension}")
                     let fullPath = outputPath path
                     File.WriteAllLines(fullPath, newTest)
                     yield fullPath
             } |> List.ofSeq
         paths
 
-let private generateClauses (x : IDirectoryTransformer<string>) performTransform tipToHorn quiet force directory =
-    let referenceDirectory = $"%s{directory}.Z3.Z3Answers"
+let private generateClauses (x : IDirectoryTransformer<string>) (opts : solvingOptions) =
+    let referenceDirectory = $"%s{opts.path}.Z3.Z3Answers"
     let shouldCompareResults = false //TODO
     let shouldBeTransformed (src : string) dst =
         let ext = Path.GetExtension(src)
@@ -133,27 +144,26 @@ let private generateClauses (x : IDirectoryTransformer<string>) performTransform
     let mutable total_generated = 0
     let mapFile (src : string) dst =
         if shouldBeTransformed src dst then
-            if not quiet then printfn $"Transforming: %s{src}"
+            if not opts.quiet then printfn $"Transforming: %s{src}"
             files <- files + 1
             let exprs = SMTExpr.parseFile src
             try
-                if force || not <| isBadBenchmark exprs then
-                    let newTests = x.CodeTransformation performTransform tipToHorn exprs
-                    total_generated <- total_generated + x.SaveClauses directory dst newTests
+                if opts.force || not <| isBadBenchmark exprs then
+                    let newTests = x.CodeTransformation opts.transform opts.tipToHorn exprs
+                    total_generated <- total_generated + x.SaveClauses opts.path dst newTests
                 successful <- successful + 1
-            with e -> if not quiet then printfn $"Exception in %s{src}: {e.Message}"
-    walk_through directory "" mapFile |> ignore
-    if not quiet then printfn $"All files:       %d{files}"
-    if not quiet then printfn $"Successful:      %d{successful}"
-    if not quiet then printfn $"Total generated: %d{total_generated}"
-    x.DirectoryForTransformed directory
+            with e -> if not opts.quiet then printfn $"Exception in %s{src}: {e.Message}"
+    walk_through opts.path "" mapFile |> ignore
+    if not opts.quiet then printfn $"All files:       %d{files}"
+    if not opts.quiet then printfn $"Successful:      %d{successful}"
+    if not opts.quiet then printfn $"Total generated: %d{total_generated}"
+    x.DirectoryForTransformed opts.path
 
 [<AbstractClass>]
 type IConcreteTransformer () =
     inherit IDirectoryTransformer<string>()
 
-    override x.GenerateClauses performTransform tipToHorn quiet force directory =
-        generateClauses x performTransform tipToHorn quiet force directory
+    override x.GenerateClauses opts = generateClauses x opts
 
 let private sortTransformClauses chcSystem =
     let noADTSystem = SMTcode.DatatypesToSorts.datatypesToSorts chcSystem
@@ -174,7 +184,7 @@ type ADTHornTransformer () =
 
 type ISolver =
     inherit ITransformer
-    abstract member TransformAndRunOnBenchmark : bool -> bool -> bool -> bool -> string -> string option -> unit
+    abstract member TransformAndRunOnBenchmark : solvingOptions -> unit
     abstract member Solve : string -> SolverResult
 
 [<AbstractClass>]
@@ -191,6 +201,8 @@ type IDirectorySolver<'directory>() =
     abstract member BinaryName : string
     abstract member BinaryOptions : string -> string
     abstract member RunOnBenchmarkSet : bool -> bool -> 'directory -> string
+    abstract member RerunSat : bool -> 'directory -> string
+    default x.RerunSat quiet directory = x.RunOnBenchmarkSet true quiet directory
     abstract member Solve : string -> SolverResult
 
     member x.SolveWithTime quiet filename =
@@ -206,43 +218,42 @@ type IDirectorySolver<'directory>() =
 
     interface ISolver with
         member x.Solve filename = x.Solve filename
-        member x.TransformAndRunOnBenchmark performTransform tipToHorn quiet force path outputPath =
+        member x.TransformAndRunOnBenchmark opts =
             match () with
-            | _ when File.Exists(path) ->
-                let outputFiles = x.GenerateClausesSingle performTransform tipToHorn path outputPath
+            | _ when File.Exists(opts.path) ->
+                let outputFiles = x.GenerateClausesSingle opts
                 match outputFiles with
                 | [] -> printfn "unknown"
                 | [outputFile] ->
-                    if not quiet then printfn $"CHC system in %s{path} is preprocessed and saved in %s{outputFile}"
-                    let result, time = x.SolveWithTime quiet outputFile
-                    if quiet then printfn "%s" <| quietModeToString result else
+                    if not opts.quiet then printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
+                    let result, time = x.SolveWithTime opts.quiet outputFile
+                    if opts.quiet then printfn "%s" <| quietModeToString result else
                     printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
                 | _ ->
-                    if not quiet then printfn $"Preprocessing of %s{path} produced %d{List.length outputFiles} files:"
-                    if not quiet then List.iter (printfn "%s") outputFiles
+                    if not opts.quiet then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
+                    if not opts.quiet then List.iter (printfn "%s") outputFiles
                     for outputFile in outputFiles do
-                        let result, time = x.SolveWithTime quiet outputFile
-                        if not quiet then printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
-                x.GenerateClausesSingle performTransform tipToHorn path outputPath |> ignore
-            | _ when Directory.Exists(path) ->
-                let outputDirectory = x.TransformBenchmarkAndReturn performTransform tipToHorn quiet force path
-                let resultsDirectory = x.RunOnBenchmarkSet false quiet outputDirectory
-                if not quiet then printfn $"Solver run on {outputDirectory} and saved results in %s{resultsDirectory}"
-            | _ -> failwithf $"There is no such file or directory: %s{path}"
+                        let result, time = x.SolveWithTime opts.quiet outputFile
+                        if not opts.quiet then printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
+                x.GenerateClausesSingle opts |> ignore
+            | _ when Directory.Exists(opts.path) ->
+                let outputDirectory = x.TransformBenchmarkAndReturn opts
+                let resultsDirectory = if opts.rerun then x.RerunSat opts.quiet outputDirectory else x.RunOnBenchmarkSet false opts.quiet outputDirectory
+                if not opts.quiet then printfn $"Solver run on {outputDirectory} and saved results in %s{resultsDirectory}"
+            | _ -> failwithf $"There is no such file or directory: %s{opts.path}"
 
 [<AbstractClass>]
 type IConcreteSolver () =
     inherit IDirectorySolver<string> ()
 
-    member x.RerunSat quiet directory =
+    override x.RerunSat quiet directory =
         let shouldRerun dst =
             match parseResultPair <| ResultTable.rawFileResult dst with
-            | Some (_, SAT) -> true
+            | Some (_, SAT _) -> true
             | _ -> false
         x.ConditionalRunOnBenchmarkSet shouldRerun quiet directory
 
-    override x.GenerateClauses performTransform tipToHorn quiet force directory =
-        generateClauses x performTransform tipToHorn quiet force directory
+    override x.GenerateClauses opts = generateClauses x opts
 
     member x.AnswersDirectory directory = $"%s{directory}.%s{x.Name}Answers"
 
@@ -306,7 +317,7 @@ type CVC4FiniteSolver () =
         let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
-        | line::_ when line = "sat" -> SAT
+        | line::_ when line = "sat" -> SAT FiniteModel
         | line::_ when line = "unsat" -> UNSAT
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
@@ -326,7 +337,7 @@ type EldaricaSolver () =
         match output with
         | line::_ when line.StartsWith("(error") -> ERROR raw_output
         | line::_ when line = "unknown" -> UNKNOWN raw_output
-        | line::_ when line = "sat" -> SAT
+        | line::_ when line = "sat" -> SAT SizeElemFormula
         | line::_ when line = "unsat" -> UNSAT
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
@@ -344,7 +355,7 @@ type Z3Solver () =
         match output with
         | line::_ when line = "timeout" -> TIMELIMIT
         | line::_ when line = "unsat" -> UNSAT
-        | line::_ when line = "sat" -> SAT
+        | line::_ when line = "sat" -> SAT ElemFormula
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | ["unknown"; ""] -> UNKNOWN ""
         | _ -> UNKNOWN (error + " &&& " + raw_output)
@@ -364,7 +375,7 @@ type CVC4IndSolver () =
         let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
-        | line::_ when line = "sat" -> SAT
+        | line::_ when line = "sat" -> SAT NoModel
         | line::_ when line = "unsat" -> UNSAT
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
@@ -399,12 +410,42 @@ type VeriMAPiddtSolver () =
         if error <> "" then ERROR(error) else
         let output = Environment.split raw_output
         match output with
-        | _::line::_ when line.Contains("Answer") && line.EndsWith("true") -> SAT
+        | _::line::_ when line.Contains("Answer") && line.EndsWith("true") -> SAT ElemFormula
         | _::line::_ when line.Contains("Answer") && line.EndsWith("false") -> UNSAT
         | _ -> UNKNOWN raw_output
 
 type VampireSolver () =
     inherit IConcreteSolver ()
+
+    let splitModules output =
+        let delimiter = "% ------------------------------"
+        let f (log, logs) (prev, cur) =
+            if prev = delimiter && cur = delimiter then ([], List.rev log::logs) else (prev::log, logs)
+        let _, logs = List.fold f ([], []) (List.pairwise output)
+        List.rev logs
+
+    let pickTextAfter (line : string) (text : string list) =
+        let len = String.length line
+        text |> List.pick (fun (s : string) -> let index = s.IndexOf(line) in if index = -1 then None else Some <| s.Substring(index + len))
+
+    let proofOrRefutation moduleOutput =
+        let termString = "% Termination reason: "
+        let reason = pickTextAfter termString moduleOutput
+        match reason with
+        | "Satisfiable" ->
+            match pickTextAfter "SZS output start " moduleOutput with
+            | s when s.StartsWith("Saturation") -> Saturation
+            | s when s.StartsWith("FiniteModel") -> FiniteModel
+            | _ -> __notImplemented__()
+            |> SAT |> Some
+        | "Refutation" -> Some UNSAT
+        | "Time limit" -> None
+        | _ -> __notImplemented__()
+
+    let interpretResult (output : string list) raw_output =
+        match splitModules output |> List.tryPick proofOrRefutation with
+        | Some result -> result
+        | None -> UNKNOWN raw_output
 
     override x.ShouldSearchForBinaryInEnvironment = true
     override x.Name = "Vampire"
@@ -425,11 +466,9 @@ type VampireSolver () =
         match output with
         | _ when raw_output = "" -> TIMELIMIT
         | "unknown"::_ -> UNKNOWN ""
-        | "sat"::_ -> SAT
+        | "sat"::_ -> SAT Saturation
         | "unsat"::_ -> UNSAT
-        | _ when List.contains "% Termination reason: Satisfiable" output -> SAT
-        | _ when List.contains "% Termination reason: Refutation" output -> UNSAT
-        | _ -> UNKNOWN raw_output
+        | _ -> interpretResult output raw_output
 
 type AllSolver () =
     inherit IDirectorySolver<string list>()
@@ -445,14 +484,14 @@ type AllSolver () =
         for solver in solvers do (solver :> ISolver).Solve(filename) |> ignore
         UNKNOWN "All solvers"
 
-    override x.GenerateClauses performTransform tipToHorn quiet force directory =
+    override x.GenerateClauses opts =
         let forceGenerateClauses (solver : IConcreteSolver) =
-            if not quiet then printfn $"Generating clauses for %s{solver.Name}"
-            solver.GenerateClauses performTransform tipToHorn quiet false directory
+            if not opts.quiet then printfn $"Generating clauses for %s{solver.Name}"
+            solver.GenerateClauses {opts with force = false}
         let paths =
-            if force
+            if opts.force
                 then solvers |> List.map forceGenerateClauses
-                else solvers |> List.map (fun solver -> solver.DirectoryForTransformed directory)
+                else solvers |> List.map (fun solver -> solver.DirectoryForTransformed opts.path)
         paths
 
     override x.RunOnBenchmarkSet overwrite quiet runs =

@@ -37,6 +37,7 @@ type ListCollectBuilder =
 let collector = ListCollectBuilder()
 
 let inline join s (xs : string seq) = System.String.Join(s, xs)
+let inline split (c : string) (s : string) = s.Split(c.ToCharArray()) |> List.ofArray
 let inline fst3 (a, _, _) = a
 let inline snd3 (_, a, _) = a
 let inline thd3 (_, _, a) = a
@@ -73,14 +74,14 @@ module List =
         | x::xs -> iter x xs
 
     let product2 xs ys = List.collect (fun y -> List.map (fun x -> x, y) xs) ys
-    
+
     let product xss =
         let rec product xss k =
             match xss with
             | [] -> k [[]]
             | xs::xss -> product xss (fun yss -> List.collect (fun ys -> List.map (fun x -> x :: ys) xs) yss |> k)
         product xss id
-    
+
     let rec suffixes xs = seq {
         match xs with
         | [] -> yield []
@@ -269,6 +270,7 @@ type command =
     | GetModel
     | Exit
     | GetInfo of string
+    | SetInfo of string * string option
     | SetLogic of string
     | DeclareDatatype of sort * (symbol * sorted_var list) list
     | DeclareDatatypes of (sort * (symbol * sorted_var list) list) list
@@ -287,6 +289,7 @@ type command =
         | CheckSat -> "(check-sat)"
         | GetModel -> "(get-model)"
         | GetInfo s -> $"(get-info %s{s})"
+        | SetInfo(k, vopt) -> $"""(set-info %s{k} %s{Option.defaultValue "" vopt})"""
         | SetLogic l -> $"(set-logic %s{l})"
         | DeclareConst(name, sort) -> $"(declare-const {name} {sort})"
         | DeclareSort sort -> $"(declare-sort {sort} 0)"
@@ -402,6 +405,6 @@ let walk_through_simultaneously dirs transform =
     | [] -> __unreachable__()
 
 module Environment =
-    let split (s : string) = s.Split(System.Environment.NewLine.ToCharArray()) |> List.ofArray
+    let split (s : string) = split System.Environment.NewLine s
 
 exception NotSupported
