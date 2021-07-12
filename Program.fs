@@ -13,7 +13,7 @@ type solveOptions = {
     [<Option('f', "force", HelpText = "Force benchmark generation")>] force : bool
     [<Option('r', "rerun", HelpText = "Rerun if answer was SAT")>] rerun : bool
     [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as input PATH)")>] output : string option
-    [<Value(0, MetaValue = "SOLVER_NAME", Required = true, HelpText = "Run a specific solver (one of: z3 | eldarica | cvc4f | cvc4ind | verimap | vampire | all) after processing")>] solver : string
+    [<Value(0, MetaValue = "SOLVER_NAME", Required = true, HelpText = "Run a specific solver (one of: myz3 | z3 | eldarica | cvc4f | cvc4ind | verimap | vampire | all) after processing")>] solver : string
     [<Value(1, MetaValue = "PATH", Required = true, HelpText = "Full path to file or directory")>] path : string
 }
 
@@ -29,6 +29,7 @@ type transformOptions = {
 let solverByName (solverName : string) =
     let solverName = solverName.ToLower().Trim()
     match () with
+    | _ when solverName = "myz3" -> MyZ3Solver() :> ISolver
     | _ when solverName = "z3" -> Z3Solver() :> ISolver
     | _ when solverName = "eldarica" -> EldaricaSolver() :> ISolver
     | _ when solverName = "cvc4ind" -> CVC4IndSolver() :> ISolver
@@ -36,7 +37,7 @@ let solverByName (solverName : string) =
     | _ when solverName = "vampire" -> VampireSolver() :> ISolver
     | _ when solverName = "cvc4f" -> CVC4FiniteSolver() :> ISolver
     | _ when solverName = "all" -> AllSolver() :> ISolver
-    | _ -> failwithf $"Unknown solver: %s{solverName}. Specify one of: z3, eldarica, cvc4f, cvc4ind, verimap, vampire, all."
+    | _ -> failwithf $"Unknown solver: %s{solverName}. Specify one of: myz3, z3, eldarica, cvc4f, cvc4ind, verimap, vampire, all."
 
 let solve (solveOptions : solveOptions) =
     match solveOptions.timelimit with

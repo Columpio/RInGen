@@ -17,7 +17,16 @@ let rawFileResult filename =
 let private substituteRelations exts filenames =
     List.map2 (fun ext filename -> Path.ChangeExtension(filename, ext)) exts filenames
 
-let private GenerateResultTable writeHeader writeResult (names : string list) (exts : string list) directories =
+let private collectAllResults (exts : string list) directories =
+    let results = System.Collections.Generic.Dictionary<_, _>()
+    let generateResultLine testName resultFileNames =
+        let realFileNames = substituteRelations exts resultFileNames
+        let line = realFileNames |> List.map (fun resultFileName -> rawFileResult resultFileName |> Option.map parseResultPair)
+        results.Add(testName, line)
+    walk_through_simultaneously directories generateResultLine
+    results |> Seq.map (fun kvp -> kvp.Key, kvp.Value) |> List.ofSeq
+
+let private GenerateResultTable writeHeader writeResult writeStatistics (names : string list) (exts : string list) directories =
     let filename = Path.ChangeExtension(Path.GetTempFileName(), "csv")
     use writer = new StreamWriter(filename)
     use csv = new CsvWriter(writer, CultureInfo.InvariantCulture)
@@ -25,26 +34,45 @@ let private GenerateResultTable writeHeader writeResult (names : string list) (e
     for solverName in names do
         writeHeader csv solverName
     csv.NextRecord()
-    let generateResultLine testName resultFileNames =
+    let results = collectAllResults exts directories
+    writeStatistics csv results
+    for testName, line in results do
         csv.WriteField(testName)
-        let realFileNames = substituteRelations exts resultFileNames
-        for resultFileName in realFileNames do
-            writeResult csv <| rawFileResult resultFileName
+        for result in line do
+            writeResult csv result
         csv.NextRecord()
-    walk_through_simultaneously directories generateResultLine
     filename
 
 let GenerateReadableResultTable =
-    let writeResult (csv : CsvWriter) result =
-        let time, answer = Option.defaultValue ("", "") result
-        csv.WriteField($"%s{time}")
-        csv.WriteField($"%s{answer}")
+    let writeResult (csv : CsvWriter) = function
+        | Some(time, answer) ->
+            csv.WriteField($"%d{time}")
+            csv.WriteField($"%O{answer}")
+        | None -> csv.WriteField(""); csv.WriteField("")
 
     let writeHeader (csv : CsvWriter) solverName =
         csv.WriteField$"%s{solverName}Time"
         csv.WriteField$"%s{solverName}Result"
 
-    GenerateResultTable writeHeader writeResult
+    let writeStatistics (csv : CsvWriter) results =
+        let names = ["SAT"; "UNSAT"; "UNKNOWN"; "ERROR"; "TIMELIMIT"; "OUTOFMEMORY"]
+        let empty_stat = names |> List.map (fun s -> s, 0) |> Map.ofList
+        let collectStatistics stat = function
+            | Some(_, result) ->
+                let name = onlyStatus result
+                let count = Map.find name stat
+                Map.add name (1 + count) stat
+            | None -> stat
+        let columns = results |> List.map snd |> List.transpose
+        let statistics = List.map (List.fold collectStatistics empty_stat) columns
+        for name in names do
+            csv.WriteField(name)
+            for stat in statistics do
+                csv.WriteField("")
+                csv.WriteField($"%d{Map.find name stat}")
+            csv.NextRecord()
+
+    GenerateResultTable writeHeader writeResult writeStatistics
 
 let GenerateLaTeXResultTable =
     let timeToString n = n |> sprintf "%d"
@@ -52,7 +80,7 @@ let GenerateLaTeXResultTable =
     let writeEmptyResult (csv : CsvWriter) =
         csv.WriteField(TIMEOUT)
 
-    let writeResult (csv : CsvWriter) = parseResultPair >> function
+    let writeResult (csv : CsvWriter) = function
         | Some (time, answer) ->
             match answer with
             | SAT _
@@ -64,7 +92,7 @@ let GenerateLaTeXResultTable =
     let writeHeader (csv : CsvWriter) solverName =
         csv.WriteField(solverName)
 
-    GenerateResultTable writeHeader writeResult
+    GenerateResultTable writeHeader writeResult (fun _ _ -> ())
 
 let PrintReadableResultTable names directories =
     let timeWidth, resultWidth, nameWidth =

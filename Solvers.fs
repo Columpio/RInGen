@@ -2,6 +2,7 @@ module RInGen.Solvers
 open System
 open System.IO
 open System.Diagnostics
+open System.Text
 open System.Text.RegularExpressions
 open SolverResult
 
@@ -76,7 +77,7 @@ type IDirectoryTransformer<'directory> () =
                 match outputFiles with
                 | [] -> printfn "unknown"
                 | [outputFile] ->
-                    if not opts.quiet then printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
+                    if opts.quiet then printfn $"%s{outputFile}" else printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
                 | _ ->
                     if not opts.quiet then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
                     if not opts.quiet then List.iter (printfn "%s") outputFiles
@@ -248,7 +249,7 @@ type IConcreteSolver () =
 
     override x.RerunSat quiet directory =
         let shouldRerun dst =
-            match parseResultPair <| ResultTable.rawFileResult dst with
+            match Option.map parseResultPair <| ResultTable.rawFileResult dst with
             | Some (_, SAT _) -> true
             | _ -> false
         x.ConditionalRunOnBenchmarkSet shouldRerun quiet directory
@@ -276,15 +277,20 @@ type IConcreteSolver () =
         p.StartInfo.RedirectStandardOutput <- true
         p.StartInfo.RedirectStandardError <- true
         p.StartInfo.UseShellExecute <- false
+        let error = StringBuilder()
+        p.ErrorDataReceived.Add(fun e -> error.Append(e.Data) |> ignore)
         x.SetupProcess p.StartInfo filename
+
         p.Start() |> ignore
-        let output = p.StandardOutput.ReadToEnd()
-        let error = p.StandardError.ReadToEnd()
+        let output = p.StandardOutput.ReadToEnd()   // output is read synchronously
+        p.BeginErrorReadLine()                      // error is read asynchronously (if we read both stream synchronously, deadlock is possible
+                                                    // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
         let exited = p.WaitForExit(MSECONDS_TIMEOUT ())
+        p.Close()
         if not exited then
             p.Kill()
             TIMELIMIT
-        else x.InterpretResult error output
+        else x.InterpretResult (error.ToString()) output
 
     member private x.ConditionalRunOnBenchmarkSet overwrite quiet dir =
         let run_file (src : string) (dst : string) =
@@ -358,6 +364,29 @@ type Z3Solver () =
         | line::_ when line = "sat" -> SAT ElemFormula
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | ["unknown"; ""] -> UNKNOWN ""
+        | _ -> UNKNOWN (error + " &&& " + raw_output)
+
+type MyZ3Solver () =
+    inherit IConcreteSolver ()
+    override x.ShouldSearchForBinaryInEnvironment = true
+    override x.TransformClauses chcSystem = adtTransformClauses chcSystem
+
+    override x.Name = "MyZ3"
+    override x.BinaryName = "myz3"
+    override x.BinaryOptions filename = $"-v:1 fp.engine=spacer -smt2 -nw -memory:%d{MEMORY_LIMIT_MB} -T:%d{SECONDS_TIMEOUT} %s{filename}"
+//    override x.BinaryOptions filename = $"fp.engine=spacer -smt2 -nw -memory:%d{MEMORY_LIMIT_MB} -T:%d{SECONDS_TIMEOUT} %s{filename}"
+
+    override x.InterpretResult error raw_output =
+        let output = Environment.split raw_output
+        match output with
+        | line::_ when line = "timeout" -> TIMELIMIT
+        | line::_ when line = "unsat" -> UNSAT
+        | line::_ when line = "sat" -> SAT ElemFormula
+        | _ when error = "" && raw_output = "" -> OUTOFMEMORY
+        | "unknown"::_ ->
+            match Environment.split (error.Trim()) with
+            | es when List.contains "off-the-shelf solver ended with sat" es -> SAT NoModel
+            | _ -> UNKNOWN (error + " &&& " + raw_output)
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
 type CVC4IndSolver () =
@@ -440,7 +469,9 @@ type VampireSolver () =
             |> SAT |> Some
         | "Refutation" -> Some UNSAT
         | "Inappropriate"
+        | "Memory limit"
         | "Time limit" -> None
+        | _ when reason.StartsWith("Refutation not found") -> None
         | _ -> __notImplemented__()
 
     let interpretResult (output : string list) raw_output =
@@ -452,10 +483,14 @@ type VampireSolver () =
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        $"--input_syntax smtlib2 --output_mode smtcomp --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"
+        let quiet = false
+        let magic_options = "--mode portfolio --forced_options av=off:newcnf=off:anc=known:sac=off:nicw=off:amm=all:afp=0:aac=ground:afq=1.5:afr=off:add=on:gsaa=off:acc=off:ccuc=all --schedule casc"
+        $"""--input_syntax smtlib2 %s{if quiet then " --output_mode smtcomp" else ""} {magic_options} --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
+        //TODO: return mode casc_sat: it does not produce meaningful saturation sets as it tries `--newcnf on`, which has a bug (see: https://github.com/vprover/vampire/issues/240)
+        //TODO: `-av off` is needed because AVATAR is enabled by default and it also has a bug (with booleans)
 
     override x.TransformClauses chcSystem =
-        let sortMode = false //TODO: add option?
+        let sortMode = true //TODO: add option?
         let transform, logic = if sortMode then sortTransformClauses, "UF" else adtTransformClauses, "UFDT"
         let chcs = transform chcSystem
         let setlogic = OriginalCommand <| SetLogic logic

@@ -75,6 +75,16 @@ module List =
             | xs::xss -> product xss (fun yss -> List.collect (fun ys -> List.map (fun x -> x :: ys) xs) yss |> k)
         product xss id
 
+    let transpose xss =
+        let uncons = List.choose (function x::xs -> Some(x, xs) | [] -> None) >> List.unzip
+        let rec transpose xss =
+            match xss with
+            | [] -> []
+            | _ ->
+                let xs, xss = uncons xss
+                xs :: transpose xss
+        transpose xss
+
     let rec suffixes xs = seq {
         match xs with
         | [] -> yield []
