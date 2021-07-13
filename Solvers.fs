@@ -292,7 +292,6 @@ type IConcreteSolver () =
         let exited = p.WaitForExit(MSECONDS_TIMEOUT ())
         p.Close()
         if not exited then
-            p.Kill()
             TIMELIMIT
         else x.InterpretResult (error.ToString()) (output.ToString())
 
