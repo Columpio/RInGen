@@ -277,12 +277,16 @@ type IConcreteSolver () =
         p.StartInfo.RedirectStandardOutput <- true
         p.StartInfo.RedirectStandardError <- true
         p.StartInfo.UseShellExecute <- false
+        p.StartInfo.CreateNoWindow <- true
+        p.StartInfo.WindowStyle <- ProcessWindowStyle.Hidden
         let error = StringBuilder()
+        let output = StringBuilder()
         p.ErrorDataReceived.Add(fun e -> error.Append(e.Data) |> ignore)
+        p.OutputDataReceived.Add(fun o -> output.Append(o.Data) |> ignore)
         x.SetupProcess p.StartInfo filename
 
         p.Start() |> ignore
-        let output = p.StandardOutput.ReadToEnd()   // output is read synchronously
+        p.BeginOutputReadLine()                     // output is read asynchronously
         p.BeginErrorReadLine()                      // error is read asynchronously (if we read both stream synchronously, deadlock is possible
                                                     // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
         let exited = p.WaitForExit(MSECONDS_TIMEOUT ())
@@ -290,7 +294,7 @@ type IConcreteSolver () =
         if not exited then
             p.Kill()
             TIMELIMIT
-        else x.InterpretResult (error.ToString()) output
+        else x.InterpretResult (error.ToString()) (output.ToString())
 
     member private x.ConditionalRunOnBenchmarkSet overwrite quiet dir =
         let run_file (src : string) (dst : string) =
