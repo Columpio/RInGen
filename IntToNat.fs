@@ -103,9 +103,9 @@ type private IntToNat() =
     member x.NatSort() = nat_sort
     member x.Preamble() = preamble
     member x.NatOps() = substitutions
-    member x.IntConstToNat (s: symbol) c =
+    member x.IntConstToNat (s: symbol) =
         let r = ref 0L
-        if System.Int64.TryParse(s.ToString(), r) then int_to_natrec !r else c
+        if System.Int64.TryParse(s.ToString(), r) then Some (int_to_natrec !r) else None
 
 let generateNatDeclarations () =
     let i = IntToNat()

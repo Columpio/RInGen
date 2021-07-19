@@ -23,8 +23,15 @@ let private atomOperations =
     ] |> List.map (fun (name, assoc) -> Map.find name elementaryOperations, assoc) |> Map.ofList
 
 type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, constantMap) =
-    let relativizationsSubstitutor op ts justSubstOp defaultResult =
+    let mutable wasSubstituted = false
+
+    let searchInRelativizations op =
         match Map.tryFind op relativizations with
+        | Some _ as r -> wasSubstituted <- true; r
+        | None -> None
+
+    let relativizationsSubstitutor op ts justSubstOp defaultResult =
+        match searchInRelativizations op with
         | Some (op', true) ->
             let newVar, newVarIdent = IdentGenerator.generateReturnArgument op
             [newVar], [Relativization.relapply op' ts newVarIdent], newVarIdent
@@ -40,7 +47,10 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         (vars, conds), result
 
     let rec substituteOperationsWithRelationsInTerm = function
-        | TConst c as t -> [], [], constantMap c t
+        | TConst c as t ->
+            match constantMap c with
+            | Some c' -> wasSubstituted <- true; [], [], c'
+            | None -> [], [], t
         | TIdent(name, sort) as t ->
             relativizationsSubstitutor (identToUserOp name sort) [] userOpToIdent t
         | TApply(op, ts) ->
@@ -63,9 +73,9 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         List.concat varss, List.concat condss, ts
 
     let substituteOperationsWithRelationsInAtomApplication op ts =
-            match Map.tryFind op relativizations with
-            | Some(op', _) -> AApply(op', ts)
-            | None -> AApply(op, ts)
+        match searchInRelativizations op with
+        | Some(op', _) -> wasSubstituted <- true; AApply(op', ts)
+        | None -> AApply(op, ts)
 
     let rec substituteOperationsWithRelationsInAtom = function
         | Top | Bot as a -> [], [], a
@@ -105,10 +115,12 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         | ForallRule(vars, body) -> forallrule vars (substInRule body)
         | ExistsRule(vars, body) -> existsrule vars (substInRule body)
 
-    new (relativizations) = SubstituteOperations(relativizations, emptyEqSubstitutor, smartDiseqSubstitutor, drop)
+    new (relativizations) = SubstituteOperations(relativizations, emptyEqSubstitutor, smartDiseqSubstitutor, fun _ -> None)
     new (relativizations, constantMap) = SubstituteOperations(relativizations, emptyEqSubstitutor, smartDiseqSubstitutor, constantMap)
     new (relativizations, eqSubst, diseqSubst) =
-        SubstituteOperations(relativizations, opSubstitutor emptyEqSubstitutor eqSubst, opSubstitutor smartDiseqSubstitutor diseqSubst, drop)
+        SubstituteOperations(relativizations, opSubstitutor emptyEqSubstitutor eqSubst, opSubstitutor smartDiseqSubstitutor diseqSubst, fun _ -> None)
+
+    member x.WasSubstituted () = wasSubstituted
 
     member x.SubstituteOperationsWithRelations = function
         | TransformedCommand r -> substInRule r |> TransformedCommand

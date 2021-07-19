@@ -35,7 +35,6 @@ let inline fst3 (a, _, _) = a
 let inline snd3 (_, a, _) = a
 let inline thd3 (_, _, a) = a
 let inline pair x y = x, y
-let inline drop _ = id
 
 let inline toString x = x.ToString()
 

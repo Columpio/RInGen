@@ -54,10 +54,10 @@ Executable then can be found in the `~/RInGen/bin/Release/net5.0/<RID>/publish` 
 ```
 
 ## Modes and Options
-### `transform (--tipToHorn) (--sorts) (--quiet) (--output-directory PATH) /FULL/PATH`
+### `transform (--tip) (--sorts) (--quiet) (--output-directory PATH) /FULL/PATH`
 Only process input files, do not run any solvers.
 
-### `solve (--tipToHorn) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
+### `solve (--tip) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
 Process input files and run one (or many) solvers.
 
 ## Shared options for both modes
@@ -71,7 +71,7 @@ the tool will recursively traverse the directory and process all `.smt2` files.
 ### `-o`, `--output-directory` `PATH`
 A **full** path `PATH` to an output **directory** where to put a transformed file (default: same as input).
 
-### `--tipToHorn`
+### `--tip`
 Convert [TIP-like](https://tip-org.github.io/) systems to Horn clauses.
 This flag makes the tool treat all `assert`ions as **queries**, meaning that
 they are transformed to the following form:
@@ -126,6 +126,6 @@ Obtained clauses are in the `~/RInGen/samples/one-zeroary-constr.Z3.0.smt2` file
 Result of the `z3` run will be output to `stdout`. For `one-zeroary-constr.Z3.0.smt2` example it is `SAT`.
 
 ### Use the finite-model finder in CVC4 as an ADT Horn-solver on a TIP benchmark
-`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll solve --tipToHorn --quiet cvc4f ~/RInGen/samples/prop_20.smt2`
+`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll solve --tip --quiet cvc4f ~/RInGen/samples/prop_20.smt2`
 
 The output is `sat`.

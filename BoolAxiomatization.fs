@@ -37,4 +37,5 @@ let axiomatizeBoolOperations commands =
         List.map OriginalCommand [and_def; or_def; hence_def; not_def]
         @ List.map TransformedCommand (and_decl @ or_decl @ hence_decl @ not_decl)
     let relativizer = SubstituteOperations(substitutions)
-    preamble @ List.map relativizer.SubstituteOperationsWithRelations commands
+    let commands = List.map relativizer.SubstituteOperationsWithRelations commands
+    if relativizer.WasSubstituted () then preamble @ commands else commands

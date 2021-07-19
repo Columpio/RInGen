@@ -9,7 +9,7 @@ open SolverResult
 type solvingOptions =
     {
         transform : bool
-        tipToHorn : bool
+        tip : bool
         rerun : bool
         quiet : bool
         force : bool
@@ -81,7 +81,6 @@ type IDirectoryTransformer<'directory> () =
                 | _ ->
                     if not opts.quiet then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
                     if not opts.quiet then List.iter (printfn "%s") outputFiles
-                x.GenerateClausesSingle opts |> ignore
             | _ when Directory.Exists(opts.path) -> x.TransformBenchmarkAndReturn opts |> ignore
             | _ -> failwithf $"There is no such file or directory: %s{opts.path}"
         member x.TransformClauses ts = x.TransformClauses ts
@@ -97,8 +96,8 @@ type IDirectoryTransformer<'directory> () =
     abstract CommandsToStrings : transformedCommand list -> string list list
     default x.CommandsToStrings commands = [List.map toString commands]
 
-    member x.CodeTransformation performTransform tipToHorn commands =
-        let chcSystem = SMTcode.toClauses performTransform tipToHorn commands
+    member x.CodeTransformation performTransform tip commands =
+        let chcSystem = SMTcode.toClauses performTransform tip commands
         (x :> ITransformer).TransformClauses chcSystem
 
     member x.SaveClauses directory dst commands =
@@ -119,7 +118,7 @@ type IDirectoryTransformer<'directory> () =
                 fun (path : string) -> Path.Join(outputPath, Path.GetFileName(path))
             | None -> id
         let exprs = SMTExpr.parseFile opts.path
-        let transformed = x.CodeTransformation opts.transform opts.tipToHorn exprs
+        let transformed = x.CodeTransformation opts.transform opts.tip exprs
         let paths =
             seq {
                 let lines = List.collect x.CommandsToStrings transformed
@@ -150,7 +149,7 @@ let private generateClauses (x : IDirectoryTransformer<string>) (opts : solvingO
             let exprs = SMTExpr.parseFile src
             try
                 if opts.force || not <| isBadBenchmark exprs then
-                    let newTests = x.CodeTransformation opts.transform opts.tipToHorn exprs
+                    let newTests = x.CodeTransformation opts.transform opts.tip exprs
                     total_generated <- total_generated + x.SaveClauses opts.path dst newTests
                 successful <- successful + 1
             with e -> if not opts.quiet then printfn $"Exception in %s{src}: {e.Message}"

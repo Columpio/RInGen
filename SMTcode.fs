@@ -810,36 +810,40 @@ module private ArrayTransformations =
         List.mapFold mapArraySorts (Map.empty, Map.empty, eqs, diseqs) commands |> fst |> List.concat
 
 module private SubstIntWithNat =
-    let private mapSort natSort () s =
-        let rec mapSort = function
-            | CompoundSort(name, sorts) -> CompoundSort(name, List.map mapSort sorts)
-            | s when s = integerSort -> natSort
-            | s -> s
-        mapSort s, ()
-
-    let private substInCommand (mapper : MapSorts<unit>) natOps (natConstMap : ident -> term -> term) command =
+    let private substInCommand (mapper : MapSorts<unit>) (relativizer : SubstituteOperations) command =
         let command = mapper.MapCommand(command)
-        let relativizer = SubstituteOperations(natOps, natConstMap)
-        let command = relativizer.SubstituteOperationsWithRelations command
+        let command = relativizer.SubstituteOperationsWithRelations(command)
         command
 
     let substituteIntWithNat commands =
+        let mutable wasMapped = false
+        let mapSort natSort () s =
+            let rec mapSort = function
+                | CompoundSort(name, sorts) -> CompoundSort(name, List.map mapSort sorts)
+                | s when s = integerSort -> wasMapped <- true; natSort
+                | s -> s
+            mapSort s, ()
         let preamble, natSort, natOps, natConstMap = IntToNat.generateNatDeclarations ()
         let mapper = MapSorts(mapSort natSort)
         let natOps = natOps |> Map.toList |> List.map (fun (oldOp, newOp) -> mapper.MapOperation(oldOp), newOp) |> Map.ofList
-        preamble @ List.map (substInCommand mapper natOps natConstMap) commands, natSort
+        wasMapped <- false
+        let relativizer = SubstituteOperations(natOps, natConstMap)
+        let commands = List.map (substInCommand mapper relativizer) commands
+        let wasSubstituted = relativizer.WasSubstituted ()
+        (if wasMapped || wasSubstituted then preamble else []), commands, natSort
 
 module private SubstituteFreeSortsWithNat =
 
-    let transformation freeSorts natSort (eqs, diseqs) commands =
-        let mapSort () s = (if Set.contains s freeSorts then natSort else s), ()
+    let transformation natPreamble freeSorts natSort (eqs, diseqs) commands =
+        let mutable wasSubstituted = false
+        let mapSort () s = (if Set.contains s freeSorts then wasSubstituted <- true; natSort else s), ()
         let mapper = MapSorts(mapSort).MapCommand
         let substFreeSortsInCommand = function
             | OriginalCommand(DeclareSort s) when Set.contains s freeSorts -> None
             | c -> Some (mapper c)
         let commands = List.choose substFreeSortsInCommand commands
         let commands = List.map (SubstituteOperations(Map.empty, eqs, diseqs).SubstituteOperationsWithRelations) commands
-        commands
+        if wasSubstituted then natPreamble @ commands else commands
 
 let toClauses performTransform needToApplyTIPfix commands =
     let commands = if needToApplyTIPfix then TIPFixes.applyTIPfix commands else commands
@@ -849,8 +853,8 @@ let toClauses performTransform needToApplyTIPfix commands =
     let relHornClauses = RelativizeSymbols.relativizeSymbols wereDefines hornClauses
     let relHornClauses = BoolAxiomatization.axiomatizeBoolOperations relHornClauses
     if not performTransform then relHornClauses else
-    let commandsWithoutInts, natSort = SubstIntWithNat.substituteIntWithNat relHornClauses
+    let natPreamble, commandsWithoutInts, natSort = SubstIntWithNat.substituteIntWithNat relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
-    let substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
+    let substFreeSortClauses = SubstituteFreeSortsWithNat.transformation natPreamble freeSorts natSort adtEqs arrayTransformedClauses
     substFreeSortClauses
