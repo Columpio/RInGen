@@ -280,8 +280,8 @@ type IConcreteSolver () =
         p.StartInfo.WindowStyle <- ProcessWindowStyle.Hidden
         let error = StringBuilder()
         let output = StringBuilder()
-        p.ErrorDataReceived.Add(fun e -> error.Append(e.Data) |> ignore)
-        p.OutputDataReceived.Add(fun o -> output.Append(o.Data) |> ignore)
+        p.ErrorDataReceived.Add(fun e -> error.AppendLine(e.Data) |> ignore)
+        p.OutputDataReceived.Add(fun o -> output.AppendLine(o.Data) |> ignore)
         x.SetupProcess p.StartInfo filename
 
         p.Start() |> ignore
@@ -379,6 +379,8 @@ type MyZ3Solver () =
 //    override x.BinaryOptions filename = $"fp.engine=spacer -smt2 -nw -memory:%d{MEMORY_LIMIT_MB} -T:%d{SECONDS_TIMEOUT} %s{filename}"
 
     override x.InterpretResult error raw_output =
+        let raw_output = raw_output.Trim()
+        let error = error.Trim()
         let output = Environment.split raw_output
         match output with
         | line::_ when line = "timeout" -> TIMELIMIT
@@ -386,8 +388,8 @@ type MyZ3Solver () =
         | line::_ when line = "sat" -> SAT ElemFormula
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | "unknown"::_ ->
-            match Environment.split (error.Trim()) with
-            | es when List.contains "off-the-shelf solver ended with sat" es -> SAT NoModel
+            match Environment.split error with
+            | es when List.contains "off-the-shelf solver ended with sat" es -> SAT FiniteModel
             | _ -> UNKNOWN (error + " &&& " + raw_output)
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
