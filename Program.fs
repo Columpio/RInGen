@@ -8,6 +8,7 @@ open CommandLine
 type solveOptions = {
     [<Option("no-transform", HelpText = "Just run a solver with no transformation")>] notransform : bool
     [<Option("tip", HelpText = "Convert TIP-like systems to Horn clauses")>] tip : bool
+    [<Option('e', "keep-exist-quantifiers", HelpText = "Handle existential quantifiers (instead of sound halting with `unknown`)")>] keep_exists : bool
     [<Option('t', "timelimit", HelpText = "Time limit, in seconds (default 300)")>] timelimit : int option
     [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
     [<Option('f', "force", HelpText = "Force benchmark generation")>] force : bool
@@ -44,12 +45,21 @@ let solve (solveOptions : solveOptions) =
     | Some timelimit -> SolverResult.SECONDS_TIMEOUT <- timelimit
     | None -> ()
     let solver = solverByName solveOptions.solver
-    let options = {transform=not solveOptions.notransform; tip=solveOptions.tip; quiet=solveOptions.quiet; force=solveOptions.force; path=solveOptions.path; output=solveOptions.output; rerun=solveOptions.rerun}
+    let options = {
+        transform=not solveOptions.notransform
+        tip=solveOptions.tip
+        keep_exists=solveOptions.keep_exists
+        quiet=solveOptions.quiet
+        force=solveOptions.force
+        path=solveOptions.path
+        output=solveOptions.output
+        rerun=solveOptions.rerun
+    }
     solver.TransformAndRunOnBenchmark options
 
 let transform (transformOptions : transformOptions) =
     let solver = if transformOptions.tosorts then SortHornTransformer() :> ITransformer else ADTHornTransformer() :> ITransformer
-    let options = {transform=true; tip=transformOptions.tip; quiet=transformOptions.quiet; force=false; path=transformOptions.path; output=transformOptions.output; rerun=false}
+    let options = {transform=true; tip=transformOptions.tip; keep_exists=true; quiet=transformOptions.quiet; force=false; path=transformOptions.path; output=transformOptions.output; rerun=false}
     solver.TransformBenchmark options
 
 [<EntryPoint>]

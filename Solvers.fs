@@ -10,6 +10,7 @@ type solvingOptions =
     {
         transform : bool
         tip : bool
+        keep_exists : bool
         rerun : bool
         quiet : bool
         force : bool
@@ -43,7 +44,7 @@ let private isNonLinearCHCSystem =
         | _ -> false
     List.exists isNonLinearCommand
 
-let private cleanCommands set_logic chcSystem =
+let private cleanCommands keepExists set_logic chcSystem =
     let filt = function
         | OriginalCommand(SetLogic _)
         | OriginalCommand(GetInfo _)
@@ -53,16 +54,16 @@ let private cleanCommands set_logic chcSystem =
         | _ -> true
     let chcSystem = chcSystem |> List.filter filt
     let commands = OriginalCommand set_logic :: chcSystem @ [OriginalCommand CheckSat]
-    if containsExistentialClauses commands then [] else [commands]
+    if not keepExists && containsExistentialClauses commands then [] else [commands]
 
 type ITransformer =
     abstract member TransformBenchmark : solvingOptions -> unit
-    abstract member TransformClauses : transformedCommand list -> transformedCommand list list
+    abstract member TransformClauses : bool -> transformedCommand list -> transformedCommand list list
 
 [<AbstractClass>]
 type IDirectoryTransformer<'directory> () =
     abstract member GenerateClauses : solvingOptions -> 'directory
-    abstract member TransformClauses : transformedCommand list -> transformedCommand list list
+    abstract member TransformClauses : bool -> transformedCommand list -> transformedCommand list list
 
     member x.TransformBenchmarkAndReturn (opts : solvingOptions) =
         let outputDirectory = x.GenerateClauses opts
@@ -83,7 +84,7 @@ type IDirectoryTransformer<'directory> () =
                     if not opts.quiet then List.iter (printfn "%s") outputFiles
             | _ when Directory.Exists(opts.path) -> x.TransformBenchmarkAndReturn opts |> ignore
             | _ -> failwithf $"There is no such file or directory: %s{opts.path}"
-        member x.TransformClauses ts = x.TransformClauses ts
+        member x.TransformClauses keepExists ts = x.TransformClauses keepExists ts
 
     abstract FileExtension : string
     default x.FileExtension = ".smt2"
@@ -96,9 +97,9 @@ type IDirectoryTransformer<'directory> () =
     abstract CommandsToStrings : transformedCommand list -> string list list
     default x.CommandsToStrings commands = [List.map toString commands]
 
-    member x.CodeTransformation performTransform tip commands =
-        let chcSystem = SMTcode.toClauses performTransform tip commands
-        (x :> ITransformer).TransformClauses chcSystem
+    member x.CodeTransformation opts commands =
+        let chcSystem = SMTcode.toClauses opts.transform opts.tip commands
+        (x :> ITransformer).TransformClauses opts.keep_exists chcSystem
 
     member x.SaveClauses directory dst commands =
         let lines = List.collect x.CommandsToStrings commands
@@ -118,7 +119,7 @@ type IDirectoryTransformer<'directory> () =
                 fun (path : string) -> Path.Join(outputPath, Path.GetFileName(path))
             | None -> id
         let exprs = SMTExpr.parseFile opts.path
-        let transformed = x.CodeTransformation opts.transform opts.tip exprs
+        let transformed = x.CodeTransformation opts exprs
         let paths =
             seq {
                 let lines = List.collect x.CommandsToStrings transformed
@@ -149,7 +150,7 @@ let private generateClauses (x : IDirectoryTransformer<string>) (opts : solvingO
             let exprs = SMTExpr.parseFile src
             try
                 if opts.force || not <| isBadBenchmark exprs then
-                    let newTests = x.CodeTransformation opts.transform opts.tip exprs
+                    let newTests = x.CodeTransformation opts exprs
                     total_generated <- total_generated + x.SaveClauses opts.path dst newTests
                 successful <- successful + 1
             with e -> if not opts.quiet then printfn $"Exception in %s{src}: {e.Message}"
@@ -165,22 +166,22 @@ type IConcreteTransformer () =
 
     override x.GenerateClauses opts = generateClauses x opts
 
-let private sortTransformClauses chcSystem =
+let private sortTransformClauses keepExists chcSystem =
     let noADTSystem = SMTcode.DatatypesToSorts.datatypesToSorts chcSystem
     let set_logic_all = SetLogic "ALL"
-    cleanCommands set_logic_all noADTSystem
+    cleanCommands keepExists set_logic_all noADTSystem
 
-let private adtTransformClauses chcSystem =
+let private adtTransformClauses keepExists chcSystem =
     let set_logic_horn = SetLogic "HORN"
-    cleanCommands set_logic_horn chcSystem
+    cleanCommands keepExists set_logic_horn chcSystem
 
 type SortHornTransformer () =
     inherit IConcreteTransformer ()
-    override x.TransformClauses chcSystem = sortTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = sortTransformClauses keepExists chcSystem
 
 type ADTHornTransformer () =
     inherit IConcreteTransformer ()
-    override x.TransformClauses chcSystem = adtTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = adtTransformClauses keepExists chcSystem
 
 type ISolver =
     inherit ITransformer
@@ -235,7 +236,6 @@ type IDirectorySolver<'directory>() =
                     for outputFile in outputFiles do
                         let result, time = x.SolveWithTime opts.quiet outputFile
                         if not opts.quiet then printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
-                x.GenerateClausesSingle opts |> ignore
             | _ when Directory.Exists(opts.path) ->
                 let outputDirectory = x.TransformBenchmarkAndReturn opts
                 let resultsDirectory = if opts.rerun then x.RerunSat opts.quiet outputDirectory else x.RunOnBenchmarkSet false opts.quiet outputDirectory
@@ -314,7 +314,7 @@ type IConcreteSolver () =
 type CVC4FiniteSolver () =
     inherit IConcreteSolver ()
     override x.ShouldSearchForBinaryInEnvironment = false
-    override x.TransformClauses chcSystem = sortTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = sortTransformClauses keepExists chcSystem
 
     override x.Name = "CVC4Finite"
     override x.BinaryName = "cvc4"
@@ -334,7 +334,7 @@ type CVC4FiniteSolver () =
 type EldaricaSolver () =
     inherit IConcreteSolver ()
     override x.ShouldSearchForBinaryInEnvironment = true
-    override x.TransformClauses chcSystem = adtTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = adtTransformClauses keepExists chcSystem
 
     override x.Name = "Eldarica"
     override x.BinaryName = "eld"
@@ -352,7 +352,7 @@ type EldaricaSolver () =
 type Z3Solver () =
     inherit IConcreteSolver ()
     override x.ShouldSearchForBinaryInEnvironment = false
-    override x.TransformClauses chcSystem = adtTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = adtTransformClauses keepExists chcSystem
 
     override x.Name = "Z3"
     override x.BinaryName = "z3"
@@ -371,7 +371,7 @@ type Z3Solver () =
 type MyZ3Solver () =
     inherit IConcreteSolver ()
     override x.ShouldSearchForBinaryInEnvironment = true
-    override x.TransformClauses chcSystem = adtTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = adtTransformClauses keepExists chcSystem
 
     override x.Name = "MyZ3"
     override x.BinaryName = "myz3"
@@ -394,7 +394,7 @@ type MyZ3Solver () =
 type CVC4IndSolver () =
     inherit IConcreteSolver ()
     override x.ShouldSearchForBinaryInEnvironment = false
-    override x.TransformClauses chcSystem = adtTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = adtTransformClauses keepExists chcSystem
 
     override x.Name = "CVC4Ind"
     override x.BinaryName = "cvc4"
@@ -432,7 +432,7 @@ type VeriMAPiddtSolver () =
     override x.BinaryName = binaryName
     override x.BinaryOptions filename = $"--timeout=%d{SECONDS_TIMEOUT} --check-sat %s{filename}"
     override x.FileExtension = ".pl"
-    override x.TransformClauses chcSystem = adtTransformClauses chcSystem
+    override x.TransformClauses keepExists chcSystem = adtTransformClauses keepExists chcSystem
 
     override x.CommandsToStrings commands =
         if PrintToProlog.isFirstOrderPrologProgram commands then [PrintToProlog.toPrologFile commands] else []
@@ -491,10 +491,10 @@ type VampireSolver () =
         //TODO: return mode casc_sat: it does not produce meaningful saturation sets as it tries `--newcnf on`, which has a bug (see: https://github.com/vprover/vampire/issues/240)
         //TODO: `-av off` is needed because AVATAR is enabled by default and it also has a bug (with booleans)
 
-    override x.TransformClauses chcSystem =
+    override x.TransformClauses keepExists chcSystem =
         let sortMode = true //TODO: add option?
         let transform, logic = if sortMode then sortTransformClauses, "UF" else adtTransformClauses, "UFDT"
-        let chcs = transform chcSystem
+        let chcs = transform keepExists chcSystem
         let setlogic = OriginalCommand <| SetLogic logic
         List.map (List.map (function OriginalCommand (SetLogic _) -> setlogic | c -> c)) chcs
 
@@ -516,7 +516,7 @@ type AllSolver () =
     override x.BinaryName = "AllSolvers"
     override x.BinaryOptions _ = __unreachable__()
     override x.InterpretResult _ _ = __unreachable__()
-    override x.TransformClauses _ = __unreachable__()
+    override x.TransformClauses _ _ = __unreachable__()
 
     override x.Solve filename =
         for solver in solvers do (solver :> ISolver).Solve(filename) |> ignore

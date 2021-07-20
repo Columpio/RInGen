@@ -57,7 +57,7 @@ Executable then can be found in the `~/RInGen/bin/Release/net5.0/<RID>/publish` 
 ### `transform (--tip) (--sorts) (--quiet) (--output-directory PATH) /FULL/PATH`
 Only process input files, do not run any solvers.
 
-### `solve (--tip) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
+### `solve (--tip) (--keep-exist-quantifiers) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
 Process input files and run one (or many) solvers.
 
 ## Shared options for both modes
@@ -91,6 +91,8 @@ Specifically, each ADT sort declaration with `declare-datatypes` is substituted 
 This preprocessing step is required to run the finite-model finder.
 
 ## `solve` options
+### `-e`, `--keep-exist-quantifiers`
+Proceed to solving even if there are existential quantifiers after transformation. By default this option is disabled and `RInGen` will return `unknown` if existentials appeared after transformation.
 ### `SOLVER_NAME`
 Run a specific solver after processing. Available options:
 - [Z3](https://github.com/Z3Prover/z3) (`z3`)
