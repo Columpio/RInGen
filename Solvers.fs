@@ -292,7 +292,7 @@ type IConcreteSolver () =
         p.Close()
         if not exited then
             TIMELIMIT
-        else x.InterpretResult (error.ToString()) (output.ToString())
+        else x.InterpretResult (error.ToString().Trim()) (output.ToString().Trim())
 
     member private x.ConditionalRunOnBenchmarkSet overwrite quiet dir =
         let run_file (src : string) (dst : string) =

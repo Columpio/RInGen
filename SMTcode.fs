@@ -830,11 +830,12 @@ module private SubstIntWithNat =
         let relativizer = SubstituteOperations(natOps, natConstMap)
         let commands = List.map (substInCommand mapper relativizer) commands
         let wasSubstituted = relativizer.WasSubstituted ()
-        (if wasMapped || wasSubstituted then preamble else []), commands, natSort
+        let shouldAddNatPreamble = wasMapped || wasSubstituted
+        shouldAddNatPreamble, preamble, commands, natSort
 
 module private SubstituteFreeSortsWithNat =
 
-    let transformation natPreamble freeSorts natSort (eqs, diseqs) commands =
+    let transformation freeSorts natSort (eqs, diseqs) commands =
         let mutable wasSubstituted = false
         let mapSort () s = (if Set.contains s freeSorts then wasSubstituted <- true; natSort else s), ()
         let mapper = MapSorts(mapSort).MapCommand
@@ -843,7 +844,7 @@ module private SubstituteFreeSortsWithNat =
             | c -> Some (mapper c)
         let commands = List.choose substFreeSortsInCommand commands
         let commands = List.map (SubstituteOperations(Map.empty, eqs, diseqs).SubstituteOperationsWithRelations) commands
-        if wasSubstituted then natPreamble @ commands else commands
+        wasSubstituted, commands
 
 let toClauses performTransform needToApplyTIPfix commands =
     let commands = if needToApplyTIPfix then TIPFixes.applyTIPfix commands else commands
@@ -853,8 +854,9 @@ let toClauses performTransform needToApplyTIPfix commands =
     let relHornClauses = RelativizeSymbols.relativizeSymbols wereDefines hornClauses
     let relHornClauses = BoolAxiomatization.axiomatizeBoolOperations relHornClauses
     if not performTransform then relHornClauses else
-    let natPreamble, commandsWithoutInts, natSort = SubstIntWithNat.substituteIntWithNat relHornClauses
+    let shouldAddNatPreamble1, natPreamble, commandsWithoutInts, natSort = SubstIntWithNat.substituteIntWithNat relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
-    let substFreeSortClauses = SubstituteFreeSortsWithNat.transformation natPreamble freeSorts natSort adtEqs arrayTransformedClauses
-    substFreeSortClauses
+    let shouldAddNatPreamble2, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
+    let clausesWithPreamble = if shouldAddNatPreamble1 || shouldAddNatPreamble2 then natPreamble @ substFreeSortClauses else substFreeSortClauses
+    clausesWithPreamble
