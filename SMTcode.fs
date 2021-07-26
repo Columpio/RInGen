@@ -479,8 +479,10 @@ module private DefinitionsToDeclarations =
 //            | [] -> constraint_in_body, Bot
 //            | [Conjunction [pred]] -> constraint_in_body, pred
 //            | ts -> failwithf $"Too many atoms in head: {ts}"
+        let resultTerm =
+            notMapApply (fun op ts -> [], AApply(op, ts)) (fun r -> [r], Bot)
         let takeHead = function
-            | Disjunction [Conjunction [pred]] -> [[], pred]
+            | Disjunction [Conjunction [pred]] -> [resultTerm pred]
             | ts ->
                 match Disj.exponent ts with
                 | Conjunction [Disjunction ts] ->

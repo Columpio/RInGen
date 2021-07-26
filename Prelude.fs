@@ -41,6 +41,16 @@ let inline toString x = x.ToString()
 module List =
     let cons x xs = x :: xs
 
+    let choose2 p xs =
+        let rec choose2 xs yes nos =
+            match xs with
+            | [] -> List.rev yes, List.rev nos
+            | x::xs ->
+                match p x with
+                | Choice1Of2 y -> choose2 xs (y::yes) nos
+                | Choice2Of2 n -> choose2 xs yes (n::nos)
+        choose2 xs [] []
+
     let butLast xs =
         let first, last = List.splitAt (List.length xs - 1) xs
         first, List.head last
@@ -110,7 +120,7 @@ module Map =
     let union x y = Map.foldBack Map.add x y
 
 type symbol = string
-let symbol = id
+let symbol : string -> symbol = id
 module Symbols =
     let sprintForDeclare = id
 
@@ -197,8 +207,8 @@ type term =
         | TApply(op, []) -> op.ToString()
         | TApply(f, xs) -> sprintf "(%O %s)" f (xs |> List.map toString |> join " ")
 let typeOfTerm = function
-    | TConst(("true"))
-    | TConst(("false")) -> boolSort
+    | TConst "true"
+    | TConst "false" -> boolSort
     | TConst c ->
         let r = ref 0
         if System.Int32.TryParse(c, r) then integerSort else failwithf $"Unknown constant type: {c}"
@@ -272,8 +282,10 @@ type command =
     | GetModel
     | Exit
     | GetInfo of string
+    | GetProof
     | SetInfo of string * string option
     | SetLogic of string
+    | SetOption of string
     | DeclareDatatype of sort * (symbol * sorted_var list) list
     | DeclareDatatypes of (sort * (symbol * sorted_var list) list) list
     | DeclareFun of symbol * sort list * sort
@@ -290,9 +302,11 @@ type command =
         | Exit -> "(exit)"
         | CheckSat -> "(check-sat)"
         | GetModel -> "(get-model)"
+        | GetProof -> "(get-proof)"
         | GetInfo s -> $"(get-info %s{s})"
         | SetInfo(k, vopt) -> $"""(set-info %s{k} %s{Option.defaultValue "" vopt})"""
         | SetLogic l -> $"(set-logic %s{l})"
+        | SetOption l -> $"(set-option %s{l})"
         | DeclareConst(name, sort) -> $"(declare-const {name} {sort})"
         | DeclareSort sort -> $"(declare-sort {sort} 0)"
         | DeclareFun(name, args, ret) -> sprintf "(declare-fun %s (%s) %O)" (Symbols.sprintForDeclare name) (args |> List.map toString |> join " ") ret

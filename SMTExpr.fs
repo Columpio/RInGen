@@ -208,6 +208,8 @@ let private parseToTerms commands =
                 Command(DeclareDatatypes (List.zip names dfs)), typer
             | :? SMTLIBv2Parser.Cmd_checkSatContext -> Command CheckSat, typer
             | :? SMTLIBv2Parser.Cmd_getModelContext -> Command GetModel, typer
+            | :? SMTLIBv2Parser.Cmd_getProofContext -> Command GetProof, typer
+            | :? SMTLIBv2Parser.Cmd_setOptionContext -> Command (SetOption(e.option().children |> Seq.map (fun t -> t.GetText()) |> join " ")), typer
             | :? SMTLIBv2Parser.Cmd_getInfoContext -> Command (GetInfo(e.info_flag().GetText())), typer
             | :? SMTLIBv2Parser.Cmd_setInfoContext -> Command (SetInfo(parseAttribute <| e.attribute())), typer
             | :? SMTLIBv2Parser.Cmd_assertContext ->

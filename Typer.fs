@@ -74,23 +74,29 @@ let addADTOperations (typer : Typer) adtname fname selectors =
     let typer = addOperation testerName (testerOpOf testerName adtname) typer
     constr_op, typer
 
-let rec nota (typer : Typer) = function
-    | Top -> Bot :: []
-    | Bot -> Top :: []
+let notMapApply f z = function
+    | Top -> z Bot
+    | Bot -> z Top
 //    | ANot e -> e
-    | Equal(t1, t2) -> Distinct(t1, t2) :: []
-    | Distinct(t1, t2) -> Equal(t1, t2) :: []
-    | AApply(NotT negop, ts) -> AApply(negop, ts) :: [] //TODO: approximates too much: see CHC-LIA-LIN-Arrays_001.smt2
-    | AApply(ElementaryOperation(testerName, [adtname], _), ([_] as args)) ->
-        match typer.tryGetTesters adtname with
-        | Some testers when List.contains testerName testers ->
-            List.filter ((<>) testerName) testers |> List.map (fun name -> let op = typer.find name in AApply(op, args))
+    | Equal(t1, t2) -> z <| Distinct(t1, t2)
+    | Distinct(t1, t2) -> z <| Equal(t1, t2)
+    | AApply(op, ts) -> f op ts
+
+let rec nota (typer : Typer) =
+    let notOperation op ts =
+        match op, ts with
+        | (NotT negop, ts) -> AApply(negop, ts) :: [] //TODO: approximates too much: see CHC-LIA-LIN-Arrays_001.smt2
+        | (ElementaryOperation(testerName, [adtname], _), ([_] as args)) ->
+            match typer.tryGetTesters adtname with
+            | Some testers when List.contains testerName testers ->
+                List.filter ((<>) testerName) testers |> List.map (fun name -> let op = typer.find name in AApply(op, args))
+            | _ -> __notImplemented__()
+    //    | AApply(UserDefinedOperation _, []) as e -> ANot e
+    //    | AApply(UserDefinedOperation _, _) as e -> ANot e // TODO: failwithf "Trying to obtain negation of user defined predicate: %O" e
+    //    | AAnd ts -> ts |> List.map nota |> AOr
+    //    | AOr ts -> ts |> List.map nota |> AAnd
         | _ -> __notImplemented__()
-//    | AApply(UserDefinedOperation _, []) as e -> ANot e
-//    | AApply(UserDefinedOperation _, _) as e -> ANot e // TODO: failwithf "Trying to obtain negation of user defined predicate: %O" e
-//    | AAnd ts -> ts |> List.map nota |> AOr
-//    | AOr ts -> ts |> List.map nota |> AAnd
-    | _ -> __notImplemented__()
+    notMapApply notOperation List.singleton
 
 let interpretCommand (typer : Typer) c =
     let extendDef (typer : Typer) (name, vars, sort, _) = addOperation name (Operation.makeUserOperationFromVars name vars sort) typer

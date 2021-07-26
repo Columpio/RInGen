@@ -21,8 +21,8 @@ type IdentGenerator() =
 
 let idgen = IdentGenerator()
 
-let gensymp (prefix : symbol) = idgen.gensymp prefix
-let gensyms = symbol >> gensymp
+let gensymp (prefix : symbol) : symbol = idgen.gensymp prefix
+let gensyms  : string -> symbol = symbol >> gensymp
 let gensym () = gensyms "x"
 let gensymsort = function
     | PrimitiveSort s -> gensymp s |> PrimitiveSort
