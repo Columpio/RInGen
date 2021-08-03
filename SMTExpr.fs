@@ -91,14 +91,17 @@ let rec private parseVarBinding te (expr : SMTLIBv2Parser.Var_bindingContext) =
     let te = VarEnv.replaceOne te vs
     (vs, e), te
 
-and private parseTerm ((typer, env) as te) (e : SMTLIBv2Parser.TermContext) =
+and private parseTerm ((typer : Typer.Typer, env) as te) (e : SMTLIBv2Parser.TermContext) =
     match e.GetChild(0) with
     | :? SMTLIBv2Parser.Spec_constantContext as c -> parseConstant c
     | :? SMTLIBv2Parser.Qual_identifierContext as ident ->
         match parseQualifiedIdentifier ident with
         | "true" -> BoolConst true
         | "false" -> BoolConst false
-        | ident -> Ident(ident, VarEnv.typeGet ident te)
+        | ident ->
+            match typer.tryFind ident with
+            | Some c -> Apply(c, [])
+            | None -> Ident(ident, VarEnv.typeGet ident te)
     | _ ->
         match e.GetChild(1) with
         | :? SMTLIBv2Parser.Qual_identifierContext as op ->

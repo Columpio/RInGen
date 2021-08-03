@@ -41,7 +41,7 @@ let rec private mapApply vars op ts =
     | (op, false), ts -> ts |> join ", " |> sprintf "%s(%s)" op
 
 and private mapTerm vars = function
-    | TConst name -> mapName name
+    | TConst(name, _) -> mapName name
     | TIdent(name, _) -> if Set.contains name vars then mapVariable name else mapName name
     | TApply(op, ts) -> mapApply vars op ts
 and private mapTerms vars = List.map (mapTerm vars)

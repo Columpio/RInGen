@@ -259,8 +259,8 @@ module private DefinitionsToDeclarations =
 
     let rec private exprToTerm atomsAreTerms : smtExpr -> term choosable = function
         | Ident(name, sort) -> TIdent(name, sort) |> toChoosable
-        | BoolConst _ as e -> e |> toString |> symbol |> TConst |> toChoosable
-        | Number n -> n |> toString |> symbol |> TConst |> toChoosable //TODO: IntToNat
+        | BoolConst b -> b |> boolToConst |> toChoosable
+        | Number n -> n |> intToConst |> toChoosable //TODO: IntToNat
         | Apply(op, ts) ->
             let toChoose ts = TApply(op, ts) |> Choosable.destruct
             bindBoolOperator toChoose (exprsToTerms atomsAreTerms ts)

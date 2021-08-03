@@ -47,7 +47,7 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         (vars, conds), result
 
     let rec substituteOperationsWithRelationsInTerm = function
-        | TConst c as t ->
+        | TConst(c, _) as t ->
             match constantMap c with
             | Some c' -> wasSubstituted <- true; [], [], c'
             | None -> [], [], t

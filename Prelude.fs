@@ -197,21 +197,17 @@ type smtExpr =
             $"(exists (%s{sorted_vars_to_string vars}) {body})"
 type function_def = symbol * sorted_var list * sort * smtExpr
 type term =
-    | TConst of ident
+    | TConst of ident * sort
     | TIdent of ident * sort
     | TApply of operation * term list
     override x.ToString() =
         match x with
-        | TConst name -> name.ToString()
+        | TConst(name, _) -> name.ToString()
         | TIdent(name, _) -> name.ToString()
         | TApply(op, []) -> op.ToString()
         | TApply(f, xs) -> sprintf "(%O %s)" f (xs |> List.map toString |> join " ")
 let typeOfTerm = function
-    | TConst "true"
-    | TConst "false" -> boolSort
-    | TConst c ->
-        let r = ref 0
-        if System.Int32.TryParse(c, r) then integerSort else failwithf $"Unknown constant type: {c}"
+    | TConst(_, typ)
     | TIdent(_, typ)
     | TApply(ElementaryOperation(_, _, typ), _)
     | TApply(UserDefinedOperation(_, _, typ), _) -> typ
@@ -333,18 +329,20 @@ let orig = OriginalCommand
 let trans = TransformedCommand
 let truee = BoolConst true
 let falsee = BoolConst false
-let truet = TConst(("true"))
-let falset = TConst(("false"))
+let truet = TConst("true", boolSort)
+let falset = TConst("false", boolSort)
+let boolToConst b = if b then truet else falset
+let intToConst n = TConst(toString n, integerSort)
 let distinct t1 t2 =
     match t1, t2 with
-    | TConst(("true")), TConst(("true")) -> Bot
-    | TConst(("true")), TConst(("false")) -> Top
-    | TConst(("false")), TConst(("true")) -> Top
-    | TConst(("false")), TConst(("false")) -> Bot
-    | t, TConst(("false"))
-    | TConst(("false")), t -> Equal(t, truet)
-    | t, TConst(("true"))
-    | TConst(("true")), t -> Equal(t, falset)
+    | TConst("true", _), TConst("true", _) -> Bot
+    | TConst("true", _), TConst("false", _) -> Top
+    | TConst("false", _), TConst("true", _) -> Top
+    | TConst("false", _), TConst("false", _) -> Bot
+    | t, TConst("false", _)
+    | TConst("false", _), t -> Equal(t, truet)
+    | t, TConst("true", _)
+    | TConst("true", _), t -> Equal(t, falset)
     | _ -> Distinct(t1, t2)
 let ore =
     let rec ore acc = function

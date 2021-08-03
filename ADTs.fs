@@ -35,11 +35,11 @@ module SupplementaryADTAxioms =
         let decl = DeclareFun(relTesterName, [sort], boolSort)
         relOp, decl, addShouldNotRelativize op relOp substs
 
-    let applyConstructor adtSort op xs = if List.isEmpty xs then TIdent(Operation.opName op, adtSort) else TApply(op, xs)
+    let applyConstructor op xs = TApply(op, xs)
 
     let private generateTesterBody tester_op constructor_op sort =
         let constructorVars = IdentGenerator.generateArguments constructor_op
-        rule constructorVars [] (AApply(tester_op, [applyConstructor sort constructor_op (List.map TIdent constructorVars)]))
+        rule constructorVars [] (AApply(tester_op, [applyConstructor constructor_op (List.map TIdent constructorVars)]))
 
     let private generateTesters sort cs substs =
         let generateTester substs (constructorName : symbol, selectorsWithTypes) =
@@ -68,7 +68,7 @@ module SupplementaryADTAxioms =
         // diseqList(l1, l2) -> diseqList(Cons(x, l1), Cons(y, l2))
         let cs = cs |> List.map (fun (name, selectorsWithTypes) -> Operation.makeElementaryOperationFromVars name selectorsWithTypes adtSort)
         let diseq x y = AApply(diseq_op, [x; y])
-        let apply = applyConstructor adtSort
+        let apply = applyConstructor
         let facts = seq {
             for l, r in Seq.nondiag cs do
                 let lvars = IdentGenerator.generateArguments l

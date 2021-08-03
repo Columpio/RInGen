@@ -9,7 +9,7 @@ type private IntToNat() =
     let S_constr = gensyms "S"
     let unS_constr = gensyms "unS"
     let S_op = Operation.makeElementaryOperationFromSorts S_constr [nat_sort] nat_sort
-    let Z = TIdent(Z_constr, nat_sort)
+    let Z = TConst(Z_constr, nat_sort)
     let S t = TApply(S_op, [t])
 
     let rec int_to_natrec (n : int64) = if n <= 0L then Z else S (int_to_natrec (n - 1L))
