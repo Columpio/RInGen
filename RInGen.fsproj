@@ -26,6 +26,7 @@
         <Compile Include="IntToNat.fs" />
         <Compile Include="ADTs.fs" />
         <Compile Include="Arrays.fs" />
+        <Compile Include="Synchronization.fs" />
         <Compile Include="SolverResult.fs" />
         <Compile Include="ResultTable.fs" />
         <Compile Include="SMTcode.fs" />

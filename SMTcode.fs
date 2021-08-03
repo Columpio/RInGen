@@ -748,9 +748,6 @@ type private Utils () =
     static member inline MapOperation(x: MapSorts<unit>, op) = x.FoldOperation((), op) |> fst
 
 module private ArrayTransformations =
-    let private declareOp = function
-        | ElementaryOperation(name, argSorts, retSort) -> DeclareFun(name, argSorts, retSort)
-        | UserDefinedOperation(name, argSorts, retSort) -> DeclareFun(name, argSorts, retSort)
 
     let private generateArraySortName s1 s2 = IdentGenerator.gensyms ("Array" + sortToFlatString s1 + sortToFlatString s2)
     let private generateSelectName newSort = IdentGenerator.gensymp (Symbols.addPrefix "select" newSort)
@@ -798,8 +795,8 @@ module private ArrayTransformations =
         let command, (arraySorts, originalSorts) = MapSorts(mapSort).FoldCommand (arraySorts, Set.empty) command
         let arraySortsDeclarations, selectOps, storeOps = originalSorts |> Set.toList |> List.map (fun newSort -> Map.find newSort arraySorts) |> List.unzip3
         let arraySortsDeclarations = List.map DeclareSort arraySortsDeclarations
-        let selectOpDeclarations = List.map declareOp selectOps
-        let storeOpDeclarations = List.map declareOp storeOps
+        let selectOpDeclarations = List.map Operation.declareOp selectOps
+        let storeOpDeclarations = List.map Operation.declareOp storeOps
         let selectRels = List.fold selectRelativization Map.empty selectOps
         let storeRels = List.fold storeRelativization Map.empty storeOps
         let congrDeclarations, eqs, diseqs = Arrays.generateEqsAndDiseqs eqs diseqs originalSorts arraySorts
@@ -848,7 +845,7 @@ module private SubstituteFreeSortsWithNat =
         let commands = List.map (SubstituteOperations(Map.empty, eqs, diseqs).SubstituteOperationsWithRelations) commands
         wasSubstituted, commands
 
-let toClauses performTransform needToApplyTIPfix commands =
+let toClauses performTransform needToApplyTIPfix synchronize commands =
     let commands = if needToApplyTIPfix then TIPFixes.applyTIPfix commands else commands
     let commandsWithUniqueVariableNames = RemoveVariableOverlapping.removeVariableOverlapping commands
     let freeSorts = commandsWithUniqueVariableNames |> List.choose (function Command(DeclareSort(s)) -> Some s | _ -> None) |> Set.ofList
@@ -861,4 +858,6 @@ let toClauses performTransform needToApplyTIPfix commands =
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
     let shouldAddNatPreamble2, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
     let clausesWithPreamble = if shouldAddNatPreamble1 || shouldAddNatPreamble2 then natPreamble @ substFreeSortClauses else substFreeSortClauses
-    clausesWithPreamble
+    if not synchronize then clausesWithPreamble else
+    let syncClauses = Synchronization.synchronize clausesWithPreamble
+    syncClauses

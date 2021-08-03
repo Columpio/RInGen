@@ -10,6 +10,7 @@ type solvingOptions =
     {
         transform : bool
         tip : bool
+        sync_terms : bool
         keep_exists : bool
         rerun : bool
         quiet : bool
@@ -98,7 +99,7 @@ type IDirectoryTransformer<'directory> () =
     default x.CommandsToStrings commands = [List.map toString commands]
 
     member x.CodeTransformation opts commands =
-        let chcSystem = SMTcode.toClauses opts.transform opts.tip commands
+        let chcSystem = SMTcode.toClauses opts.transform opts.tip opts.sync_terms commands
         (x :> ITransformer).TransformClauses opts.keep_exists chcSystem
 
     member x.SaveClauses directory dst commands =

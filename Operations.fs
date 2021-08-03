@@ -22,6 +22,10 @@ module Operation =
     let makeElementaryOperationFromSorts name argSorts retSort = ElementaryOperation(name, argSorts, retSort)
     let makeElementaryRelationFromSorts name argSorts = makeElementaryOperationFromSorts name argSorts boolSort
 
+    let declareOp = function
+        | ElementaryOperation(name, argSorts, retSort) -> DeclareFun(name, argSorts, retSort)
+        | UserDefinedOperation(name, argSorts, retSort) -> DeclareFun(name, argSorts, retSort)
+
     let private operationToIdent = function
         | UserDefinedOperation(name, [], ret) -> Ident(name, ret)
         | ElementaryOperation(name, [], ret) -> Ident(name, ret)

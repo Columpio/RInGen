@@ -77,6 +77,11 @@ This flag makes the tool treat all `assert`ions as **queries**, meaning that
 they are transformed to the following form:
 ```(assert (forall ... (=> .. false)))```
 
+### `-s`, `--sync-terms`
+Synchronize ADT terms of a CHC system by making all user predicates unary and introducing new predicates and combined ADT declarations.
+User predicate with signature `S1 * ... * Sn` will become a unary predicate over fresh ADT sort `S1...Sn`.
+Term synchronization is hardcoded (like in TATA): left subterm is synchronized with left subterm, right with right, etc.
+
 ### `-q`, `--quiet`
 Quiet mode. Only outputs are `sat`, `unsat`, `unknown` when in `solve` mode or nothing when in `transform` mode.
 

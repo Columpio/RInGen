@@ -1,5 +1,6 @@
 [<AutoOpen>]
 module RInGen.Prelude
+open System.Collections.Generic
 open System.IO
 
 let __notImplemented__() = failwith "Not implemented!"
@@ -50,6 +51,16 @@ module List =
                 | Choice1Of2 y -> choose2 xs (y::yes) nos
                 | Choice2Of2 n -> choose2 xs yes (n::nos)
         choose2 xs [] []
+
+    let rec foldChoose f z xs =
+        match xs with
+        | [] -> Some z
+        | x::xs ->
+            match f z x with
+            | Some y -> foldChoose f y xs
+            | None -> None
+
+    let mapChoose f xs = foldChoose (fun ys x -> match f x with Some y -> Some(y::ys) | None -> None) [] xs |> Option.map List.rev
 
     let butLast xs =
         let first, last = List.splitAt (List.length xs - 1) xs
@@ -118,6 +129,13 @@ module Seq =
 
 module Map =
     let union x y = Map.foldBack Map.add x y
+
+module Dictionary =
+    let toList (d : Dictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
+
+    let tryGetValue (key : 'key) (d : Dictionary<'key, 'value>) =
+        let dummy = ref (Unchecked.defaultof<'value>)
+        if d.TryGetValue(key, dummy) then Some !dummy else None
 
 type symbol = string
 let symbol : string -> symbol = id
