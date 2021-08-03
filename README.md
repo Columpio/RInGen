@@ -54,10 +54,10 @@ Executable then can be found in the `~/RInGen/bin/Release/net5.0/<RID>/publish` 
 ```
 
 ## Modes and Options
-### `transform (--tip) (--sorts) (--quiet) (--output-directory PATH) /FULL/PATH`
+### `transform (--tip) (--sync-terms) (--sorts) (--quiet) (--output-directory PATH) /FULL/PATH`
 Only process input files, do not run any solvers.
 
-### `solve (--tip) (--keep-exist-quantifiers) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
+### `solve (--tip) (--sync-terms) (--keep-exist-quantifiers) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
 Process input files and run one (or many) solvers.
 
 ## Shared options for both modes

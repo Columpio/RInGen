@@ -1,10 +1,5 @@
 module RInGen.SolverResult
 
-
-let mutable SECONDS_TIMEOUT = 5 * 60
-let MSECONDS_TIMEOUT () = SECONDS_TIMEOUT * 1000
-let MEMORY_LIMIT_MB = 4 * 1024
-
 type Model = ElemFormula | SizeElemFormula | FiniteModel | Saturation | NoModel
 type SolverResult = SAT of Model | UNSAT | ERROR of string | UNKNOWN of string | TIMELIMIT | OUTOFMEMORY
 

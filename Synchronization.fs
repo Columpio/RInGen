@@ -110,7 +110,7 @@ type private POBDB (adts) =
         let sorts = List.map x.TypeOfCombinedTerm pob
         let op = Operation.makeElementaryRelationFromSorts pident sorts
         pobs.Add(pob, op)
-        printfn $"""registered {op}: {pob |> List.map (List.map toString >> join ", " >> sprintf "(%s)") |> join "; "}"""
+        if IN_EXTRA_VERBOSE_MODE () then printfn $"""registered {op}: {pob |> List.map (List.map toString >> join ", " >> sprintf "(%s)") |> join "; "}"""
         op
 
     member private x.TryGetPOB(pob) : operation option = Dictionary.tryGetValue pob pobs
@@ -177,7 +177,7 @@ type private POBDB (adts) =
         // generate declarations
         // return
         let ops, rules = rules |> Dictionary.toList |> List.unzip
-        let rules = rules |> List.concat |> List.map x.MakeClosedRule
+        let rules = rules |> List.map List.rev |> List.concat |> List.map x.MakeClosedRule
         let decls = List.map Operation.declareOp ops
         List.map OriginalCommand decls @ List.map TransformedCommand rules
 

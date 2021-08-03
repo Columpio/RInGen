@@ -13,7 +13,6 @@ type solvingOptions =
         sync_terms : bool
         keep_exists : bool
         rerun : bool
-        quiet : bool
         force : bool
         path : string
         output : string option
@@ -68,7 +67,7 @@ type IDirectoryTransformer<'directory> () =
 
     member x.TransformBenchmarkAndReturn (opts : solvingOptions) =
         let outputDirectory = x.GenerateClauses opts
-        if not opts.quiet then printfn $"CHC systems of directory %s{opts.path} are preprocessed and saved in {outputDirectory}"
+        if IN_VERBOSE_MODE () then printfn $"CHC systems of directory %s{opts.path} are preprocessed and saved in {outputDirectory}"
         outputDirectory
 
     interface ITransformer with
@@ -79,10 +78,11 @@ type IDirectoryTransformer<'directory> () =
                 match outputFiles with
                 | [] -> printfn "unknown"
                 | [outputFile] ->
-                    if opts.quiet then printfn $"%s{outputFile}" else printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
+                    if IN_VERBOSE_MODE () then printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
+                    else printfn $"%s{outputFile}"
                 | _ ->
-                    if not opts.quiet then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
-                    if not opts.quiet then List.iter (printfn "%s") outputFiles
+                    if IN_VERBOSE_MODE () then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
+                    if IN_VERBOSE_MODE () then List.iter (printfn "%s") outputFiles
             | _ when Directory.Exists(opts.path) -> x.TransformBenchmarkAndReturn opts |> ignore
             | _ -> failwithf $"There is no such file or directory: %s{opts.path}"
         member x.TransformClauses keepExists ts = x.TransformClauses keepExists ts
@@ -146,7 +146,7 @@ let private generateClauses (x : IDirectoryTransformer<string>) (opts : solvingO
     let mutable total_generated = 0
     let mapFile (src : string) dst =
         if shouldBeTransformed src dst then
-            if not opts.quiet then printfn $"Transforming: %s{src}"
+            if IN_VERBOSE_MODE () then printfn $"Transforming: %s{src}"
             files <- files + 1
             let exprs = SMTExpr.parseFile src
             try
@@ -154,11 +154,11 @@ let private generateClauses (x : IDirectoryTransformer<string>) (opts : solvingO
                     let newTests = x.CodeTransformation opts exprs
                     total_generated <- total_generated + x.SaveClauses opts.path dst newTests
                 successful <- successful + 1
-            with e -> if not opts.quiet then printfn $"Exception in %s{src}: {e.Message}"
+            with e -> if IN_VERBOSE_MODE () then printfn $"Exception in %s{src}: {e.Message}"
     walk_through opts.path "" mapFile |> ignore
-    if not opts.quiet then printfn $"All files:       %d{files}"
-    if not opts.quiet then printfn $"Successful:      %d{successful}"
-    if not opts.quiet then printfn $"Total generated: %d{total_generated}"
+    if IN_VERBOSE_MODE () then printfn $"All files:       %d{files}"
+    if IN_VERBOSE_MODE () then printfn $"Successful:      %d{successful}"
+    if IN_VERBOSE_MODE () then printfn $"Total generated: %d{total_generated}"
     x.DirectoryForTransformed opts.path
 
 [<AbstractClass>]
@@ -202,13 +202,13 @@ type IDirectorySolver<'directory>() =
     abstract member InterpretResult : string -> string -> SolverResult
     abstract member BinaryName : string
     abstract member BinaryOptions : string -> string
-    abstract member RunOnBenchmarkSet : bool -> bool -> 'directory -> string
-    abstract member RerunSat : bool -> 'directory -> string
-    default x.RerunSat quiet directory = x.RunOnBenchmarkSet true quiet directory
+    abstract member RunOnBenchmarkSet : bool -> 'directory -> string
+    abstract member RerunSat : 'directory -> string
+    default x.RerunSat directory = x.RunOnBenchmarkSet true directory
     abstract member Solve : string -> SolverResult
 
-    member x.SolveWithTime quiet filename =
-        if not quiet then printfn $"Solving %s{filename} with timelimit %d{SECONDS_TIMEOUT} seconds"
+    member x.SolveWithTime filename =
+        if IN_VERBOSE_MODE () then printfn $"Solving %s{filename} with timelimit %d{SECONDS_TIMEOUT} seconds"
         let timer = Stopwatch()
         timer.Start()
         let result = (x :> ISolver).Solve filename
@@ -227,32 +227,32 @@ type IDirectorySolver<'directory>() =
                 match outputFiles with
                 | [] -> printfn "unknown"
                 | [outputFile] ->
-                    if not opts.quiet then printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
-                    let result, time = x.SolveWithTime opts.quiet outputFile
-                    if opts.quiet then printfn "%s" <| quietModeToString result else
-                    printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
+                    if IN_VERBOSE_MODE () then printfn $"CHC system in %s{opts.path} is preprocessed and saved in %s{outputFile}"
+                    let result, time = x.SolveWithTime outputFile
+                    if IN_VERBOSE_MODE () then printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
+                    else printfn $"%s{quietModeToString result}"
                 | _ ->
-                    if not opts.quiet then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
-                    if not opts.quiet then List.iter (printfn "%s") outputFiles
+                    if IN_VERBOSE_MODE () then printfn $"Preprocessing of %s{opts.path} produced %d{List.length outputFiles} files:"
+                    if IN_VERBOSE_MODE () then List.iter (printfn "%s") outputFiles
                     for outputFile in outputFiles do
-                        let result, time = x.SolveWithTime opts.quiet outputFile
-                        if not opts.quiet then printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
+                        let result, time = x.SolveWithTime outputFile
+                        if IN_VERBOSE_MODE () then printfn $"Solver run on %s{outputFile} and the result is {result} which was obtained in %d{time} msec."
             | _ when Directory.Exists(opts.path) ->
                 let outputDirectory = x.TransformBenchmarkAndReturn opts
-                let resultsDirectory = if opts.rerun then x.RerunSat opts.quiet outputDirectory else x.RunOnBenchmarkSet false opts.quiet outputDirectory
-                if not opts.quiet then printfn $"Solver run on {outputDirectory} and saved results in %s{resultsDirectory}"
+                let resultsDirectory = if opts.rerun then x.RerunSat outputDirectory else x.RunOnBenchmarkSet false outputDirectory
+                if IN_VERBOSE_MODE () then printfn $"Solver run on {outputDirectory} and saved results in %s{resultsDirectory}"
             | _ -> failwithf $"There is no such file or directory: %s{opts.path}"
 
 [<AbstractClass>]
 type IConcreteSolver () =
     inherit IDirectorySolver<string> ()
 
-    override x.RerunSat quiet directory =
+    override x.RerunSat directory =
         let shouldRerun dst =
             match Option.map parseResultPair <| ResultTable.rawFileResult dst with
             | Some (_, SAT _) -> true
             | _ -> false
-        x.ConditionalRunOnBenchmarkSet shouldRerun quiet directory
+        x.ConditionalRunOnBenchmarkSet shouldRerun directory
 
     override x.GenerateClauses opts = generateClauses x opts
 
@@ -295,22 +295,22 @@ type IConcreteSolver () =
             TIMELIMIT
         else x.InterpretResult (error.ToString().Trim()) (output.ToString().Trim())
 
-    member private x.ConditionalRunOnBenchmarkSet overwrite quiet dir =
+    member private x.ConditionalRunOnBenchmarkSet overwrite dir =
         let run_file (src : string) (dst : string) =
             let dst = dir + dst
             Directory.CreateDirectory(Path.GetDirectoryName(dst)) |> ignore
             if Path.GetExtension(src) = x.FileExtension && overwrite dst then
                 try
-                    if not quiet then printfn $"Running %s{x.Name} on %s{src}"
-                    let answer, time = x.SolveWithTime false src
+                    if IN_VERBOSE_MODE () then printfn $"Running %s{x.Name} on %s{src}"
+                    let answer, time = x.SolveWithTime src
                     File.WriteAllText(dst, $"%d{time},{answer}")
-                with e -> if not quiet then printfn $"Exception in %s{src}: %s{dst}"
-            elif not quiet then printfn $"%s{x.Name} skipping %s{src} (answer exists)"
+                with e -> if IN_VERBOSE_MODE () then printfn $"Exception in %s{src}: %s{dst}"
+            elif IN_VERBOSE_MODE () then printfn $"%s{x.Name} skipping %s{src} (answer exists)"
         walk_through dir $".%s{x.Name}Answers" run_file
 
-    override x.RunOnBenchmarkSet overwrite quiet dir =
+    override x.RunOnBenchmarkSet overwrite dir =
         let overwrite dst = overwrite || not <| File.Exists(dst)
-        x.ConditionalRunOnBenchmarkSet overwrite quiet dir
+        x.ConditionalRunOnBenchmarkSet overwrite dir
 
 type CVC4FiniteSolver () =
     inherit IConcreteSolver ()
@@ -488,9 +488,8 @@ type VampireSolver () =
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        let quiet = false
         let magic_options = "--mode portfolio --forced_options av=off:newcnf=off:anc=known:sac=off:nicw=off:amm=all:afp=0:aac=ground:afq=1.5:afr=off:add=on:gsaa=off:acc=off:ccuc=all --schedule casc"
-        $"""--input_syntax smtlib2 %s{if quiet then " --output_mode smtcomp" else ""} {magic_options} --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
+        $"""--input_syntax smtlib2 %s{if IN_VERBOSE_MODE () then "" else " --output_mode smtcomp"} {magic_options} --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
         //TODO: return mode casc_sat: it does not produce meaningful saturation sets as it tries `--newcnf on`, which has a bug (see: https://github.com/vprover/vampire/issues/240)
         //TODO: `-av off` is needed because AVATAR is enabled by default and it also has a bug (with booleans)
 
@@ -527,7 +526,7 @@ type AllSolver () =
 
     override x.GenerateClauses opts =
         let forceGenerateClauses (solver : IConcreteSolver) =
-            if not opts.quiet then printfn $"Generating clauses for %s{solver.Name}"
+            if IN_VERBOSE_MODE () then printfn $"Generating clauses for %s{solver.Name}"
             solver.GenerateClauses {opts with force = false}
         let paths =
             if opts.force
@@ -535,13 +534,13 @@ type AllSolver () =
                 else solvers |> List.map (fun solver -> solver.DirectoryForTransformed opts.path)
         paths
 
-    override x.RunOnBenchmarkSet overwrite quiet runs =
+    override x.RunOnBenchmarkSet overwrite runs =
         let results =
             if overwrite
-                then List.map2 (fun (solver : IConcreteSolver) path -> solver.RunOnBenchmarkSet false quiet path) solvers runs
+                then List.map2 (fun (solver : IConcreteSolver) path -> solver.RunOnBenchmarkSet false path) solvers runs
                 else List.map2 (fun (solver : IConcreteSolver) path -> solver.AnswersDirectory path) solvers runs
         let names = solvers |> List.map (fun solver -> solver.Name)
         let exts = solvers |> List.map (fun solver -> solver.FileExtension)
         let directory = ResultTable.GenerateReadableResultTable names exts results
-        if not quiet then printfn "LaTeX table: %s" <| ResultTable.GenerateLaTeXResultTable names exts results
+        if IN_VERBOSE_MODE () then printfn "LaTeX table: %s" <| ResultTable.GenerateLaTeXResultTable names exts results
         directory

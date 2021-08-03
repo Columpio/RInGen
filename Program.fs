@@ -44,15 +44,15 @@ let solverByName (solverName : string) =
 
 let solve (solveOptions : solveOptions) =
     match solveOptions.timelimit with
-    | Some timelimit -> SolverResult.SECONDS_TIMEOUT <- timelimit
+    | Some timelimit -> SECONDS_TIMEOUT <- timelimit
     | None -> ()
+    if solveOptions.quiet then VERBOSITY_MODE <- QUIET_MODE
     let solver = solverByName solveOptions.solver
     let options = {
         transform=not solveOptions.notransform
         tip=solveOptions.tip
         sync_terms=solveOptions.sync_terms
         keep_exists=solveOptions.keep_exists
-        quiet=solveOptions.quiet
         force=solveOptions.force
         path=solveOptions.path
         output=solveOptions.output
@@ -61,13 +61,13 @@ let solve (solveOptions : solveOptions) =
     solver.TransformAndRunOnBenchmark options
 
 let transform (transformOptions : transformOptions) =
+    if transformOptions.quiet then VERBOSITY_MODE <- QUIET_MODE
     let solver = if transformOptions.tosorts then SortHornTransformer() :> ITransformer else ADTHornTransformer() :> ITransformer
     let options = {
         transform=true
         tip=transformOptions.tip
         sync_terms=transformOptions.sync_terms
         keep_exists=true
-        quiet=transformOptions.quiet
         force=false
         path=transformOptions.path
         output=transformOptions.output
