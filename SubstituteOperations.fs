@@ -1,5 +1,7 @@
 module RInGen.SubstituteOperations
 
+open System.Runtime.CompilerServices
+
 type private termArgumentFolding = LeftAssoc | RightAssoc
 type private atomArgumentFolding = Chainable | Pairwise
 
@@ -125,3 +127,141 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
     member x.SubstituteOperationsWithRelations = function
         | TransformedCommand r -> substInRule r |> TransformedCommand
         | c -> c
+
+type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool) =
+    let mapReturnSort sorts retSort = if mapReturnSorts then mapSort sorts retSort else retSort, sorts
+
+    let mapSorts = List.mapFold mapSort
+
+    let mapSortedVar sorts (name, sort) =
+        let sort, sorts = mapSort sorts sort
+        (name, sort), sorts
+
+    let mapSortedVars = List.mapFold mapSortedVar
+
+    let mapOp sorts =
+        let mapOp constr name args ret =
+            let args, sorts = mapSorts sorts args
+            let ret, sorts = mapReturnSort sorts ret
+            constr(name, args, ret), sorts
+        function
+        | UserDefinedOperation(name, args, ret) -> mapOp UserDefinedOperation name args ret
+        | ElementaryOperation(name, args, ret) -> mapOp ElementaryOperation name args ret
+
+    let rec mapTerm sorts = function
+        | TConst _ as c -> c, sorts
+        | TIdent(name, sort) ->
+            let sort, sorts = mapSort sorts sort
+            TIdent(name, sort), sorts
+        | TApply(op, ts) ->
+            let op, sorts = mapOp sorts op
+            let ts, sorts = mapTerms sorts ts
+            TApply(op, ts), sorts
+    and mapTerms = List.mapFold mapTerm
+
+    let rec mapAtom sorts = function
+        | Top | Bot as a -> a, sorts
+        | Equal(t1, t2) ->
+            let t1, sorts = mapTerm sorts t1
+            let t2, sorts = mapTerm sorts t2
+            Equal(t1, t2), sorts
+        | Distinct(t1, t2) ->
+            let t1, sorts = mapTerm sorts t1
+            let t2, sorts = mapTerm sorts t2
+            Distinct(t1, t2), sorts
+        | AApply(op, ts) ->
+            let op, sorts = mapOp sorts op
+            let ts, sorts = mapTerms sorts ts
+            AApply(op, ts), sorts
+    and mapAtoms = List.mapFold mapAtom
+
+    let mapDatatype sorts (name, constrs) =
+        let constrs, sorts =
+            List.mapFold (fun sorts (name, vars) -> let vars, sorts = mapSortedVars sorts vars in (name, vars), sorts) sorts constrs
+        (name, constrs), sorts
+
+    let mapSortsInOrigCommand sorts = function
+        | DeclareFun(name, argSorts, retSort) ->
+            let argSorts, sorts = mapSorts sorts argSorts
+            let retSort, sorts = mapReturnSort sorts retSort
+            DeclareFun(name, argSorts, retSort), sorts
+        | DeclareDatatype(name, constrs) ->
+            let (name, constrs), sorts = mapDatatype sorts (name, constrs)
+            DeclareDatatype(name, constrs), sorts
+        | DeclareDatatypes dts ->
+            let dts, sorts = List.mapFold mapDatatype sorts dts
+            DeclareDatatypes dts, sorts
+        | DeclareConst(name, sort) ->
+            let retSort, sorts = mapSort sorts sort
+            DeclareConst(name, retSort), sorts
+        | c -> c, sorts
+
+    let rec mapRule sorts = function
+        | ForallRule(vars, body) ->
+            let vars, sorts = mapSortedVars sorts vars
+            let body, sorts = mapRule sorts body
+            ForallRule(vars, body), sorts
+        | ExistsRule(vars, body) ->
+            let vars, sorts = mapSortedVars sorts vars
+            let body, sorts = mapRule sorts body
+            ExistsRule(vars, body), sorts
+        | BaseRule(premises, conclusion) ->
+            let premises, sorts = mapAtoms sorts premises
+            let conclusion, sorts = mapAtom sorts conclusion
+            BaseRule(premises, conclusion), sorts
+
+    new (mapSort) = MapSorts(mapSort, true)
+
+    member x.FoldOperation(sorts, op) = mapOp sorts op
+
+    member x.FoldCommand sorts command =
+        match command with
+        | OriginalCommand c ->
+            let c, sorts = mapSortsInOrigCommand sorts c
+            OriginalCommand c, sorts
+        | TransformedCommand r ->
+            let r, sorts = mapRule sorts r
+            TransformedCommand r, sorts
+
+[<Extension>]
+type Utils () =
+    [<Extension>]
+    static member inline MapCommand(x: MapSorts<unit>, command) = x.FoldCommand () command |> fst
+    [<Extension>]
+    static member inline MapOperation(x: MapSorts<unit>, op) = x.FoldOperation((), op) |> fst
+
+[<AbstractClass>]
+type TheorySubstitutor () =
+    let substInCommand (mapper : MapSorts<unit>) (relativizer : SubstituteOperations) command =
+        let command = relativizer.SubstituteOperationsWithRelations(command)
+        let command = mapper.MapCommand(command)
+        command
+
+    abstract member MapReturnSortsFlag : bool
+    default x.MapReturnSortsFlag = true
+    abstract member TryMapSort : sort -> sort option
+    abstract member GenerateDeclarations : unit -> transformedCommand list * sort * Map<operation,operation * bool> * (symbol -> term option)
+
+    member x.SubstituteTheoryDelayed commands =
+        let mutable wasMapped = false
+        let mapSort () s =
+            let rec mapSort s =
+                match x.TryMapSort s with
+                | Some s' -> wasMapped <- true; s'
+                | None ->
+                match s with
+                | CompoundSort(name, sorts) -> CompoundSort(name, List.map mapSort sorts)
+                | s -> s
+            mapSort s, ()
+        let preamble, newSort, newOps, newConstMap = x.GenerateDeclarations ()
+        let mapper = MapSorts(mapSort, x.MapReturnSortsFlag)
+        wasMapped <- false
+        let relativizer = SubstituteOperations(newOps, newConstMap)
+        let commands = List.map (substInCommand mapper relativizer) commands
+        let wasSubstituted = relativizer.WasSubstituted ()
+        let shouldAddPreamble = wasMapped || wasSubstituted
+        shouldAddPreamble, preamble, commands, newSort
+
+    member x.SubstituteTheory commands =
+        let shouldAddPreamble, preamble, commands, _ = x.SubstituteTheoryDelayed commands
+        if shouldAddPreamble then preamble @ commands else commands

@@ -1,8 +1,10 @@
 module RInGen.IntToNat
+open RInGen.SubstituteOperations
 open RInGen.Operations
 open RInGen.IdentGenerator
 
-type private IntToNat() =
+type IntToNat () =
+    inherit TheorySubstitutor ()
     let nat_sort = gensyms "Nat" |> PrimitiveSort
 
     let Z_constr = gensyms "Z"
@@ -100,13 +102,10 @@ type private IntToNat() =
         List.map OriginalCommand [nat_datatype; add_def; minus_def; le_def; ge_def; lt_def; gt_def; mult_def; div_def; mod_def]
         @ List.map TransformedCommand (add_decl @ minus_decl @ le_decl @ ge_decl @ lt_decl @ gt_decl @ mult_decl @ div_decl @ mod_decl)
 
-    member x.NatSort() = nat_sort
-    member x.Preamble() = preamble
-    member x.NatOps() = substitutions
-    member x.IntConstToNat (s: symbol) =
+    let intConstToNat (s: symbol) =
         let r = ref 0L
         if System.Int64.TryParse(s.ToString(), r) then Some (int_to_natrec !r) else None
 
-let generateNatDeclarations () =
-    let i = IntToNat()
-    i.Preamble(), i.NatSort(), i.NatOps(), i.IntConstToNat
+    override x.GenerateDeclarations() = preamble, nat_sort, substitutions, intConstToNat
+
+    override x.TryMapSort(s) = if s = integerSort then Some nat_sort else None

@@ -83,7 +83,7 @@ let opSubstitutor empty opMap t1 t2 =
     let typ1 = typeOfTerm t1
     let typ2 = typeOfTerm t2
     if typ1 <> typ2
-        then failwithf $"Disequality of different sorts: {typ1} and {typ2}"
+        then failwithf $"(Dis)equality of different sorts: {typ1} and {typ2}"
         else congruenceBySort empty opMap typ1 t1 t2
 
 

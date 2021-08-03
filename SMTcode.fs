@@ -1,7 +1,6 @@
 module RInGen.SMTcode
-open System
-open System.Runtime.CompilerServices
 open RInGen
+open RInGen.IntToNat
 open RInGen.Typer
 open Relativization
 open SubstituteOperations
@@ -649,104 +648,6 @@ module DatatypesToSorts =
     let datatypesToSorts commands =
         List.collect generateConstructorDeclarations commands
 
-type private MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc) =
-    let mapSorts = List.mapFold mapSort
-
-    let mapSortedVar arraySorts (name, sort) =
-        let sort, arraySorts = mapSort arraySorts sort
-        (name, sort), arraySorts
-
-    let mapSortedVars = List.mapFold mapSortedVar
-
-    let mapOp arraySorts =
-        let mapOp constr name args ret =
-            let args, arraySorts = mapSorts arraySorts args
-            let ret, arraySorts = mapSort arraySorts ret
-            constr(name, args, ret), arraySorts
-        function
-        | UserDefinedOperation(name, args, ret) -> mapOp UserDefinedOperation name args ret
-        | ElementaryOperation(name, args, ret) -> mapOp ElementaryOperation name args ret
-
-    let rec mapTerm arraySorts = function
-        | TConst _ as c -> c, arraySorts
-        | TIdent(name, sort) ->
-            let sort, arraySorts = mapSort arraySorts sort
-            TIdent(name, sort), arraySorts
-        | TApply(op, ts) ->
-            let op, arraySorts = mapOp arraySorts op
-            let ts, arraySorts = mapTerms arraySorts ts
-            TApply(op, ts), arraySorts
-    and mapTerms = List.mapFold mapTerm
-
-    let rec mapAtom arraySorts = function
-        | Top | Bot as a -> a, arraySorts
-        | Equal(t1, t2) ->
-            let t1, arraySorts = mapTerm arraySorts t1
-            let t2, arraySorts = mapTerm arraySorts t2
-            Equal(t1, t2), arraySorts
-        | Distinct(t1, t2) ->
-            let t1, arraySorts = mapTerm arraySorts t1
-            let t2, arraySorts = mapTerm arraySorts t2
-            Distinct(t1, t2), arraySorts
-        | AApply(op, ts) ->
-            let op, arraySorts = mapOp arraySorts op
-            let ts, arraySorts = mapTerms arraySorts ts
-            AApply(op, ts), arraySorts
-    and mapAtoms = List.mapFold mapAtom
-
-    let mapDatatype arraySorts (name, constrs) =
-        let constrs, arraySorts =
-            List.mapFold (fun arraySorts (name, vars) -> let vars, arraySorts = mapSortedVars arraySorts vars in (name, vars), arraySorts) arraySorts constrs
-        (name, constrs), arraySorts
-
-    let mapArraySortsInOrigCommand arraySorts = function
-        | DeclareFun(name, argSorts, retSort) ->
-            let argSorts, arraySorts = mapSorts arraySorts argSorts
-            let retSort, arraySorts = mapSort arraySorts retSort
-            DeclareFun(name, argSorts, retSort), arraySorts
-        | DeclareDatatype(name, constrs) ->
-            let (name, constrs), arraySorts = mapDatatype arraySorts (name, constrs)
-            DeclareDatatype(name, constrs), arraySorts
-        | DeclareDatatypes dts ->
-            let dts, arraySorts = List.mapFold mapDatatype arraySorts dts
-            DeclareDatatypes dts, arraySorts
-        | DeclareConst(name, sort) ->
-            let retSort, arraySorts = mapSort arraySorts sort
-            DeclareConst(name, retSort), arraySorts
-        | c -> c, arraySorts
-
-    let rec mapRule arraySorts = function
-        | ForallRule(vars, body) ->
-            let vars, arraySorts = mapSortedVars arraySorts vars
-            let body, arraySorts = mapRule arraySorts body
-            ForallRule(vars, body), arraySorts
-        | ExistsRule(vars, body) ->
-            let vars, arraySorts = mapSortedVars arraySorts vars
-            let body, arraySorts = mapRule arraySorts body
-            ExistsRule(vars, body), arraySorts
-        | BaseRule(premises, conclusion) ->
-            let premises, arraySorts = mapAtoms arraySorts premises
-            let conclusion, arraySorts = mapAtom arraySorts conclusion
-            BaseRule(premises, conclusion), arraySorts
-
-    member x.FoldOperation(arraySorts, op) = mapOp arraySorts op
-
-    member x.FoldCommand arraySorts command =
-        match command with
-        | OriginalCommand c ->
-            let c, arraySorts = mapArraySortsInOrigCommand arraySorts c
-            OriginalCommand c, arraySorts
-        | TransformedCommand r ->
-            let r, arraySorts = mapRule arraySorts r
-            TransformedCommand r, arraySorts
-
-[<Extension>]
-type private Utils () =
-    [<Extension>]
-    static member inline MapCommand(x: MapSorts<unit>, command) = x.FoldCommand () command |> fst
-    [<Extension>]
-    static member inline MapOperation(x: MapSorts<unit>, op) = x.FoldOperation((), op) |> fst
-
 module private ArrayTransformations =
 
     let private generateArraySortName s1 s2 = IdentGenerator.gensyms ("Array" + sortToFlatString s1 + sortToFlatString s2)
@@ -808,30 +709,6 @@ module private ArrayTransformations =
     let substituteArraySorts (eqs, diseqs) commands =
         List.mapFold mapArraySorts (Map.empty, Map.empty, eqs, diseqs) commands |> fst |> List.concat
 
-module private SubstIntWithNat =
-    let private substInCommand (mapper : MapSorts<unit>) (relativizer : SubstituteOperations) command =
-        let command = mapper.MapCommand(command)
-        let command = relativizer.SubstituteOperationsWithRelations(command)
-        command
-
-    let substituteIntWithNat commands =
-        let mutable wasMapped = false
-        let mapSort natSort () s =
-            let rec mapSort = function
-                | CompoundSort(name, sorts) -> CompoundSort(name, List.map mapSort sorts)
-                | s when s = integerSort -> wasMapped <- true; natSort
-                | s -> s
-            mapSort s, ()
-        let preamble, natSort, natOps, natConstMap = IntToNat.generateNatDeclarations ()
-        let mapper = MapSorts(mapSort natSort)
-        let natOps = natOps |> Map.toList |> List.map (fun (oldOp, newOp) -> mapper.MapOperation(oldOp), newOp) |> Map.ofList
-        wasMapped <- false
-        let relativizer = SubstituteOperations(natOps, natConstMap)
-        let commands = List.map (substInCommand mapper relativizer) commands
-        let wasSubstituted = relativizer.WasSubstituted ()
-        let shouldAddNatPreamble = wasMapped || wasSubstituted
-        shouldAddNatPreamble, preamble, commands, natSort
-
 module private SubstituteFreeSortsWithNat =
 
     let transformation freeSorts natSort (eqs, diseqs) commands =
@@ -851,9 +728,9 @@ let toClauses performTransform needToApplyTIPfix synchronize commands =
     let freeSorts = commandsWithUniqueVariableNames |> List.choose (function Command(DeclareSort(s)) -> Some s | _ -> None) |> Set.ofList
     let hornClauses, wereDefines = DefinitionsToDeclarations.definesToDeclarations needToApplyTIPfix commandsWithUniqueVariableNames
     let relHornClauses = RelativizeSymbols.relativizeSymbols wereDefines hornClauses
-    let relHornClauses = BoolAxiomatization.axiomatizeBoolOperations relHornClauses
+    let relHornClauses = BoolAxiomatization.BoolAxiomatization().SubstituteTheory relHornClauses
     if not performTransform then relHornClauses else
-    let shouldAddNatPreamble1, natPreamble, commandsWithoutInts, natSort = SubstIntWithNat.substituteIntWithNat relHornClauses
+    let shouldAddNatPreamble1, natPreamble, commandsWithoutInts, natSort = IntToNat().SubstituteTheoryDelayed relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
     let shouldAddNatPreamble2, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
