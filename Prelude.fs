@@ -39,8 +39,35 @@ let inline pair x y = x, y
 
 let inline toString x = x.ToString()
 
+module Int32 =
+    let TryParse (s : string) =
+        let n = ref 0
+        if System.Int32.TryParse(s, n) then Some !n else None
+
 module List =
     let cons x xs = x :: xs
+
+    let evenPairs ys =
+        // for [x0; x1; x2; x3; ...] returns [(x0, x1); (x2, x3); ...]
+        let rec evenPairs xs k =
+            match xs with
+            | [] -> k []
+            | e::o::xs -> evenPairs xs (fun ys -> k <| (e, o) :: ys)
+            | _ -> failwithf $"list %O{ys} has not even length"
+        evenPairs ys id
+
+    let addLast y xs =
+        let rec addLast xs k =
+            match xs with
+            | [] -> k [y]
+            | x::xs -> addLast xs (fun ys -> k <| x::ys)
+        addLast xs id
+
+    let uncons = function
+        | [] -> failwith "uncons of empty list"
+        | x::xs -> x, xs
+
+    let countWith p = List.fold (fun count x -> if p x then count + 1 else count) 0
 
     let choose2 p xs =
         let rec choose2 xs yes nos =
@@ -98,11 +125,9 @@ module List =
     let transpose xss =
         let uncons = List.choose (function x::xs -> Some(x, xs) | [] -> None) >> List.unzip
         let rec transpose xss =
-            match xss with
-            | [] -> []
-            | _ ->
-                let xs, xss = uncons xss
-                xs :: transpose xss
+            match uncons xss with
+            | [], [] -> []
+            | xs, xss -> xs :: transpose xss
         transpose xss
 
     let rec suffixes xs = seq {

@@ -10,6 +10,7 @@ type solvingOptions =
     {
         transform : bool
         tip : bool
+        table : bool
         sync_terms : bool
         keep_exists : bool
         rerun : bool
@@ -206,6 +207,7 @@ type IDirectorySolver<'directory>() =
     abstract member RerunSat : 'directory -> string
     default x.RerunSat directory = x.RunOnBenchmarkSet true directory
     abstract member Solve : string -> SolverResult
+    abstract member AddResultsToTable : string -> string -> string //TODO: second argument should be a 'directory
 
     member x.SolveWithTime filename =
         if IN_VERBOSE_MODE () then printfn $"Solving %s{filename} with timelimit %d{SECONDS_TIMEOUT} seconds"
@@ -241,15 +243,23 @@ type IDirectorySolver<'directory>() =
                 let outputDirectory = x.TransformBenchmarkAndReturn opts
                 let resultsDirectory = if opts.rerun then x.RerunSat outputDirectory else x.RunOnBenchmarkSet false outputDirectory
                 if IN_VERBOSE_MODE () then printfn $"Solver run on {outputDirectory} and saved results in %s{resultsDirectory}"
+                if opts.table then
+                    let tablePath = x.AddResultsToTable opts.path resultsDirectory
+                    if IN_VERBOSE_MODE () then printfn $"Results table is saved in %s{tablePath}"
             | _ -> failwithf $"There is no such file or directory: %s{opts.path}"
 
 [<AbstractClass>]
 type IConcreteSolver () =
     inherit IDirectorySolver<string> ()
 
+    override x.AddResultsToTable originalDirectory resultsDirectory =
+        let tablePath = Path.ChangeExtension(originalDirectory, ".csv")
+        if File.Exists(tablePath) then ResultTable.AddResultsToTable tablePath x.Name resultsDirectory
+        else ResultTable.GenerateReadableResultTable originalDirectory [x.Name] [x.FileExtension] [resultsDirectory]
+
     override x.RerunSat directory =
         let shouldRerun dst =
-            match Option.map parseResultPair <| ResultTable.rawFileResult dst with
+            match Option.bind parseResultPair <| ResultTable.rawFileResult dst with
             | Some (_, SAT _) -> true
             | _ -> false
         x.ConditionalRunOnBenchmarkSet shouldRerun directory
@@ -287,7 +297,7 @@ type IConcreteSolver () =
 
         p.Start() |> ignore
         p.BeginOutputReadLine()                     // output is read asynchronously
-        p.BeginErrorReadLine()                      // error is read asynchronously (if we read both stream synchronously, deadlock is possible
+        p.BeginErrorReadLine()                      // error is read asynchronously: if we read both stream synchronously, deadlock is possible
                                                     // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
         let exited = p.WaitForExit(MSECONDS_TIMEOUT ())
         p.Close()
@@ -519,6 +529,7 @@ type AllSolver () =
     override x.BinaryOptions _ = __unreachable__()
     override x.InterpretResult _ _ = __unreachable__()
     override x.TransformClauses _ _ = __unreachable__()
+    override x.AddResultsToTable _ _ = __notImplemented__()
 
     override x.Solve filename =
         for solver in solvers do (solver :> ISolver).Solve(filename) |> ignore
@@ -539,8 +550,9 @@ type AllSolver () =
             if overwrite
                 then List.map2 (fun (solver : IConcreteSolver) path -> solver.RunOnBenchmarkSet false path) solvers runs
                 else List.map2 (fun (solver : IConcreteSolver) path -> solver.AnswersDirectory path) solvers runs
-        let names = solvers |> List.map (fun solver -> solver.Name)
-        let exts = solvers |> List.map (fun solver -> solver.FileExtension)
-        let directory = ResultTable.GenerateReadableResultTable names exts results
-        if IN_VERBOSE_MODE () then printfn "LaTeX table: %s" <| ResultTable.GenerateLaTeXResultTable names exts results
-        directory
+//        let names = solvers |> List.map (fun solver -> solver.Name)
+//        let exts = solvers |> List.map (fun solver -> solver.FileExtension)
+//        let directory = ResultTable.GenerateReadableResultTable names exts results
+//        if IN_VERBOSE_MODE () then printfn "LaTeX table: %s" <| ResultTable.GenerateLaTeXResultTable names exts results
+//        directory
+        "" //TODO

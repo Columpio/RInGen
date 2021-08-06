@@ -1,4 +1,5 @@
 module RInGen.ResultTable
+open System.Collections.Generic
 open System.IO
 open System.Globalization
 open System.Text.RegularExpressions
@@ -14,6 +15,8 @@ let rawFileResult filename =
     let answer = result.[2].Value
     Some (time, answer)
 
+let private fileResult filename = rawFileResult filename |> Option.bind parseResultPair
+
 let private substituteRelations exts filenames =
     List.map2 (fun ext filename -> Path.ChangeExtension(filename, ext)) exts filenames
 
@@ -21,20 +24,18 @@ let private collectAllResults (exts : string list) directories =
     let results = System.Collections.Generic.Dictionary<_, _>()
     let generateResultLine testName resultFileNames =
         let realFileNames = substituteRelations exts resultFileNames
-        let line = realFileNames |> List.map (fun resultFileName -> rawFileResult resultFileName |> Option.map parseResultPair)
+        let line = realFileNames |> List.map fileResult
         results.Add(testName, line)
     walk_through_simultaneously directories generateResultLine
     results |> Seq.map (fun kvp -> kvp.Key, kvp.Value) |> List.ofSeq
 
-let private GenerateResultTable writeHeader writeResult writeStatistics (names : string list) (exts : string list) directories =
-    let filename = Path.ChangeExtension(Path.GetTempFileName(), "csv")
+let private BuildResultTable writeHeader writeResult writeStatistics (filename : string) header results =
     use writer = new StreamWriter(filename)
     use csv = new CsvWriter(writer, CultureInfo.InvariantCulture)
     csv.WriteField("Filename")
-    for solverName in names do
-        writeHeader csv solverName
+    for headerEntry in header do
+        writeHeader csv headerEntry
     csv.NextRecord()
-    let results = collectAllResults exts directories
     writeStatistics csv results
     for testName, line in results do
         csv.WriteField(testName)
@@ -43,39 +44,72 @@ let private GenerateResultTable writeHeader writeResult writeStatistics (names :
         csv.NextRecord()
     filename
 
-let GenerateReadableResultTable =
+let private GenerateResultTable writeHeader writeResult writeStatistics originalDirectory (names : string list) (exts : string list) directories =
+    let results = collectAllResults exts directories
+    let tablePath = Path.ChangeExtension(originalDirectory, ".csv")
+    BuildResultTable writeHeader writeResult writeStatistics tablePath names results
+
+module Statistics =
+    type Checker (name, checker : SolverResult -> bool, checkUnique) =
+        member x.Name = $"""%s{name}%s{if checkUnique then " Unique" else ""}"""
+        member x.Check result line = checker result && (not checkUnique || List.countWith checker line = 1)
+        new (name, checker) = Checker(name, checker, false)
+
+    let checkers = [
+        Checker("SAT", isSAT)
+        Checker("SAT", isSAT, true)
+        Checker("SAT: Finite Model", function SAT FiniteModel -> true | _ -> false)
+        Checker("SAT: Elem Formula", function SAT ElemFormula -> true | _ -> false)
+        Checker("SAT: SizeElem Formula", function SAT SizeElemFormula -> true | _ -> false)
+        Checker("UNSAT", isUNSAT)
+        Checker("UNSAT", isUNSAT, true)
+        Checker("UNKNOWN", isUNKNOWN)
+        Checker("ERROR", isERROR)
+        Checker("TIMELIMIT", isTIMELIMIT)
+        Checker("OUTOFMEMORY", isOUTOFMEMORY)
+    ]
+    let empty = List.map (fun s -> s, 0) checkers
+
+    let add result line =
+        let addOne (checker : Checker, count) =
+            checker, if checker.Check result line then count + 1 else count
+        List.map addOne
+
+let private solverColumnNames solverName = $"%s{solverName}Time", $"%s{solverName}Result"
+let private writeSolverColumnNames writer (t, r) = writer t; writer r
+let private generateAndWriteSolverColumnNames writer solverName = solverColumnNames solverName |> writeSolverColumnNames writer
+let private writeResultToString writer time answer =
+    writer $"%d{time}"
+    writer $"%O{answer}"
+let private readResult reader (timeField, resField) = parseResultPair(reader timeField, reader resField)
+
+module private ReadableTable =
     let writeResult (csv : CsvWriter) = function
-        | Some(time, answer) ->
-            csv.WriteField($"%d{time}")
-            csv.WriteField($"%O{answer}")
+        | Some(time, answer) -> writeResultToString csv.WriteField time answer
         | None -> csv.WriteField(""); csv.WriteField("")
 
-    let writeHeader (csv : CsvWriter) solverName =
-        csv.WriteField$"%s{solverName}Time"
-        csv.WriteField$"%s{solverName}Result"
-
     let writeStatistics (csv : CsvWriter) results =
-        let names = ["SAT"; "UNSAT"; "UNKNOWN"; "ERROR"; "TIMELIMIT"; "OUTOFMEMORY"]
-        let empty_stat = names |> List.map (fun s -> s, 0) |> Map.ofList
-        let collectStatistics stat = function
-            | Some(_, result) ->
-                let name = onlyStatus result
-                let count = Map.find name stat
-                Map.add name (1 + count) stat
+        let collectStatistics stat line = function
+            | Some(_, result) -> Statistics.add result line stat
             | None -> stat
-        let columns = results |> List.map snd |> List.transpose
-        let statistics = List.map (List.fold collectStatistics empty_stat) columns
-        for name in names do
-            csv.WriteField(name)
-            for stat in statistics do
+        let results = List.map snd results
+        let columns = results |> List.transpose
+        let rows = results |> List.map (List.choose (function Some(_, result) -> Some result | None -> None))
+        let statistics = List.map (List.fold2 collectStatistics Statistics.empty rows >> List.map snd) columns |> List.transpose
+        for checker, line in List.zip Statistics.checkers statistics do
+            csv.WriteField(checker.Name)
+            for stat in line do
                 csv.WriteField("")
-                csv.WriteField($"%d{Map.find name stat}")
+                csv.WriteField($"%d{stat}")
             csv.NextRecord()
 
-    GenerateResultTable writeHeader writeResult writeStatistics
+let GenerateReadableResultTable =
+    let writeHeader (csv : CsvWriter) solverName =
+        generateAndWriteSolverColumnNames csv.WriteField solverName
+    GenerateResultTable writeHeader ReadableTable.writeResult ReadableTable.writeStatistics
 
 let GenerateLaTeXResultTable =
-    let timeToString n = n |> sprintf "%d"
+    let timeToString n = $"%d{n}"
     let TIMEOUT = timeToString <| 2 * (MSECONDS_TIMEOUT ())
     let writeEmptyResult (csv : CsvWriter) =
         csv.WriteField(TIMEOUT)
@@ -120,3 +154,33 @@ let PrintReadableResultTable names directories =
     printf "%s " ("Name".PadRight(nameWidth))
     names |> List.map (fun (name : string) -> name.PadRight(timeWidth + resultWidth + 2)) |> join "" |> printfn "%s"
     walk_through_simultaneously directories printResultLine
+
+let private dropStatistics (csv : CsvReader) =
+    List.iter (fun _ -> csv.Read() |> ignore) Statistics.checkers
+
+let private loadTable (csv : CsvReader) =
+    csv.Read() |> ignore
+    csv.ReadHeader() |> ignore
+    let filenameField, header = csv.Context.HeaderRecord |> List.ofArray |> List.uncons
+    let headerGrouped = List.evenPairs header
+    dropStatistics csv
+    let table = Dictionary()
+    while csv.Read() do
+        let results = headerGrouped |> List.map (readResult csv.GetField)
+        table.Add(csv.GetField(filenameField), results)
+    headerGrouped, table
+
+let private addNewResults (table : Dictionary<_,_>) resultsDirectory =
+    let addNewResults absoluteFilename relativeFilename =
+        let result = fileResult absoluteFilename
+        table.[relativeFilename] <- List.addLast result table.[relativeFilename]
+    walk_through resultsDirectory "" addNewResults |> ignore
+
+let AddResultsToTable (tablePath : string) solverName resultsDirectory =
+    use reader = new StreamReader(tablePath)
+    use csv = new CsvReader(reader, CultureInfo.InvariantCulture)
+    let header, table = loadTable csv
+    addNewResults table resultsDirectory // modifies table
+    let header = List.addLast (solverColumnNames solverName) header
+    let table = Dictionary.toList table
+    BuildResultTable (fun csv -> writeSolverColumnNames csv.WriteField) ReadableTable.writeResult ReadableTable.writeStatistics tablePath header table

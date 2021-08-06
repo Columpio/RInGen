@@ -16,7 +16,14 @@ let quietModeToString = function
     | UNSAT -> "unsat"
     | _ -> "unknown"
 
-let parseSolverResult s =
+let isSAT = function SAT _ -> true | _ -> false
+let isUNSAT = function UNSAT -> true | _ -> false
+let isERROR = function ERROR _ -> true | _ -> false
+let isUNKNOWN = function UNKNOWN _ -> true | _ -> false
+let isTIMELIMIT = function TIMELIMIT -> true | _ -> false
+let isOUTOFMEMORY = function OUTOFMEMORY -> true | _ -> false
+
+let private tryParseSolverResult s =
     match split " " s with
     | "SAT":: model ->
         match model with
@@ -25,11 +32,20 @@ let parseSolverResult s =
         | ["FiniteModel"] -> SAT FiniteModel
         | ["Saturation"] -> SAT Saturation
         | _ -> SAT NoModel
-    | "UNSAT"::_ -> UNSAT
-    | "ERROR"::reason -> ERROR (join " " reason)
-    | "UNKNOWN"::reason -> UNKNOWN (join " " reason)
-    | "TIMELIMIT"::_ -> TIMELIMIT
-    | "OUTOFMEMORY"::_ -> OUTOFMEMORY
-    | _ -> __notImplemented__()
+        |> Some
+    | "UNSAT"::_ -> UNSAT |> Some
+    | "ERROR"::reason -> ERROR (join " " reason) |> Some
+    | "UNKNOWN"::reason -> UNKNOWN (join " " reason) |> Some
+    | "TIMELIMIT"::_ -> TIMELIMIT |> Some
+    | "OUTOFMEMORY"::_ -> OUTOFMEMORY |> Some
+    | _ -> None
 
-let parseResultPair (time : string, answer) = int time, parseSolverResult answer
+let parseSolverResult s =
+    match tryParseSolverResult s with
+    | Some res -> res
+    | None -> __notImplemented__()
+
+let parseResultPair (time : string, answer) =
+    match Int32.TryParse time, tryParseSolverResult answer with
+    | Some time, Some answer -> Some (time, answer)
+    | _ -> None

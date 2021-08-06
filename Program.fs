@@ -14,6 +14,7 @@ type solveOptions = {
     [<Option('q', "quiet", HelpText = "Quiet mode")>] quiet : bool
     [<Option('f', "force", HelpText = "Force benchmark generation")>] force : bool
     [<Option('r', "rerun", HelpText = "Rerun if answer was SAT")>] rerun : bool
+    [<Option("table", HelpText = "Generate .csv statistics table after solving")>] table : bool
     [<Option('o', "output-directory", HelpText = "Output directory where to put a transformed file (default: same as input PATH)")>] output : string option
     [<Value(0, MetaValue = "SOLVER_NAME", Required = true, HelpText = "Run a specific solver (one of: myz3 | z3 | eldarica | cvc4f | cvc4ind | verimap | vampire | all) after processing")>] solver : string
     [<Value(1, MetaValue = "PATH", Required = true, HelpText = "Full path to file or directory")>] path : string
@@ -50,6 +51,7 @@ let solve (solveOptions : solveOptions) =
     let solver = solverByName solveOptions.solver
     let options = {
         transform=not solveOptions.notransform
+        table=solveOptions.table
         tip=solveOptions.tip
         sync_terms=solveOptions.sync_terms
         keep_exists=solveOptions.keep_exists
@@ -65,6 +67,7 @@ let transform (transformOptions : transformOptions) =
     let solver = if transformOptions.tosorts then SortHornTransformer() :> ITransformer else ADTHornTransformer() :> ITransformer
     let options = {
         transform=true
+        table=false
         tip=transformOptions.tip
         sync_terms=transformOptions.sync_terms
         keep_exists=true
