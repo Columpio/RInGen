@@ -29,15 +29,18 @@
         <Compile Include="Arrays.fs" />
         <Compile Include="Synchronization.fs" />
         <Compile Include="SolverResult.fs" />
-        <Compile Include="ResultTable.fs" />
-        <Compile Include="SMTcode.fs" />
+        <Compile Include="ClauseTransform.fs" />
         <Compile Include="PrintToProlog.fs" />
+        <Compile Include="Programs.fs" />
+        <Compile Include="Transformers.fs" />
+        <Compile Include="Statistics.fs" />
+        <Compile Include="ResultTable.fs" />
         <Compile Include="Solvers.fs" />
-        <Compile Include="Program.fs" />
+        <Compile Include="Main.fs" />
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="CommandLineParser.FSharp" Version="2.8.0" />
+      <PackageReference Include="Argu" Version="6.1.1" />
       <PackageReference Include="CsvHelper" Version="15.0.5" />
     </ItemGroup>
 

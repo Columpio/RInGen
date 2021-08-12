@@ -1,4 +1,4 @@
-module RInGen.SMTcode
+module RInGen.ClauseTransform
 open RInGen
 open RInGen.IntToNat
 open RInGen.Typer
@@ -722,19 +722,29 @@ module private SubstituteFreeSortsWithNat =
         let commands = List.map (SubstituteOperations(Map.empty, eqs, diseqs).SubstituteOperationsWithRelations) commands
         wasSubstituted, commands
 
-let toClauses performTransform needToApplyTIPfix synchronize commands =
-    let commands = if needToApplyTIPfix then TIPFixes.applyTIPfix commands else commands
+let private filterOutSMTCommands commands =
+    let filterOutSMTCommand = function
+        | DeclareConst _
+        | DeclareFun _
+        | DeclareSort _
+        | DeclareDatatype _
+        | DeclareDatatypes _ -> true
+        | _ -> false
+    List.filter (function Command c -> filterOutSMTCommand c | _ -> true) commands
+
+let toClauses (options : transformOptions) commands =
+    let commands = filterOutSMTCommands commands
+    let commands = if options.tip then TIPFixes.applyTIPfix commands else commands
     let commandsWithUniqueVariableNames = RemoveVariableOverlapping.removeVariableOverlapping commands
     let freeSorts = commandsWithUniqueVariableNames |> List.choose (function Command(DeclareSort(s)) -> Some s | _ -> None) |> Set.ofList
-    let hornClauses, wereDefines = DefinitionsToDeclarations.definesToDeclarations needToApplyTIPfix commandsWithUniqueVariableNames
+    let hornClauses, wereDefines = DefinitionsToDeclarations.definesToDeclarations options.tip commandsWithUniqueVariableNames
     let relHornClauses = RelativizeSymbols.relativizeSymbols wereDefines hornClauses
     let relHornClauses = BoolAxiomatization.BoolAxiomatization().SubstituteTheory relHornClauses
-    if not performTransform then relHornClauses else
-    let shouldAddNatPreamble1, natPreamble, commandsWithoutInts, natSort = IntToNat().SubstituteTheoryDelayed relHornClauses
+    let alreadyAddedNatPreamble, natPreamble, commandsWithoutInts, natSort = IntToNat().SubstituteTheoryDelayed relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
-    let shouldAddNatPreamble2, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
-    let clausesWithPreamble = if shouldAddNatPreamble1 || shouldAddNatPreamble2 then natPreamble @ substFreeSortClauses else substFreeSortClauses
-    if not synchronize then clausesWithPreamble else
+    let shouldAddNatPreamble, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
+    let clausesWithPreamble = if not alreadyAddedNatPreamble && shouldAddNatPreamble then natPreamble @ substFreeSortClauses else substFreeSortClauses
+    if not options.sync_terms then clausesWithPreamble else
     let syncClauses = Synchronization.synchronize clausesWithPreamble
     syncClauses

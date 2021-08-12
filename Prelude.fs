@@ -2,6 +2,8 @@
 module RInGen.Prelude
 open System.Collections.Generic
 open System.IO
+open System.Threading
+open System.Threading.Tasks
 
 let __notImplemented__() = failwith "Not implemented!"
 let __unreachable__() = failwith "Unreachable!"
@@ -28,6 +30,8 @@ type OptionalBuilder =
         | None -> None
     member __.Return(value) = Some value
     member __.ReturnFrom(value) = value
+    member __.Zero() = None
+    member __.Using(resource : #System.IDisposable, binder) = let result = binder resource in resource.Dispose(); result
 let opt = OptionalBuilder()
 
 let inline join s (xs : string seq) = System.String.Join(s, xs)
@@ -43,18 +47,32 @@ module Int32 =
     let TryParse (s : string) =
         let n = ref 0
         if System.Int32.TryParse(s, n) then Some !n else None
+module Int64 =
+    let TryParse (s : string) =
+        let n = ref 0L
+        if System.Int64.TryParse(s, n) then Some !n else None
+
+type Async with
+    static member AwaitTask (t : Task<'T>, timeout : int) =
+        async {
+            use cts = new CancellationTokenSource()
+            use timer = Task.Delay (timeout, cts.Token)
+            let! completed = Async.AwaitTask <| Task.WhenAny(t, timer)
+            if completed = (t :> Task) then
+                cts.Cancel ()
+                let! result = Async.AwaitTask t
+                return Some result
+            else return None
+        }
 
 module List =
     let cons x xs = x :: xs
 
-    let evenPairs ys =
-        // for [x0; x1; x2; x3; ...] returns [(x0, x1); (x2, x3); ...]
-        let rec evenPairs xs k =
-            match xs with
-            | [] -> k []
-            | e::o::xs -> evenPairs xs (fun ys -> k <| (e, o) :: ys)
-            | _ -> failwithf $"list %O{ys} has not even length"
-        evenPairs ys id
+    let groups n ys =
+        // for [x0; x1; x2; x3; ...] and n=2 returns [[x0, x1]; [x2, x3]; ...]
+        let l = List.length ys
+        if l % n <> 0 then failwithf $"list %O{ys} length is not dividable by %d{n}" else
+        List.splitInto (l / n) ys
 
     let addLast y xs =
         let rec addLast xs k =
@@ -156,12 +174,13 @@ module Map =
     let union x y = Map.foldBack Map.add x y
 
 module Dictionary =
-    let toList (d : Dictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
+    let toList (d : IDictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
 
-    let tryGetValue (key : 'key) (d : Dictionary<'key, 'value>) =
+    let tryGetValue (key : 'key) (d : IDictionary<'key, 'value>) =
         let dummy = ref (Unchecked.defaultof<'value>)
         if d.TryGetValue(key, dummy) then Some !dummy else None
 
+type path = string
 type symbol = string
 let symbol : string -> symbol = id
 module Symbols =
@@ -283,7 +302,7 @@ type rule =
                 | _ -> sprintf "(=>\t(and %s)\n\t\t%O)" (xs |> List.map toString |> join "\n\t\t\t") x
             | ForallRule(vars, body) -> quant "forall" vars (basicPrint body)
             | ExistsRule(vars, body) -> quant "exists" vars (basicPrint body)
-        $"(assert %s{basicPrint x})"
+        basicPrint x
 let rec forallrule = function
     | [] -> id
     | vars -> function
@@ -367,7 +386,7 @@ type transformedCommand =
     override x.ToString() =
         match x with
         | OriginalCommand x -> x.ToString()
-        | TransformedCommand x -> x.ToString()
+        | TransformedCommand x -> $"(assert %O{x})"
 let orig = OriginalCommand
 let trans = TransformedCommand
 let truee = BoolConst true
@@ -473,34 +492,43 @@ type CollectBuilder =
     member __.ReturnFrom(value) = value
 let collector = CollectBuilder()
 
-let walk_through (directory : string) postfix transform =
+let private walk_through (srcDir : path) targetDir gotoFile gotoDirectory transform =
     let rec walk sourceFolder destFolder =
         for file in Directory.GetFiles(sourceFolder) do
             let name = Path.GetFileName(file)
-            let dest = Path.Combine(destFolder, name)
+            let dest = gotoFile destFolder name
             transform file dest
         for folder in Directory.GetDirectories(sourceFolder) do
             let name = Path.GetFileName(folder)
-            let dest = Path.Combine(destFolder, name)
+            let dest = gotoDirectory destFolder name
             walk folder dest
-    let name' = directory + postfix
-    walk directory postfix
-    name'
+    walk srcDir targetDir
 
-let walk_through_simultaneously dirs transform =
-    let rec walk relName (baseDir : DirectoryInfo) (dirs : string list) =
+let walk_through_copy srcDir targetDir transform =
+    let gotoFile folder name = Path.Combine(folder, name)
+    let gotoDirectory folder name =
+            let dest = Path.Combine(folder, name)
+            Directory.CreateDirectory(dest) |> ignore
+            dest
+    walk_through srcDir targetDir gotoFile gotoDirectory transform
+
+let walk_through_relative srcDir transform =
+    let gotoInside folder name = Path.Combine(folder, name)
+    walk_through srcDir "" gotoInside gotoInside (fun _ -> transform)
+
+let walk_through_simultaneously originalDir transAndResultDirs transform =
+    let addPathFragment fragment (dir1, dir2) = Path.Combine(dir1, fragment), Path.Combine(dir2, fragment)
+    let rec walk relName (baseDir : DirectoryInfo) (dirs : (path * path) list) =
         for f in baseDir.EnumerateFiles() do
             let fileName = f.Name
             let relName = Path.Combine(relName, fileName)
-            let files = dirs |> List.map (fun dir -> Path.Combine(dir, fileName))
+            let files = dirs |> List.map (addPathFragment fileName)
             transform relName files
         for subDir in baseDir.EnumerateDirectories() do
             let subDirName = subDir.Name
-            let subDirs = dirs |> List.map (fun d -> Path.Combine(d, subDirName))
+            let subDirs = dirs |> List.map (addPathFragment subDirName)
             walk (Path.Combine(relName, subDirName)) subDir subDirs
-    match dirs with
-    | dir::_ -> walk "" (Directory.CreateDirectory(dir)) dirs
-    | [] -> __unreachable__()
+    walk "" (Directory.CreateDirectory(originalDir)) transAndResultDirs
 
 module Environment =
     let split (s : string) = split System.Environment.NewLine s

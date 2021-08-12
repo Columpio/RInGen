@@ -9,3 +9,18 @@ type MODES = VERBOSE_MODE | QUIET_MODE | EXTRA_VERBOSE_MODE
 let mutable VERBOSITY_MODE = VERBOSE_MODE
 let IN_VERBOSE_MODE () = VERBOSITY_MODE = VERBOSE_MODE || VERBOSITY_MODE = EXTRA_VERBOSE_MODE
 let IN_EXTRA_VERBOSE_MODE () = VERBOSITY_MODE = EXTRA_VERBOSE_MODE
+
+let print_verbose (format : string) : unit =
+    if IN_VERBOSE_MODE () then printfn $"%s{format}" else ()
+
+let print_err_verbose (format : string) : unit =
+    print_verbose $"Error: %s{format}"
+
+let print_warn_verbose (format : string) : unit =
+    print_verbose $"Warning: %s{format}"
+
+let failwith_verbose (format : string) : 'T =
+    if IN_VERBOSE_MODE () then failwith format else Unchecked.defaultof<'T>
+
+type transformOptions = {tip: bool; sync_terms: bool}
+type solvingOptions = {keep_exists: bool; table: bool}
