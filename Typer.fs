@@ -42,8 +42,9 @@ let rec typeOf = function
 
 let tryTypeCheck f (typer : Typer) = Option.map Operation.returnType (typer.tryFind f)
 
+let tryGetOperation (typer : Typer) opName = typer.tryFind opName
 let getOperation (typer : Typer) opName =
-    match typer.tryFind opName with
+    match tryGetOperation typer opName with
     | Some r -> r
     | _ -> failwithf $"Unknown operation: {opName}"
 let fillOperation (typer : Typer) opName argTypes =

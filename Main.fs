@@ -39,7 +39,7 @@ let private print_transformation_success path = function
     | Some path' -> print_verbose $"Transformation run on %s{path} and the result is saved at %s{path'}"
     | None -> () // if the run was not successful, we have already printed the reason
 
-let private transform (options : ParseResults<TransformArguments>) =
+let private transform outputDirectory (options : ParseResults<TransformArguments>) =
     let transformOptions = options.TryGetResult(Transform_options) |> getLocalTransformOptions
     let path = options.GetResult(Path)
     let program =
@@ -47,7 +47,8 @@ let private transform (options : ParseResults<TransformArguments>) =
         | Original -> OriginalTransformerProgram(transformOptions) :> TransformerProgram
         | FreeSorts -> FreeSortsTransformerProgram(transformOptions) :> TransformerProgram
         | Prolog -> PrologTransformerProgram(transformOptions) :> TransformerProgram
-    print_transformation_success path <| program.Run(path)
+    let path' = program.Run path outputDirectory
+    if IN_VERBOSE_MODE () then print_transformation_success path path' else printfn $"""%s{Option.defaultValue "" path'}"""
 
 type private SolverName =
     | Z3
@@ -94,7 +95,7 @@ let private transformerForSolver transformOptions = function
     | Vampire
     | CVC_FMF -> FreeSortsTransformerProgram(transformOptions) :> TransformerProgram
 
-let private solve (options : ParseResults<SolveArguments>) =
+let private solve outputDirectory (options : ParseResults<SolveArguments>) =
     SECONDS_TIMEOUT <- options.GetResult(Timelimit, defaultValue = 300)
     let solver_name, path = options.GetResult(Required)
     let solver = solverByName solver_name
@@ -103,14 +104,14 @@ let private solve (options : ParseResults<SolveArguments>) =
         | Some _ as transformOptions -> // need transformation
             let transformOptions = getLocalTransformOptions transformOptions
             let transformer = transformerForSolver transformOptions solver_name
-            let path' = transformer.Run(path)
+            let path' = transformer.Run path outputDirectory
             print_transformation_success path path'
             path'
         | None -> Some path // only run
     match path' with
     | None -> () // no transformation, no solving
     | Some path' ->
-    match solver.Run(path') with
+    match solver.Run path' outputDirectory with
     | None -> ()
     | Some path'' ->
     print_verbose $"%s{solver.Name} run on %s{path'} and the result is saved at %s{path''}"
@@ -136,8 +137,9 @@ type private CLIArguments =
 let main args =
     let parseResults = ArgumentParser.Create<CLIArguments>().ParseCommandLine(inputs = args)
     if parseResults.Contains(Quiet) then VERBOSITY_MODE <- QUIET_MODE
+    let outputDirectory = parseResults.TryGetResult(Output_directory)
     match parseResults.GetSubCommand() with
-    | Transform args -> transform args
-    | Solve args -> solve args
+    | Transform args -> transform outputDirectory args
+    | Solve args -> solve outputDirectory args
     | _ -> __unreachable__()
     0

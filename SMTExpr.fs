@@ -153,13 +153,15 @@ and private parseTerm ((typer : Typer.Typer, env) as te) (e : SMTLIBv2Parser.Ter
                     let pat = e.pattern().symbol() |> List.ofArray |> List.map parseSymbol
                     let body = e.term()
                     match pat with
-                    | constr::(_::_ as cargs) ->
-                        let op = Typer.getOperation typer constr
-                        let cargs, te = List.mapFold extendEnvironment te (List.zip cargs (Operation.argumentTypes op))
-                        Apply(op, cargs), parseTerm te body
-                    | [constr] ->
-                        let v, te = extendEnvironment te (constr, typ)
-                        v, parseTerm te body
+                    | constr::cargs ->
+                        match Typer.tryGetOperation typer constr with
+                        | Some op -> // constructor pattern
+                            let cargs, te = List.mapFold extendEnvironment te (List.zip cargs (Operation.argumentTypes op))
+                            Apply(op, cargs), parseTerm te body
+                        | None -> //variable
+                            assert (List.isEmpty cargs)
+                            let v, te = extendEnvironment te (constr, typ)
+                            v, parseTerm te body
                     | [] -> __unreachable__()
                 let cases = e.match_case() |> List.ofArray |> List.map handle_case
                 Match(t, cases)

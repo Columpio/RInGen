@@ -75,6 +75,7 @@ type SolverProgramRunner () =
             print_verbose $"Running %s{x.Name} on %s{srcPath}"
             let statisticsFile, error, output = x.RunProcessOn srcPath
             let result = x.InterpretResult error output
+            print_extra_verbose $"Solver obtained result: %O{compactStatus result}"
             x.ReportStatistics srcPath dstPath statisticsFile result
             true
         with e -> print_verbose $"Exception in %s{srcPath}: %s{dstPath}"; false

@@ -110,7 +110,7 @@ type private POBDB (adts) =
         let sorts = List.map x.TypeOfCombinedTerm pob
         let op = Operation.makeElementaryRelationFromSorts pident sorts
         pobs.Add(pob, op)
-        if IN_EXTRA_VERBOSE_MODE () then printfn $"""registered {op}: {pob |> List.map (List.map toString >> join ", " >> sprintf "(%s)") |> join "; "}"""
+        print_extra_verbose $"""registered {op}: {pob |> List.map (List.map toString >> join ", " >> sprintf "(%s)") |> join "; "}"""
         op
 
     member private x.TryGetPOB(pob) : operation option = Dictionary.tryGetValue pob pobs
