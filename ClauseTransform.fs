@@ -506,7 +506,13 @@ module private DefinitionsToDeclarations =
             | t -> [conds, t]
         let rec eat vars conds = function
             | Forall(vars', body) -> eat (vars @ vars') conds body
-            | Or es -> eat vars conds (hence (List.map note es) falsee)
+            | Or es ->
+                let apps, rest = List.partition (function Apply(UserDefinedOperation(_, _, s), _) when s = boolSort -> true | _ -> false) es
+                let body = List.map note rest
+                match apps with
+                | [] -> eat vars conds (hence body falsee)
+                | [app] -> eat vars conds (hence body app)
+                | _ -> failwithf $"Disjunction in clause head: %O{apps}"
             | Hence(cond, body) -> eat vars (eatCondition cond @ conds) body
             | And es -> List.collect (eat vars conds) es
 //            | Apply(op, [app; body]) when op = equal_op boolSort ->
