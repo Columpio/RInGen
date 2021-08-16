@@ -11,16 +11,17 @@ let private topFreeVarsOf (pob : POB) = List.collect (List.choose (function TIde
 let private uniformizeVars pob =
     let mutable n = 0
     let varMap = Dictionary()
+    let newIndex n = $"x%d{n}"
     let rec substInTerm = function
         | TConst _ as c -> c
         | TIdent(i, s) ->
             match Dictionary.tryGetValue i varMap with
-            | Some iSubst -> TIdent(iSubst, s)
+            | Some n -> TIdent(newIndex n, s)
             | None ->
-            let newIndex = $"x{n}"
-            varMap.Add(i, newIndex)
+            let newN = n
+            varMap.Add(i, newN)
             n <- n + 1
-            TIdent(newIndex, s)
+            TIdent(newIndex newN, s)
         | TApply(id, ts) -> TApply(id, List.map substInTerm ts)
     List.map (List.map substInTerm) pob
 
@@ -199,15 +200,20 @@ type private POBDB (adts) =
 
     member private x.SplitIndependentInPob argumentPobAndVars =
         let argPobAndVarsAndFreeVars = List.map (fun ((pob, _) as pvs) -> pvs, x.CollectFreeVarsInTerms pob |> Set.ofList) argumentPobAndVars
-        let rec splitIntoClasses freeVars pvs done_pvss queue = function
-            | [] -> splitEntry (pvs :: done_pvss) queue
-            | (nxtPV, nxtFV)::rest ->
-                if Set.intersect freeVars nxtFV |> Set.isEmpty then
-                    splitIntoClasses freeVars pvs done_pvss ((nxtPV, nxtFV)::queue) rest
-                else splitIntoClasses (Set.union freeVars nxtFV) (nxtPV::pvs) done_pvss queue rest
+        let rec splitIntoClasses freeVars pvs done_pvss rest =
+            let rec iter fvs pvs done_pvss queue = function
+                | [] ->
+                    if Set.count fvs = Set.count freeVars // free vars didn't change
+                    then splitEntry (pvs :: done_pvss) queue
+                    else splitIntoClasses fvs pvs done_pvss queue
+                | (nxtPV, nxtFV)::rest ->
+                    if Set.intersect freeVars nxtFV |> Set.isEmpty then
+                        iter freeVars pvs done_pvss ((nxtPV, nxtFV)::queue) rest
+                    else iter (Set.union freeVars nxtFV) (nxtPV::pvs) done_pvss queue rest
+            iter freeVars pvs done_pvss [] rest
         and splitEntry done_pvss = function
             | [] -> done_pvss
-            | (pv, freeVars)::rest -> splitIntoClasses freeVars [pv] done_pvss [] rest
+            | (pv, freeVars)::rest -> splitIntoClasses freeVars [pv] done_pvss rest
         let splitedPobsAndArgs = splitEntry [] argPobAndVarsAndFreeVars
         List.map List.unzip splitedPobsAndArgs
 

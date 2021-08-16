@@ -17,7 +17,12 @@ let private readTMPStatFile (timeStatisticsFile : path) =
     let time = int (1000.0 * (float res.[1]))   // milliseconds
     memory, time
 
-type statistics = {transformedFileSize: int64; solverRunMemory: int; solverRunTime: int; solverResult: SolverResult}
+type statistics = {
+    transformedFileSize: int64  // in kilobytes
+    solverRunMemory: int        // in kilobytes
+    solverRunTime: int          // in milliseconds
+    solverResult: SolverResult
+}
 type status = TransformationStatus of TransformationFail | SolvingStatus of statistics
 let fieldNames = ["TransformedFileSize"; "SolverRunMemory"; "SolverRunTime"; "Status"]
 let statisticsCount = List.length fieldNames
@@ -88,6 +93,8 @@ let tryReadStatistics (transformedFilePath : path, resultFilePath : path) =
 
 let report dstPath srcPath (timeStatisticsFile : path) result =
     let solverRunMemory, solverRunTime = readTMPStatFile timeStatisticsFile
-    let transformedFileSize = FileInfo(srcPath).Length / (1L <<< 10) // kilobytes
-    let stat = {transformedFileSize=transformedFileSize; solverRunMemory=solverRunMemory; solverRunTime=solverRunTime; solverResult=result}
+    let transformedFileSize = FileInfo(srcPath).Length / (1L <<< 10)
+    let realResult = if solverRunTime >= MSECONDS_TIMEOUT () then SOLVER_TIMELIMIT else result
+    let stat = {transformedFileSize=transformedFileSize; solverRunMemory=solverRunMemory; solverRunTime=solverRunTime; solverResult=realResult}
+    print_extra_verbose $"Solver obtained result: %O{compactStatus realResult}"
     writeStatistics dstPath stat
