@@ -260,6 +260,7 @@ type TheorySubstitutor () =
         let commands = List.map (substInCommand mapper relativizer) commands
         let wasSubstituted = relativizer.WasSubstituted ()
         let shouldAddPreamble = wasMapped || wasSubstituted
-        shouldAddPreamble, preamble, (if shouldAddPreamble then preamble @ commands else commands), newSort
+        let returnedCommands = if shouldAddPreamble then preamble @ commands else commands
+        shouldAddPreamble, preamble, returnedCommands, newSort
 
     member x.SubstituteTheory commands = let _, _, commands, _ = x.SubstituteTheoryDelayed commands in commands

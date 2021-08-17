@@ -748,6 +748,7 @@ let toClauses (options : transformOptions) commands =
     let relHornClauses = BoolAxiomatization.BoolAxiomatization().SubstituteTheory relHornClauses
     let alreadyAddedNatPreamble, natPreamble, commandsWithoutInts, natSort = IntToNat().SubstituteTheoryDelayed relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
+    let natPreamble, adtEqs = if alreadyAddedNatPreamble then natPreamble, adtEqs else ADTs.SupplementaryADTAxioms.addSupplementaryAxiomsIncremental adtEqs natPreamble
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
     let shouldAddNatPreamble, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
     let clausesWithPreamble = if not alreadyAddedNatPreamble && shouldAddNatPreamble then natPreamble @ substFreeSortClauses else substFreeSortClauses

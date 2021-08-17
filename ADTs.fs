@@ -126,11 +126,13 @@ module SupplementaryADTAxioms =
             List.concat (decls @ defs), acc
         | _ -> [], acc
 
-    let addSupplementaryAxioms commands =
-        let commands, (rels, eqs, diseqs) = List.mapFold (fun sd c -> let cs, sd = substituteSymbols sd c in c::cs, sd) (Map.empty, Map.empty, Map.empty) commands
+    let addSupplementaryAxiomsIncremental (eqs, diseqs) commands =
+        let commands, (rels, eqs, diseqs) = List.mapFold (fun sd c -> let cs, sd = substituteSymbols sd c in c::cs, sd) (Map.empty, eqs, diseqs) commands
         let commands = List.concat commands
         let relativizer = SubstituteOperations(rels, eqs, diseqs)
         List.map relativizer.SubstituteOperationsWithRelations commands, (eqs, diseqs)
+
+    let addSupplementaryAxioms commands = addSupplementaryAxiomsIncremental (Map.empty, Map.empty) commands
 
 let private generateBoolCongruenceHeader congrName =
     let diseq_name = IdentGenerator.gensyms (congrName + "Bool")
