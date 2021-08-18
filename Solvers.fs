@@ -1,57 +1,8 @@
 module RInGen.Solvers
-open System
 open System.IO
-open System.Diagnostics
-open System.Text
 open System.Text.RegularExpressions
 open RInGen.SolverResult
 open Programs
-
-[<AbstractClass>]
-type ProgramRunner () =
-    inherit Program()
-
-    abstract ShouldSearchForBinaryInEnvironment : bool
-    abstract BinaryOptions : path -> string
-    abstract BinaryName : string
-
-    member private x.WorkingDirectory (filename : path) =
-        if x.ShouldSearchForBinaryInEnvironment
-            then Environment.GetEnvironmentVariable(x.BinaryName)
-            else filename
-        |> Path.GetDirectoryName
-
-    member private x.SetupProcess (psinfo : ProcessStartInfo) filename =
-        let executable = Option.defaultValue x.BinaryName <| Dictionary.tryGetValue x.BinaryName psinfo.Environment
-        let arguments = x.BinaryOptions filename
-        let statisticsFile = Path.GetTempFileName()
-        psinfo.FileName <- "/usr/bin/time"
-        psinfo.Arguments <- $"--quiet --output=%s{statisticsFile} --format %%M,%%e %s{executable} %s{arguments}"
-        psinfo.WorkingDirectory <- x.WorkingDirectory filename
-        statisticsFile
-
-    member x.RunProcessOn (srcPath : path) =
-        use p = new Process()
-        p.StartInfo.RedirectStandardOutput <- true
-        p.StartInfo.RedirectStandardError <- true
-        p.StartInfo.UseShellExecute <- false
-        p.StartInfo.CreateNoWindow <- true
-        p.StartInfo.WindowStyle <- ProcessWindowStyle.Hidden
-        let error = StringBuilder()
-        let output = StringBuilder()
-        p.ErrorDataReceived.Add(fun e -> error.AppendLine(e.Data) |> ignore)
-        p.OutputDataReceived.Add(fun o -> output.AppendLine(o.Data) |> ignore)
-        let statisticsFile = x.SetupProcess p.StartInfo srcPath
-
-        p.Start() |> ignore
-        p.BeginOutputReadLine()                     // output is read asynchronously
-        p.BeginErrorReadLine()                      // error is read asynchronously: if we read both stream synchronously, deadlock is possible
-                                                    // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
-        p.WaitForExit(MSECONDS_TIMEOUT ()) |> ignore
-        p.Close()
-        let error = error.ToString().Trim()
-        let output = output.ToString().Trim()
-        statisticsFile, error, output
 
 [<AbstractClass>]
 type SolverProgramRunner () =
@@ -75,7 +26,9 @@ type SolverProgramRunner () =
             print_verbose $"Running %s{x.Name} on %s{srcPath}"
             let statisticsFile, error, output = x.RunProcessOn srcPath
             let result = x.InterpretResult error output
-            x.ReportStatistics srcPath dstPath statisticsFile result
+            let realResult = x.ReportStatistics srcPath dstPath statisticsFile result
+            if IN_EXTRA_VERBOSE_MODE () then printfn $"Solver obtained result: %O{compactStatus realResult}"
+            elif IN_QUIET_MODE () then printfn $"%s{quietModeToString realResult}"
             true
         with e -> print_verbose $"Exception in %s{srcPath}: %s{dstPath}"; false
 
@@ -233,7 +186,7 @@ type VampireSolver () =
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        $"""--input_syntax smtlib2 %s{if IN_VERBOSE_MODE () then "" else " --output_mode smtcomp"} --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
+        $"""--input_syntax smtlib2 %s{if IN_QUIET_MODE () then "--output_mode smtcomp" else ""} --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else

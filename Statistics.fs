@@ -96,5 +96,5 @@ let report dstPath srcPath (timeStatisticsFile : path) result =
     let transformedFileSize = FileInfo(srcPath).Length / (1L <<< 10)
     let realResult = if solverRunTime >= MSECONDS_TIMEOUT () then SOLVER_TIMELIMIT else result
     let stat = {transformedFileSize=transformedFileSize; solverRunMemory=solverRunMemory; solverRunTime=solverRunTime; solverResult=realResult}
-    print_extra_verbose $"Solver obtained result: %O{compactStatus realResult}"
     writeStatistics dstPath stat
+    realResult

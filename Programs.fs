@@ -1,4 +1,7 @@
 module RInGen.Programs
+open System
+open System.Diagnostics
+open System.Text
 open System.IO
 
 [<AbstractClass>]
@@ -33,3 +36,49 @@ type Program () =
             walk_through_copy path path' (fun path path' -> x.CheckedRunOnFile path path' |> ignore)
             Some path'
         | _ -> failwith_verbose $"There is no such file or directory: %s{path}"
+
+[<AbstractClass>]
+type ProgramRunner () =
+    inherit Program()
+
+    abstract ShouldSearchForBinaryInEnvironment : bool
+    abstract BinaryOptions : path -> string
+    abstract BinaryName : string
+
+    member private x.WorkingDirectory (filename : path) =
+        if x.ShouldSearchForBinaryInEnvironment
+            then Environment.GetEnvironmentVariable(x.BinaryName)
+            else filename
+        |> Path.GetDirectoryName
+
+    member private x.SetupProcess (psinfo : ProcessStartInfo) filename =
+        let executable = Option.defaultValue x.BinaryName <| Dictionary.tryGetValue x.BinaryName psinfo.Environment
+        let arguments = x.BinaryOptions filename
+        let statisticsFile = Path.GetTempFileName()
+        psinfo.FileName <- "/usr/bin/time"
+        psinfo.Arguments <- $"--quiet --output=%s{statisticsFile} --format %%M,%%e %s{executable} %s{arguments}"
+        psinfo.WorkingDirectory <- x.WorkingDirectory filename
+        statisticsFile
+
+    member x.RunProcessOn (srcPath : path) =
+        use p = new Process()
+        p.StartInfo.RedirectStandardOutput <- true
+        p.StartInfo.RedirectStandardError <- true
+        p.StartInfo.UseShellExecute <- false
+        p.StartInfo.CreateNoWindow <- true
+        p.StartInfo.WindowStyle <- ProcessWindowStyle.Hidden
+        let error = StringBuilder()
+        let output = StringBuilder()
+        p.ErrorDataReceived.Add(fun e -> error.AppendLine(e.Data) |> ignore)
+        p.OutputDataReceived.Add(fun o -> output.AppendLine(o.Data) |> ignore)
+        let statisticsFile = x.SetupProcess p.StartInfo srcPath
+
+        p.Start() |> ignore
+        p.BeginOutputReadLine()                     // output is read asynchronously
+        p.BeginErrorReadLine()                      // error is read asynchronously: if we read both stream synchronously, deadlock is possible
+                                                    // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
+        p.WaitForExit(MSECONDS_TIMEOUT ()) |> ignore
+        p.Close()
+        let error = error.ToString().Trim()
+        let output = output.ToString().Trim()
+        statisticsFile, error, output

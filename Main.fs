@@ -48,7 +48,8 @@ let private transform outputDirectory (options : ParseResults<TransformArguments
         | FreeSorts -> FreeSortsTransformerProgram(transformOptions) :> TransformerProgram
         | Prolog -> PrologTransformerProgram(transformOptions) :> TransformerProgram
     let path' = program.Run path outputDirectory
-    if IN_VERBOSE_MODE () then print_transformation_success path path' else printfn $"""%s{Option.defaultValue "" path'}"""
+    if IN_VERBOSE_MODE () then print_transformation_success path path'
+    elif IN_QUIET_MODE () then printfn $"""%s{Option.defaultValue "" path'}"""
 
 type private SolverName =
     | Z3
