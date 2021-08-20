@@ -3,7 +3,12 @@ open System
 open System.IO
 open Programs
 
-type TransformationFail = TRANS_TIMELIMIT | TRANS_HIGH_ORDER_PROBLEM | TRANS_CONTAINS_EXISTENTIALS | TRANS_UNHANDLED_EXCEPTION
+type TransformationFail =
+    | TRANS_TIMELIMIT
+    | TRANS_MEMORYLIMIT
+    | TRANS_HIGH_ORDER_PROBLEM
+    | TRANS_CONTAINS_EXISTENTIALS
+    | TRANS_UNHANDLED_EXCEPTION
 
 let tryParseTransformationFail (s : string) =
     let s = s.Trim()
@@ -15,8 +20,8 @@ let tryParseTransformationFail (s : string) =
     | _ -> None
 
 [<AbstractClass>]
-type TransformerProgram (options) =
-    inherit Program()
+type TransformerProgram (options, runSame : path -> string) =
+    inherit ProgramRunner()
 
     let isHighOrderBenchmark cmnds =
         let hasDefines = List.exists (function Definition _ -> true | _ -> false) cmnds
@@ -50,6 +55,9 @@ type TransformerProgram (options) =
         | Some r -> x.ReportTransformationProblem dst TRANS_CONTAINS_EXISTENTIALS $"Transformed %s{dst} contains existential subclause: %O{r}"
         | _ -> x.SaveFile dst lines
 
+    member private x.ReportTimelimit srcPath dstPath =
+        x.ReportTransformationProblem dstPath TRANS_TIMELIMIT $"Transformation of %s{srcPath} halted due to a timelimit"
+
     member private x.PerformTransform srcPath dstPath =
 //        let mutable files = 0
 //        let mutable successful = 0
@@ -63,32 +71,56 @@ type TransformerProgram (options) =
             x.SaveClauses dstPath transformedProgram
 //            total_generated <- total_generated + x.SaveClauses opts.path dst newTests
 //            successful <- successful + 1
-        with e -> x.ReportTransformationProblem dstPath TRANS_UNHANDLED_EXCEPTION $"Exception in %s{srcPath}: {e.Message}"
+        with
+        | :? OutOfMemoryException -> x.ReportTransformationProblem dstPath TRANS_MEMORYLIMIT $"Transformation of %s{srcPath} halted due to a memory limit"
+        | e -> x.ReportTransformationProblem dstPath TRANS_UNHANDLED_EXCEPTION $"Exception in %s{srcPath}: {e.Message}"
 //        if IN_VERBOSE_MODE () then printfn $"All files:       %d{files}"
 //        if IN_VERBOSE_MODE () then printfn $"Successful:      %d{successful}"
 //        if IN_VERBOSE_MODE () then printfn $"Total generated: %d{total_generated}"
 
     override x.RunOnFile srcPath dstPath =
-        print_verbose $"Transforming: %s{srcPath}"
+        match options.no_isolation with
+        | true ->
+            print_verbose $"Transforming: %s{srcPath}"
+            let task = Async.AwaitTask(Async.StartAsTask(async { x.PerformTransform srcPath dstPath }), MSECONDS_TIMEOUT ()) //TODO transformation time should count in total run
+            match Async.RunSynchronously task with
+            | Some () -> true
+            | None -> x.ReportTimelimit srcPath dstPath; false
+        | false ->
+            let statisticsFile, hasFinished, error, output = x.RunProcessOn(srcPath)
+            printf $"{output}"
+            eprintf $"{error}"
+            match hasFinished with
+            | false -> x.ReportTimelimit srcPath dstPath; false
+            | true -> true
 
-        let task = Async.AwaitTask(Async.StartAsTask(async { x.PerformTransform srcPath dstPath }), MSECONDS_TIMEOUT ()) //TODO transformation time should count in total run
-        match Async.RunSynchronously task with
-        | Some () -> true
-        | None -> x.ReportTransformationProblem dstPath TRANS_TIMELIMIT $"Transformation of %s{srcPath} halted due to a timelimit"; false
+    override x.ShouldSearchForBinaryInEnvironment = false
+    override x.BinaryName = "/bin/bash"
+    override x.BinaryOptions filename =
+        let currentProcessVirtualMemKB = ThisProcess.thisProcess.VirtualMemorySize64 / (1L <<< 10)
+        let desiredVirtualMemKB = MEMORY_LIMIT_MB * 1024L
+        let childRun = $"dotnet %s{ThisProcess.thisDLLPath} %s{runSame filename}"
+        let commands = [
+            // set memory limit: see `man setrlimit`, `-v` for `RLIMIT_AS`, `-m` for `RLIMIT_RSS` (does not work)
+            $"ulimit -v %d{currentProcessVirtualMemKB + desiredVirtualMemKB}"
+            childRun
+        ]
+        print_extra_verbose $"Run child process: %s{childRun}"
+        $"""-c "%s{join "; " commands}" """
 
 let private preambulizeCommands logic chcSystem =
     OriginalCommand(SetLogic logic) :: chcSystem @ [OriginalCommand CheckSat]
 
-type OriginalTransformerProgram (options) =
-    inherit TransformerProgram(options)
+type OriginalTransformerProgram (options, runSame) =
+    inherit TransformerProgram(options, runSame)
 
     override x.TargetPath path = $"%s{path}.Original"
 
     override x.Transform commands =
         preambulizeCommands "HORN" commands
 
-type FreeSortsTransformerProgram (options) =
-    inherit TransformerProgram(options)
+type FreeSortsTransformerProgram (options, runSame) =
+    inherit TransformerProgram(options, runSame)
 
     override x.TargetPath path = $"%s{path}.FreeSorts"
 
@@ -96,8 +128,8 @@ type FreeSortsTransformerProgram (options) =
         let noADTSystem = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
         preambulizeCommands "UF" noADTSystem
 
-type PrologTransformerProgram (options) =
-    inherit OriginalTransformerProgram(options)
+type PrologTransformerProgram (options, runSame) =
+    inherit OriginalTransformerProgram(options, runSame)
 
     override x.TargetPath path = $"%s{path}.Prolog"
 

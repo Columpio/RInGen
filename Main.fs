@@ -9,19 +9,28 @@ type private TransformMode =
     | FreeSorts
     | Prolog
 
+let private newOriginalTransformerProgram transformOptions runSame =
+    OriginalTransformerProgram(transformOptions, runSame Original) :> TransformerProgram
+let private newPrologTransformerProgram transformOptions runSame =
+    PrologTransformerProgram(transformOptions, runSame Prolog) :> TransformerProgram
+let private newFreeSortsTransformerProgram transformOptions runSame =
+    FreeSortsTransformerProgram(transformOptions, runSame FreeSorts) :> TransformerProgram
+
 type private LocalTransformArguments =
+    | [<Unique; Hidden>] No_Isolation
     | [<Unique>] Tip
     | [<Unique; AltCommandLine("-s")>] Sync_terms
 
     interface IArgParserTemplate with
         member x.Usage =
             match x with
+            | No_Isolation -> "Perform transformation without monitoring"
             | Tip -> "Negates the query (for TIP benchmarks)"
             | Sync_terms -> "Synchronize terms of a CHC system"
 
 let private getLocalTransformOptions = function
-    | Some (options : ParseResults<_>) -> {tip=options.Contains(Tip); sync_terms=options.Contains(Sync_terms)}
-    | None -> {tip=false; sync_terms=false}
+    | Some (options : ParseResults<_>) -> {tip=options.Contains(Tip); sync_terms=options.Contains(Sync_terms); no_isolation=options.Contains(No_Isolation)}
+    | None -> {tip=false; sync_terms=false; no_isolation=false}
 
 type private TransformArguments =
     | [<Unique; AltCommandLine("-m")>] Mode of TransformMode
@@ -39,14 +48,16 @@ let private print_transformation_success path = function
     | Some path' -> print_verbose $"Transformation run on %s{path} and the result is saved at %s{path'}"
     | None -> () // if the run was not successful, we have already printed the reason
 
-let private transform outputDirectory (options : ParseResults<TransformArguments>) =
-    let transformOptions = options.TryGetResult(Transform_options) |> getLocalTransformOptions
+let private transform outputDirectory runSame (options : ParseResults<TransformArguments>) =
+    let transformOptions = options.TryGetResult(Transform_options)
+    let runSame = runSame transformOptions
+    let transformOptions = getLocalTransformOptions transformOptions
     let path = options.GetResult(Path)
     let program =
         match options.GetResult(Mode, defaultValue = Original) with
-        | Original -> OriginalTransformerProgram(transformOptions) :> TransformerProgram
-        | FreeSorts -> FreeSortsTransformerProgram(transformOptions) :> TransformerProgram
-        | Prolog -> PrologTransformerProgram(transformOptions) :> TransformerProgram
+        | Original -> newOriginalTransformerProgram transformOptions runSame
+        | FreeSorts -> newFreeSortsTransformerProgram transformOptions runSame
+        | Prolog -> newPrologTransformerProgram transformOptions runSame
     let path' = program.Run path outputDirectory
     if IN_VERBOSE_MODE () then print_transformation_success path path'
     elif IN_QUIET_MODE () then printfn $"""%s{Option.defaultValue "" path'}"""
@@ -87,24 +98,25 @@ let private solverByName = function
     | CVC_FMF -> CVC4FiniteSolver() :> SolverProgramRunner
 //    | All -> AllSolver() :> SolverProgramRunner
 
-let private transformerForSolver transformOptions = function
+let private transformerForSolver transformOptions runSame = function
     | MyZ3
     | Z3
     | Eldarica
-    | CVC_Ind -> OriginalTransformerProgram(transformOptions) :> TransformerProgram
-    | VeriMAP -> PrologTransformerProgram(transformOptions) :> TransformerProgram
+    | CVC_Ind -> newOriginalTransformerProgram transformOptions runSame
+    | VeriMAP -> newPrologTransformerProgram transformOptions runSame
     | Vampire
-    | CVC_FMF -> FreeSortsTransformerProgram(transformOptions) :> TransformerProgram
+    | CVC_FMF -> newFreeSortsTransformerProgram transformOptions runSame
 
-let private solve outputDirectory (options : ParseResults<SolveArguments>) =
+let private solve outputDirectory runSame (options : ParseResults<SolveArguments>) =
     SECONDS_TIMEOUT <- options.GetResult(Timelimit, defaultValue = 300)
     let solver_name, path = options.GetResult(Required)
     let solver = solverByName solver_name
     let path' =
         match options.TryGetResult(Transform) with
         | Some _ as transformOptions -> // need transformation
+            let runSame = runSame transformOptions
             let transformOptions = getLocalTransformOptions transformOptions
-            let transformer = transformerForSolver transformOptions solver_name
+            let transformer = transformerForSolver transformOptions runSame solver_name
             let path' = transformer.Run path outputDirectory
             print_transformation_success path path'
             path'
@@ -134,13 +146,30 @@ type private CLIArguments =
             | Quiet -> "Quiet mode"
             | Output_directory _ -> "Output directory where to put new files (default: same as input PATH)"
 
+let private runTransformationWithSameConfigurationOnSingleFile (parser : ArgumentParser<_>) generalArgs (transArgs : ParseResults<_> option) mode =
+    let generalArgs = List.filter (function Transform _ | Solve _ -> false | _ -> true) generalArgs
+    let transArgs =
+        match transArgs with
+        | Some transArgs -> transArgs.GetAllResults()
+        | None -> []
+    let transArgs = No_Isolation :: transArgs
+    let ltaParser = ArgumentParser.Create<LocalTransformArguments>()
+    let transOpts = transArgs |> ltaParser.ToParseResults |> Transform_options
+    let taParser = ArgumentParser.Create<TransformArguments>()
+    fun filename ->
+    let transformationArguments = [Mode mode; transOpts; Path filename]
+    let allArgs = generalArgs @ [transformationArguments |> taParser.ToParseResults |> Transform]
+    parser.PrintCommandLineArgumentsFlat(allArgs)
+
 [<EntryPoint>]
 let main args =
-    let parseResults = ArgumentParser.Create<CLIArguments>().ParseCommandLine(inputs = args)
-    if parseResults.Contains(Quiet) then VERBOSITY_MODE <- QUIET_MODE
-    let outputDirectory = parseResults.TryGetResult(Output_directory)
-    match parseResults.GetSubCommand() with
-    | Transform args -> transform outputDirectory args
-    | Solve args -> solve outputDirectory args
+    let parser = ArgumentParser.Create<CLIArguments>()
+    let parseResults = parser.ParseCommandLine(inputs = args).GetAllResults()
+    if List.contains Quiet parseResults then VERBOSITY_MODE <- QUIET_MODE
+    let outputDirectory = List.tryPick (function Output_directory dir -> Some dir | _ -> None) parseResults
+    let runSame = runTransformationWithSameConfigurationOnSingleFile parser parseResults
+    match List.find (function Transform _ | Solve _ -> true | _ -> false) parseResults with
+    | Transform args -> transform outputDirectory runSame args
+    | Solve args -> solve outputDirectory runSame args
     | _ -> __unreachable__()
     0

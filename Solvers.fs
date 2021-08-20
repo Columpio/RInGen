@@ -24,8 +24,8 @@ type SolverProgramRunner () =
         if File.Exists(dstPath) then print_verbose $"%s{x.Name} skipping %s{srcPath} (answer exists)"; true else
         try
             print_verbose $"Running %s{x.Name} on %s{srcPath}"
-            let statisticsFile, error, output = x.RunProcessOn srcPath
-            let result = x.InterpretResult error output
+            let statisticsFile, hasFinished, error, output = x.RunProcessOn srcPath
+            let result = if hasFinished then x.InterpretResult error output else SOLVER_TIMELIMIT
             let realResult = x.ReportStatistics srcPath dstPath statisticsFile result
             if IN_EXTRA_VERBOSE_MODE () then printfn $"Solver obtained result: %O{compactStatus realResult}"
             elif IN_QUIET_MODE () then printfn $"%s{quietModeToString realResult}"

@@ -77,8 +77,9 @@ type ProgramRunner () =
         p.BeginOutputReadLine()                     // output is read asynchronously
         p.BeginErrorReadLine()                      // error is read asynchronously: if we read both stream synchronously, deadlock is possible
                                                     // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
-        p.WaitForExit(MSECONDS_TIMEOUT ()) |> ignore
+        let hasFinished = p.WaitForExit(MSECONDS_TIMEOUT ())
+        if not hasFinished then p.Kill(true)
         p.Close()
         let error = error.ToString().Trim()
         let output = output.ToString().Trim()
-        statisticsFile, error, output
+        statisticsFile, hasFinished, error, output

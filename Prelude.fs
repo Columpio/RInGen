@@ -8,6 +8,10 @@ open System.Threading.Tasks
 let __notImplemented__() = failwith "Not implemented!"
 let __unreachable__() = failwith "Unreachable!"
 
+module ThisProcess =
+    let thisDLLPath = System.Reflection.Assembly.GetExecutingAssembly().Location
+    let thisProcess = System.Diagnostics.Process.GetCurrentProcess()
+
 let private mapFirstChar x f = if x = "" then "" else $"%c{f(x.Chars(0))}%s{x.Substring(1)}"
 type System.String with
     member x.ToLowerFirstChar() = mapFirstChar x System.Char.ToLower
