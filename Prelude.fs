@@ -12,6 +12,10 @@ module ThisProcess =
     let thisDLLPath = System.Reflection.Assembly.GetExecutingAssembly().Location
     let thisProcess = System.Diagnostics.Process.GetCurrentProcess()
 
+module Printf =
+    let printfn_nonempty s = if s <> "" then printfn $"%s{s}"
+    let eprintfn_nonempty s = if s <> "" then eprintfn $"%s{s}"
+
 let private mapFirstChar x f = if x = "" then "" else $"%c{f(x.Chars(0))}%s{x.Substring(1)}"
 type System.String with
     member x.ToLowerFirstChar() = mapFirstChar x System.Char.ToLower

@@ -20,8 +20,10 @@ let tryParseTransformationFail (s : string) =
     | _ -> None
 
 [<AbstractClass>]
-type TransformerProgram (options, runSame : path -> string) =
+type TransformerProgram (options, runSame : path -> path -> string) =
     inherit ProgramRunner()
+
+    let mutable currentDSTPath : path = ""
 
     let isHighOrderBenchmark cmnds =
         let hasDefines = List.exists (function Definition _ -> true | _ -> false) cmnds
@@ -87,9 +89,10 @@ type TransformerProgram (options, runSame : path -> string) =
             | Some () -> true
             | None -> x.ReportTimelimit srcPath dstPath; false
         | false ->
+            currentDSTPath <- dstPath
             let statisticsFile, hasFinished, error, output = x.RunProcessOn(srcPath)
-            printf $"{output}"
-            eprintf $"{error}"
+            Printf.printfn_nonempty output
+            Printf.eprintfn_nonempty error
             match hasFinished with
             | false -> x.ReportTimelimit srcPath dstPath; false
             | true -> true
@@ -99,7 +102,7 @@ type TransformerProgram (options, runSame : path -> string) =
     override x.BinaryOptions filename =
         let currentProcessVirtualMemKB = ThisProcess.thisProcess.VirtualMemorySize64 / (1L <<< 10)
         let desiredVirtualMemKB = MEMORY_LIMIT_MB * 1024L
-        let childRun = $"dotnet %s{ThisProcess.thisDLLPath} %s{runSame filename}"
+        let childRun = $"dotnet %s{ThisProcess.thisDLLPath} %s{runSame filename currentDSTPath}"
         let commands = [
             // set memory limit: see `man setrlimit`, `-v` for `RLIMIT_AS`, `-m` for `RLIMIT_RSS` (does not work)
             $"ulimit -v %d{currentProcessVirtualMemKB + desiredVirtualMemKB}"

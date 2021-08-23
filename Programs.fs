@@ -22,17 +22,24 @@ type Program () =
     member private x.CheckedRunOnFile (path : path) path' =
         if x.IsExtensionOK <| Path.GetExtension(path) then x.RunOnFile path path' else false
 
-    member x.Run (path : path) (outputDirectory : path option) =
-        let outputDirectory = Option.defaultValue (Path.GetDirectoryName(path)) outputDirectory
+    member x.Run (path : path) (outputPath : path option) =
         match () with
         | _ when File.Exists(path) ->
             let filename' = Path.ChangeExtension(Path.GetFileName(path), $"""%s{x.TargetPath ""}%s{Path.GetExtension(path)}""")
-            let path' = Path.Combine(outputDirectory, filename')
+            let path' =
+                match outputPath with
+                | Some outputDirectory when Path.EndsInDirectorySeparator(outputDirectory) -> Path.Combine(outputDirectory, filename')
+                | Some outputPath -> outputPath
+                | None -> Path.Combine(Path.GetDirectoryName(path), filename')
             File.Delete(path')
             if x.CheckedRunOnFile path path' then Some path' else None
         | _ when Directory.Exists(path) ->
             let directory' = x.TargetPath(Path.GetFileName(path))
-            let path' = Path.Combine(outputDirectory, directory')
+            let path' =
+                match outputPath with
+                | Some outputDirectory when Path.EndsInDirectorySeparator(outputDirectory) -> Path.Combine(outputDirectory, directory')
+                | Some outputPath -> failwith_verbose $"Trying to write directory to the file $s{outputPath}"
+                | None -> Path.Combine(Path.GetDirectoryName(path), directory')
             walk_through_copy path path' (fun path path' -> x.CheckedRunOnFile path path' |> ignore)
             Some path'
         | _ -> failwith_verbose $"There is no such file or directory: %s{path}"
