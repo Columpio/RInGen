@@ -59,8 +59,9 @@ let private transform outputPath runSame (options : ParseResults<TransformArgume
         | FreeSorts -> newFreeSortsTransformerProgram transformOptions runSame
         | Prolog -> newPrologTransformerProgram transformOptions runSame
     let path' = program.Run path outputPath
-    if IN_VERBOSE_MODE () then print_transformation_success path path'
-    elif IN_QUIET_MODE () then printfn $"""%s{Option.defaultValue "" path'}"""
+    if not transformOptions.no_isolation then
+        if IN_VERBOSE_MODE () then print_transformation_success path path'
+        elif IN_QUIET_MODE () then printfn $"""%s{Option.defaultValue "" path'}"""
 
 type private SolverName =
     | Z3
@@ -75,7 +76,6 @@ type private SolverName =
 type private SolveArguments =
     | [<Unique; Last; AltCommandLine("-t"); SubCommand>] Transform of ParseResults<LocalTransformArguments>
 //    | [<Unique; AltCommandLine("-e")>] Keep_exist_quantifiers
-    | [<Unique>] Timelimit of int
     | [<Unique>] Table
     | [<MainCommand; ExactlyOnce>] Required of SOLVER_NAME:SolverName * PATH:path
 
@@ -83,7 +83,6 @@ type private SolveArguments =
         member x.Usage =
             match x with
 //            | Keep_exist_quantifiers -> "Handle existential quantifiers (instead of sound halting with `unknown`)"
-            | Timelimit _ -> "Time limit, in seconds (default: 300)"
             | Required _ -> "Run a specific solver `SOLVER NAME` on file(s) from `PATH`"
             | Table -> "Generate .csv statistics table after solving"
             | Transform _ -> "Apply additional transformations to the problem (default: disabled; the solver is run on the original)"
@@ -108,7 +107,6 @@ let private transformerForSolver transformOptions runSame = function
     | CVC_FMF -> newFreeSortsTransformerProgram transformOptions runSame
 
 let private solve outputPath runSame (options : ParseResults<SolveArguments>) =
-    SECONDS_TIMEOUT <- options.GetResult(Timelimit, defaultValue = 300)
     let solver_name, path = options.GetResult(Required)
     let solver = solverByName solver_name
     let path' =
@@ -134,6 +132,7 @@ let private solve outputPath runSame (options : ParseResults<SolveArguments>) =
 
 type private CLIArguments =
     | [<Unique; AltCommandLine("-q")>] Quiet
+    | [<Unique>] Timelimit of int
     | [<Unique; AltCommandLine("-o")>] Output_path of PATH:path
     | [<CliPrefix(CliPrefix.None); SubCommand>] Transform of ParseResults<TransformArguments>
     | [<CliPrefix(CliPrefix.None); SubCommand>] Solve of ParseResults<SolveArguments>
@@ -144,6 +143,7 @@ type private CLIArguments =
             | Transform _ -> "Transform SMTLIB2 file(s) into constrained Horn clauses"
             | Solve _ -> "Transform SMTLIB2 file(s) and run solver"
             | Quiet -> "Quiet mode"
+            | Timelimit _ -> "Time limit, in seconds (default: 300)"
             | Output_path _ -> "Output path where to put new files (default: same as input PATH). Treated as a directory if ends with a directory separator (e.g., /). Otherwise, treated as file."
 
 let private runTransformationWithSameConfigurationOnSingleFile (parser : ArgumentParser<_>) generalArgs (transArgs : ParseResults<_> option) mode =
@@ -167,6 +167,7 @@ let main args =
     let parser = ArgumentParser.Create<CLIArguments>()
     let parseResults = parser.ParseCommandLine(inputs = args).GetAllResults()
     if List.contains Quiet parseResults then VERBOSITY_MODE <- QUIET_MODE
+    SECONDS_TIMEOUT <- List.tryPick (function Timelimit tl -> Some tl | _ -> None) parseResults |> Option.defaultValue 300
     let outputPath = List.tryPick (function Output_path dir -> Some dir | _ -> None) parseResults
     let runSame = runTransformationWithSameConfigurationOnSingleFile parser parseResults
     match List.find (function Transform _ | Solve _ -> true | _ -> false) parseResults with

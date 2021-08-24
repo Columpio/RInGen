@@ -199,7 +199,7 @@ type private POBDB (adts) =
         List.map unarifyDeclaration commands
 
     member private x.SplitIndependentInPob argumentPobAndVars =
-        let argPobAndVarsAndFreeVars = List.map (fun ((pob, _) as pvs) -> pvs, x.CollectFreeVarsInTerms pob |> Set.ofList) argumentPobAndVars
+        let argPobAndVarsAndFreeVars = List.mapi (fun i (pob, _) -> i, x.CollectFreeVarsInTerms pob |> Set.ofList) argumentPobAndVars
         let rec splitIntoClasses freeVars pvs done_pvss rest =
             let rec iter fvs pvs done_pvss queue = function
                 | [] ->
@@ -215,6 +215,9 @@ type private POBDB (adts) =
             | [] -> done_pvss
             | (pv, freeVars)::rest -> splitIntoClasses freeVars [pv] done_pvss rest
         let splitedPobsAndArgs = splitEntry [] argPobAndVarsAndFreeVars
+        let splitedPobsAndArgs = List.map List.sort splitedPobsAndArgs
+        let argumentPobAndVars = Array.ofList argumentPobAndVars
+        let splitedPobsAndArgs = List.map (List.map (fun i -> Array.item i argumentPobAndVars)) splitedPobsAndArgs
         List.map List.unzip splitedPobsAndArgs
 
     member x.AnswerMarkedPOB pobWithVars =
