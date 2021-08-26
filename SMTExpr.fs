@@ -2,7 +2,6 @@ module RInGen.SMTExpr
 open Antlr4.Runtime
 open Antlr4.Runtime.Tree
 open RInGen.Operations
-open Antlr4.Runtime
 open SMTLIB2Parser
 
 let private parseSymbol (e : SMTLIBv2Parser.SymbolContext) : string =
@@ -120,8 +119,8 @@ and private parseTerm ((typer : Typer.Typer, env) as te) (e : SMTLIBv2Parser.Ter
                 let oper = Typer.fillOperation typer (symbol op) (List.map Typer.typeOf args)
                 match op, args with
                 | "+", [Apply(ElementaryOperation("-", _, _) as minusOp, [t1]); t2] -> Apply(minusOp, [t2; t1]) // TODO: #parseWorkaround (+ (- a) b) = (- b a)
-                | "<=", [t1; Apply(ElementaryOperation("-", _, _), [t2])] ->
-                    Apply(oper, [Apply(DummyOperations.addOp, [t1; t2]); Number 0L])// (<= a (- b)) = (<= (+ a b) 0)
+                | op, [t1; Apply(ElementaryOperation("-", _, _), [t2])] when List.contains op integerPredicates -> // (op a (- b)) = (op (+ a b) 0)
+                    Apply(oper, [Apply(DummyOperations.addOp, [t1; t2]); Number 0L])
                 | _ when typer.containsKey op -> Apply(oper, args)
                 | _ -> __notImplemented__()
         | :? ITerminalNode as node ->

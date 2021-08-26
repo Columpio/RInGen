@@ -60,6 +60,8 @@ let elementaryOperations =
     let ops = List.map (fun (op, sorts) -> (symbol op), Operation.makeElementaryOperationFromSorts (symbol op) (List.initial sorts) (List.last sorts)) ops
     Map.ofList ops
 
+let integerPredicates = ["="; "distinct"; "<"; "<="; ">"; ">="]
+
 module DummyOperations =
     let andOp = Map.find "and" elementaryOperations
     let orOp = Map.find "or" elementaryOperations

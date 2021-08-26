@@ -130,6 +130,7 @@ let private solve outputPath runSame (options : ParseResults<SolveArguments>) =
     let table_path = solver.AddResultsToTable path path' path''
     print_verbose $"Saved run result at %s{table_path}"
 
+[<RequireSubcommand>]
 type private CLIArguments =
     | [<Unique; AltCommandLine("-q")>] Quiet
     | [<Unique>] Timelimit of int
@@ -164,7 +165,7 @@ let private runTransformationWithSameConfigurationOnSingleFile (parser : Argumen
 
 [<EntryPoint>]
 let main args =
-    let parser = ArgumentParser.Create<CLIArguments>()
+    let parser = ArgumentParser.Create<CLIArguments>(programName = "ringen")
     let parseResults = parser.ParseCommandLine(inputs = args).GetAllResults()
     if List.contains Quiet parseResults then VERBOSITY_MODE <- QUIET_MODE
     SECONDS_TIMEOUT <- List.tryPick (function Timelimit tl -> Some tl | _ -> None) parseResults |> Option.defaultValue 300
