@@ -429,6 +429,12 @@ public interface ISMTLIBv2Visitor<Result> : IParseTreeVisitor<Result> {
 	/// <return>The visitor result.</return>
 	Result VisitCmd_getValue([NotNull] SMTLIBv2Parser.Cmd_getValueContext context);
 	/// <summary>
+	/// Visit a parse tree produced by <see cref="SMTLIBv2Parser.cmd_lemma"/>.
+	/// </summary>
+	/// <param name="context">The parse tree.</param>
+	/// <return>The visitor result.</return>
+	Result VisitCmd_lemma([NotNull] SMTLIBv2Parser.Cmd_lemmaContext context);
+	/// <summary>
 	/// Visit a parse tree produced by <see cref="SMTLIBv2Parser.cmd_pop"/>.
 	/// </summary>
 	/// <param name="context">The parse tree.</param>

@@ -12,8 +12,9 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="Options.fs" />
         <Compile Include="Prelude.fs" />
+        <Compile Include="Options.fs" />
+        <Compile Include="Programs.fs" />
 <!--        <Compile Include="Runtime.fs" />-->
         <Compile Include="Operations.fs" />
         <Compile Include="IdentGenerator.fs" />
@@ -31,7 +32,6 @@
         <Compile Include="SolverResult.fs" />
         <Compile Include="ClauseTransform.fs" />
         <Compile Include="PrintToProlog.fs" />
-        <Compile Include="Programs.fs" />
         <Compile Include="Transformers.fs" />
         <Compile Include="Statistics.fs" />
         <Compile Include="ResultTable.fs" />

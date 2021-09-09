@@ -93,10 +93,18 @@ module private RemoveVariableOverlapping =
             let cases = List.map (handleUnification te) cases
             Match(e, cases)
 
-    let private cleanFuncDef (typer, nameMap, sortMap) (name, vars, sort, body) =
+    let private cleanContextedExpr (typer, nameMap, sortMap) vars body =
         let vars, (nameMap, sortMap) = addSortedVars nameMap sortMap vars
         let te = VarEnv.create typer vars
-        name, vars, sort, cleanExpr (te, nameMap, sortMap) body
+        vars, cleanExpr (te, nameMap, sortMap) body
+
+    let private cleanFuncDef typer (name, vars, sort, body) =
+        let vars, body = cleanContextedExpr typer vars body
+        name, vars, sort, body
+
+    let private cleanLemma ((_, nameMap, _) as typer) pred vars body =
+        let vars, body = cleanContextedExpr typer vars body
+        Map.find pred nameMap, vars, body
 
     let private cleanCommand ((typr, nameMap, sortMap) as typer) = function
         | Command _ as c -> c
@@ -104,6 +112,7 @@ module private RemoveVariableOverlapping =
         | Definition(DefineFunRec df) -> cleanFuncDef typer df |> DefineFunRec |> Definition
         | Definition(DefineFunsRec dfs) -> dfs |> List.map (cleanFuncDef typer) |> DefineFunsRec |> Definition
         | Assert f -> f |> cleanExpr ((typr, VarEnv.empty), nameMap, sortMap) |> Assert
+        | Lemma(pred, vars, e) -> cleanLemma typer pred vars e |> Lemma
 
     let private substWithNameMap nameMap s = Map.find s nameMap
     let rec private substWithSortMap sortMap s =
@@ -171,12 +180,14 @@ module private RemoveVariableOverlapping =
             nameMap, sortMap, Command(DeclareDatatypes dts)
         | c -> nameMap, sortMap, c
 
-    let private renameIdentsInCommand (typer, nameMap, sortMap) c =
+    let private renameIdentsInCommand (typer : Typer.Typer) (nameMap, sortMap) c =
         let nameMap, sortMap, c = prepareCommand nameMap sortMap c
-        let typer = Typer.interpretCommand typer c
-        cleanCommand (typer, nameMap, sortMap) c, (typer, nameMap, sortMap)
+        typer.m_interpretCommand c
+        cleanCommand (typer, nameMap, sortMap) c, (nameMap, sortMap)
 
-    let removeVariableOverlapping = List.mapFold renameIdentsInCommand (Typer.empty, Map.empty, Map.empty) >> fst
+    let removeVariableOverlapping =
+        let typer = Typer.empty ()
+        List.mapFold (renameIdentsInCommand typer) (Map.empty, Map.empty) >> fst
 
 module private DefinitionsToDeclarations =
     [<AutoOpen>]
@@ -595,6 +606,7 @@ module private TIPFixes =
 
     let private invertMatches = function
         | Assert e -> e |> invertMatchesInExpr |> Assert
+        | Lemma _
         | Command _ as c -> c
         | Definition df -> df |> invertMatchesInDefinition |> Definition
 

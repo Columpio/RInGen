@@ -20,6 +20,7 @@ module Operation =
     let makeUserOperationFromSorts name argSorts retSort = UserDefinedOperation(name, argSorts, retSort)
     let makeElementaryOperationFromVars name vars retSort = ElementaryOperation(name, List.map snd vars, retSort)
     let makeElementaryOperationFromSorts name argSorts retSort = ElementaryOperation(name, argSorts, retSort)
+    let makeElementaryRelationFromVars name vars = makeElementaryOperationFromVars name vars boolSort
     let makeElementaryRelationFromSorts name argSorts = makeElementaryOperationFromSorts name argSorts boolSort
 
     let declareOp = function

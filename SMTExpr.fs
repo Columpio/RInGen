@@ -1,5 +1,7 @@
 module RInGen.SMTExpr
+open System.Collections.Generic
 open Antlr4.Runtime
+open Antlr4.Runtime.Misc
 open Antlr4.Runtime.Tree
 open RInGen.Operations
 open SMTLIB2Parser
@@ -47,6 +49,8 @@ let private parseSortedVar (expr : SMTLIBv2Parser.Sorted_varContext) =
     let s = expr.sort() |> parseSort
     v, s
 
+let private parseSortedVars exprs = exprs |> List.ofArray |> List.map parseSortedVar
+
 let private parseSymbolAndNumeralAsSort s n =
     let name = parseSymbol s
     let n = parseNumeral n
@@ -70,17 +74,6 @@ let private parseConstant (e : SMTLIBv2Parser.Spec_constantContext) =
     | :? SMTLIBv2Parser.BinaryContext
     | :? SMTLIBv2Parser.StringContext -> __notImplemented__()
     | _ -> __unreachable__()
-
-let private parseDatatypeDeclaration typer adtname (dec : SMTLIBv2Parser.Datatype_decContext) =
-    let handle_constr typer (constr : SMTLIBv2Parser.Constructor_decContext) =
-        let fname = parseSymbol <| constr.symbol()
-        let selectors = constr.selector_dec() |> List.ofArray |> List.map parseSelector
-        let _, typer = Typer.addADTOperations typer adtname fname selectors
-        (fname, selectors), typer
-    let constrs = dec.constructor_dec() |> List.ofArray
-    match constrs with
-    | [] -> __notImplemented__()
-    | _ -> List.mapFold handle_constr typer constrs
 
 let rec private parseVarBinding te (expr : SMTLIBv2Parser.Var_bindingContext) =
     let v = expr.symbol() |> parseSymbol
@@ -126,12 +119,12 @@ and private parseTerm ((typer : Typer.Typer, env) as te) (e : SMTLIBv2Parser.Ter
         | :? ITerminalNode as node ->
             match node.GetText() with
             | "forall" ->
-                let vars = e.sorted_var() |> List.ofArray |> List.map parseSortedVar
+                let vars = e.sorted_var() |> parseSortedVars
                 let te = VarEnv.replace te vars
                 let body = e.term(0) |> parseTerm te
                 Forall(vars, body)
             | "exists" ->
-                let vars = e.sorted_var() |> List.ofArray |> List.map parseSortedVar
+                let vars = e.sorted_var() |> parseSortedVars
                 let te = VarEnv.replace te vars
                 let body = e.term(0) |> parseTerm te
                 Exists(vars, body)
@@ -169,81 +162,140 @@ and private parseTerm ((typer : Typer.Typer, env) as te) (e : SMTLIBv2Parser.Ter
 
 let private parseFunctionDeclaration (e : SMTLIBv2Parser.Function_decContext) =
     let name = e.symbol() |> parseSymbol
-    let vars = e.sorted_var() |> List.ofArray |> List.map parseSortedVar
+    let vars = e.sorted_var() |> parseSortedVars
     let retSort = e.sort() |> parseSort
     name, vars, retSort
-
-let parseFunctionDefinition typer (e : SMTLIBv2Parser.Function_defContext) defineFunTermConstr =
-    let name = e.symbol() |> parseSymbol
-    let vars = e.sorted_var() |> List.ofArray |> List.map parseSortedVar
-    let sort = e.sort() |> parseSort
-    let typer = Typer.addOperation name (Operation.makeUserOperationFromVars name vars sort) typer
-    let te = VarEnv.create typer vars
-    let body = e.term() |> parseTerm te
-    Definition(defineFunTermConstr(name, vars, sort, body)), typer
 
 let private parseAttribute (attr : SMTLIBv2Parser.AttributeContext) =
     let keyword = attr.keyword().GetText()
     let value = if attr.ChildCount = 1 then None else Some <| attr.attribute_value().GetText()
     keyword, value
 
-let private parseToTerms commands =
-    let toComm typer (e : SMTLIBv2Parser.CommandContext) =
-        let comm, typer =
-            match e.GetChild(1) with
-            | :? SMTLIBv2Parser.Cmd_exitContext -> Command Exit, typer
-            | :? SMTLIBv2Parser.Cmd_defineFunContext -> parseFunctionDefinition typer (e.function_def()) DefineFun
-            | :? SMTLIBv2Parser.Cmd_defineFunRecContext -> parseFunctionDefinition typer (e.function_def()) DefineFunRec
-            | :? SMTLIBv2Parser.Cmd_defineFunsRecContext  ->
-                let signs = e.function_dec() |> List.ofArray |> List.map parseFunctionDeclaration
-                let bodies = e.term() |> List.ofArray
-                let typer = List.fold (fun typer (name, vars, sort) -> Typer.addOperation name (Operation.makeUserOperationFromVars name vars sort) typer) typer signs
-                let fs = List.map2 (fun body (name, vars, sort) -> name, vars, sort, parseTerm (VarEnv.create typer vars) body) bodies signs
-                Definition <| DefineFunsRec fs, typer
-            | :? SMTLIBv2Parser.Cmd_declareDatatypeContext ->
-                let adtname = e.symbol(0) |> parseSymbolAsSort
-                let constrs, typer = e.datatype_dec(0) |> parseDatatypeDeclaration typer adtname
-                Command(DeclareDatatype(adtname, constrs)), typer
-            | :? SMTLIBv2Parser.Cmd_declareDatatypesContext ->
-                let signs = e.sort_dec() |> List.ofArray
-                let constr_groups = e.datatype_dec() |> List.ofArray
-                let names = List.map parseSortDec signs
-                let dfs, typer = List.mapFold (fun typer (name, constrs) -> parseDatatypeDeclaration typer name constrs) typer (List.zip names constr_groups)
-                Command(DeclareDatatypes (List.zip names dfs)), typer
-            | :? SMTLIBv2Parser.Cmd_checkSatContext -> Command CheckSat, typer
-            | :? SMTLIBv2Parser.Cmd_getModelContext -> Command GetModel, typer
-            | :? SMTLIBv2Parser.Cmd_getProofContext -> Command GetProof, typer
-            | :? SMTLIBv2Parser.Cmd_setOptionContext -> Command (SetOption(e.option().children |> Seq.map (fun t -> t.GetText()) |> join " ")), typer
-            | :? SMTLIBv2Parser.Cmd_getInfoContext -> Command (GetInfo(e.info_flag().GetText())), typer
-            | :? SMTLIBv2Parser.Cmd_setInfoContext -> Command (SetInfo(parseAttribute <| e.attribute())), typer
-            | :? SMTLIBv2Parser.Cmd_assertContext ->
-                let expr = e.GetChild<SMTLIBv2Parser.TermContext>(0)
-                Assert(parseTerm (typer, VarEnv.empty) expr), typer
-            | :? SMTLIBv2Parser.Cmd_declareSortContext ->
-                let sort = parseSymbolAndNumeralAsSort (e.symbol(0)) (e.numeral())
-                DeclareSort(sort) |> Command, typer
-            | :? SMTLIBv2Parser.Cmd_declareConstContext ->
-                let name = e.symbol(0) |> parseSymbol
-                let sort = e.sort(0) |> parseSort
-                DeclareConst(name, sort) |> Command, Typer.addOperation name (Operation.makeUserOperationFromSorts name [] sort) typer
-            | :? SMTLIBv2Parser.Cmd_declareFunContext ->
-                let name = e.GetChild<SMTLIBv2Parser.SymbolContext>(0) |> parseSymbol
-                let argTypes, sort = e.sort() |> List.ofArray |> List.map parseSort |> List.butLast
-                DeclareFun(name, argTypes, sort) |> Command, Typer.addOperation name (Operation.makeUserOperationFromSorts name argTypes sort) typer
-            | :? SMTLIBv2Parser.Cmd_setLogicContext->
-                let name = e.GetChild<SMTLIBv2Parser.SymbolContext>(0)
-                SetLogic(parseSymbol name) |> Command, typer
-            | e -> failwithf $"{e}"
-        comm, typer
-    let commands = List.ofArray commands
-    let comms, _ = List.mapFold toComm Typer.empty commands
-    comms
+type private InteractiveReader () =
+    inherit BaseInputCharStream()
 
-let parseFile filename =
-    let file = AntlrFileStream(filename)
-    let lexer = SMTLIBv2Lexer(file)
-    let tokenStream = CommonTokenStream(lexer)
-    let parser = SMTLIBv2Parser(tokenStream)
-    let commands = parser.start().script().command()
-    let commands = parseToTerms commands
-    commands
+    let data = List<char>()
+    override x.ValueAt(i) = int data.[i];
+    override x.ConvertDataToString(start, count) = new string(data.ToArray(), start, count)
+
+    member x.Add(line) =
+        data.AddRange(line)
+        x.n <- data.Count
+    member x.ResetPointer () = x.p <- 0
+    member x.SetStart(i) =
+        data.RemoveRange(0, i)
+        x.n <- data.Count
+        x.p <- 0
+
+type private ThrowingErrorListener () =
+    inherit BaseErrorListener()
+
+    static member INSTANCE = ThrowingErrorListener()
+
+    override x.SyntaxError(output, recognizer, offendingSymbol, line, charPositionInLine, msg, e) = raise e
+
+type Parser () =
+    let typer = Typer.empty ()
+    let interactiveReader = InteractiveReader ()
+    let lexer = SMTLIBv2Lexer(interactiveReader)
+    let parser = SMTLIBv2Parser(CommonTokenStream(lexer))
+    do
+        parser.ErrorHandler <- BailErrorStrategy()
+        parser.RemoveErrorListeners()
+        parser.AddErrorListener(ThrowingErrorListener.INSTANCE)
+
+    member private x.ParseDatatypeDeclaration adtname (dec : SMTLIBv2Parser.Datatype_decContext) =
+        let handle_constr (constr : SMTLIBv2Parser.Constructor_decContext) =
+            let fname = parseSymbol <| constr.symbol()
+            let selectors = constr.selector_dec() |> List.ofArray |> List.map parseSelector
+            typer.m_addADTOperations adtname fname selectors |> ignore
+            fname, selectors
+        let constrs = dec.constructor_dec() |> List.ofArray
+        match constrs with
+        | [] -> __notImplemented__()
+        | _ -> List.map handle_constr constrs
+
+    member private x.ParseFunctionDefinition (e : SMTLIBv2Parser.Function_defContext) defineFunTermConstr =
+        let name = e.symbol() |> parseSymbol
+        let vars = e.sorted_var() |> parseSortedVars
+        let sort = e.sort() |> parseSort
+        typer.m_addOperation name (Operation.makeUserOperationFromVars name vars sort)
+        let te = VarEnv.create typer vars
+        let body = e.term() |> parseTerm te
+        Definition(defineFunTermConstr(name, vars, sort, body))
+
+    member private x.ParseCommand (e : SMTLIBv2Parser.CommandContext) =
+        match e.GetChild(1) with
+        | :? SMTLIBv2Parser.Cmd_exitContext -> Command Exit
+        | :? SMTLIBv2Parser.Cmd_defineFunContext -> x.ParseFunctionDefinition (e.function_def()) DefineFun
+        | :? SMTLIBv2Parser.Cmd_defineFunRecContext -> x.ParseFunctionDefinition (e.function_def()) DefineFunRec
+        | :? SMTLIBv2Parser.Cmd_defineFunsRecContext  ->
+            let signs = e.function_dec() |> List.ofArray |> List.map parseFunctionDeclaration
+            let bodies = e.term() |> List.ofArray
+            List.iter (fun (name, vars, sort) -> typer.m_addOperation name (Operation.makeUserOperationFromVars name vars sort)) signs
+            let fs = List.map2 (fun body (name, vars, sort) -> name, vars, sort, parseTerm (VarEnv.create typer vars) body) bodies signs
+            Definition <| DefineFunsRec fs
+        | :? SMTLIBv2Parser.Cmd_declareDatatypeContext ->
+            let adtname = e.symbol(0) |> parseSymbolAsSort
+            let constrs = e.datatype_dec(0) |> x.ParseDatatypeDeclaration adtname
+            Command(DeclareDatatype(adtname, constrs))
+        | :? SMTLIBv2Parser.Cmd_declareDatatypesContext ->
+            let signs = e.sort_dec() |> List.ofArray
+            let constr_groups = e.datatype_dec() |> List.ofArray
+            let names = List.map parseSortDec signs
+            let dfs = List.map (fun (name, constrs) -> x.ParseDatatypeDeclaration name constrs) (List.zip names constr_groups)
+            Command(DeclareDatatypes (List.zip names dfs))
+        | :? SMTLIBv2Parser.Cmd_checkSatContext -> Command CheckSat
+        | :? SMTLIBv2Parser.Cmd_getModelContext -> Command GetModel
+        | :? SMTLIBv2Parser.Cmd_getProofContext -> Command GetProof
+        | :? SMTLIBv2Parser.Cmd_setOptionContext -> Command (SetOption(e.option().children |> Seq.map (fun t -> t.GetText()) |> join " "))
+        | :? SMTLIBv2Parser.Cmd_getInfoContext -> Command (GetInfo(e.info_flag().GetText()))
+        | :? SMTLIBv2Parser.Cmd_setInfoContext -> Command (SetInfo(parseAttribute <| e.attribute()))
+        | :? SMTLIBv2Parser.Cmd_lemmaContext ->
+            let predName = e.symbol(0) |> parseSymbol
+            let vars = e.sorted_var() |> parseSortedVars
+            let lemma = e.term(0)
+            Lemma(predName, vars, parseTerm (VarEnv.create typer vars) lemma)
+        | :? SMTLIBv2Parser.Cmd_assertContext ->
+            let expr = e.GetChild<SMTLIBv2Parser.TermContext>(0)
+            Assert(parseTerm (typer, VarEnv.empty) expr)
+        | :? SMTLIBv2Parser.Cmd_declareSortContext ->
+            let sort = parseSymbolAndNumeralAsSort (e.symbol(0)) (e.numeral())
+            DeclareSort(sort) |> Command
+        | :? SMTLIBv2Parser.Cmd_declareConstContext ->
+            let name = e.symbol(0) |> parseSymbol
+            let sort = e.sort(0) |> parseSort
+            typer.m_addOperation name (Operation.makeUserOperationFromSorts name [] sort)
+            DeclareConst(name, sort) |> Command
+        | :? SMTLIBv2Parser.Cmd_declareFunContext ->
+            let name = e.GetChild<SMTLIBv2Parser.SymbolContext>(0) |> parseSymbol
+            let argTypes, sort = e.sort() |> List.ofArray |> List.map parseSort |> List.butLast
+            typer.m_addOperation name (Operation.makeUserOperationFromSorts name argTypes sort)
+            DeclareFun(name, argTypes, sort) |> Command
+        | :? SMTLIBv2Parser.Cmd_setLogicContext->
+            let name = e.GetChild<SMTLIBv2Parser.SymbolContext>(0)
+            SetLogic(parseSymbol name) |> Command
+        | e -> failwithf $"{e}"
+
+    member private x.ParseCommands = List.ofArray >> List.map x.ParseCommand
+
+    member x.ParseFile filename =
+        let file = AntlrFileStream(filename)
+        lexer.SetInputStream(file)
+        let commands = parser.start().script().command()
+        let commands = x.ParseCommands commands
+        commands
+
+    member x.ParseLine (line : string) =
+        interactiveReader.Add(line)
+        lexer.SetInputStream(interactiveReader)
+        parser.TokenStream <- CommonTokenStream(lexer)
+        let commands = List<_>()
+        try
+            while interactiveReader.Size > 0 do
+                let command = parser.command()
+                commands.Add(x.ParseCommand command)
+                let lastParsedIndex = 1 + command.Stop.StopIndex
+                interactiveReader.SetStart(lastParsedIndex)
+        with :? ParseCanceledException | :? NoViableAltException -> interactiveReader.ResetPointer()
+        List.ofSeq commands

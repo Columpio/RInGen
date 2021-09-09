@@ -1,3 +1,4 @@
+[<AutoOpen>]
 module RInGen.Programs
 open System
 open System.Diagnostics
@@ -14,13 +15,12 @@ type Program () =
     abstract IsExtensionOK : string -> bool
     default x.IsExtensionOK ext = ext = x.FileExtension
 
-    member x.SaveFile dst (lines : string list) =
-        let path = Path.ChangeExtension(dst, x.FileExtension)
+    static member SaveFile (dst : path) (lines : string list) =
         Directory.CreateDirectory(Path.GetDirectoryName(dst)) |> ignore
-        File.WriteAllLines(path, lines)
+        File.WriteAllLines(dst, lines)
 
     member private x.CheckedRunOnFile (path : path) path' =
-        if x.IsExtensionOK <| Path.GetExtension(path) then x.RunOnFile path path' else false
+        if x.IsExtensionOK <| Path.GetExtension(path) then x.RunOnFile path (Path.ChangeExtension(path', x.FileExtension)) else false
 
     member x.Run (path : path) (outputPath : path option) =
         match () with
@@ -48,9 +48,25 @@ type Program () =
 type ProgramRunner () =
     inherit Program()
 
+    let error = StringBuilder()
+    let output = StringBuilder()
+
     abstract ShouldSearchForBinaryInEnvironment : bool
     abstract BinaryOptions : path -> string
     abstract BinaryName : string
+
+    abstract HandleErrorLineReceived : string -> unit
+    abstract HandleOutputLineReceived : string -> unit
+    default x.HandleErrorLineReceived line = error.AppendLine(line) |> ignore
+    default x.HandleOutputLineReceived line = output.AppendLine(line) |> ignore
+    abstract ErrorReceived : unit -> string
+    abstract OutputReceived : unit -> string
+    default x.ErrorReceived () = error.ToString()
+    default x.OutputReceived () = output.ToString()
+    abstract ResetErrorReceiver : unit -> unit
+    abstract ResetOutputReceiver : unit -> unit
+    default x.ResetErrorReceiver () = error.Clear() |> ignore
+    default x.ResetOutputReceiver () = output.Clear() |> ignore
 
     member private x.WorkingDirectory (filename : path) =
         if x.ShouldSearchForBinaryInEnvironment
@@ -68,16 +84,16 @@ type ProgramRunner () =
         statisticsFile
 
     member x.RunProcessOn (srcPath : path) =
+        x.ResetErrorReceiver ()
+        x.ResetOutputReceiver ()
         use p = new Process()
         p.StartInfo.RedirectStandardOutput <- true
         p.StartInfo.RedirectStandardError <- true
         p.StartInfo.UseShellExecute <- false
         p.StartInfo.CreateNoWindow <- true
         p.StartInfo.WindowStyle <- ProcessWindowStyle.Hidden
-        let error = StringBuilder()
-        let output = StringBuilder()
-        p.ErrorDataReceived.Add(fun e -> error.AppendLine(e.Data) |> ignore)
-        p.OutputDataReceived.Add(fun o -> output.AppendLine(o.Data) |> ignore)
+        p.ErrorDataReceived.Add(fun e -> x.HandleErrorLineReceived e.Data)
+        p.OutputDataReceived.Add(fun o -> x.HandleOutputLineReceived o.Data)
         let statisticsFile = x.SetupProcess p.StartInfo srcPath
 
         p.Start() |> ignore
@@ -87,6 +103,9 @@ type ProgramRunner () =
         let hasFinished = p.WaitForExit(MSECONDS_TIMEOUT ())
         if not hasFinished then p.Kill(true)
         p.Close()
-        let error = error.ToString().Trim()
-        let output = output.ToString().Trim()
+        let error = x.ErrorReceived().Trim()
+        let output = x.OutputReceived().Trim()
         statisticsFile, hasFinished, error, output
+
+type transformOptions = {tip: bool; sync_terms: bool; child_transformer: ProgramRunner option}
+type solvingOptions = {keep_exists: bool; table: bool}

@@ -185,7 +185,7 @@ module Dictionary =
     let toList (d : IDictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
 
     let tryGetValue (key : 'key) (d : IDictionary<'key, 'value>) =
-        let dummy = ref (Unchecked.defaultof<'value>)
+        let dummy = ref Unchecked.defaultof<'value>
         if d.TryGetValue(key, dummy) then Some !dummy else None
 
 type path = string
@@ -321,8 +321,11 @@ let rec existsrule = function
     | vars -> function
         | ExistsRule(vars', body) -> existsrule (vars @ vars') body
         | body -> ExistsRule(vars, body)
-let aerule forallVars existsVars fromatoms toatom = forallrule forallVars (existsrule existsVars (BaseRule(fromatoms, toatom)))
-let rule vars fromatoms toatom = forallrule vars (BaseRule(fromatoms, toatom))
+let baseRule fromAtoms toAtom =
+    let fromAtoms = List.filter ((<>) Top) fromAtoms
+    BaseRule(fromAtoms, toAtom)
+let aerule forallVars existsVars fromAtoms toAtom = forallrule forallVars (existsrule existsVars (baseRule fromAtoms toAtom))
+let rule vars fromAtoms toAtom = forallrule vars (baseRule fromAtoms toAtom)
 let (|Rule|_|) = function
     | ForallRule(vars, BaseRule(f, t)) -> Some(vars, f, t)
     | BaseRule(f, t) -> Some([], f, t)
@@ -383,11 +386,13 @@ type originalCommand =
     | Definition of definition
     | Command of command
     | Assert of smtExpr
+    | Lemma of symbol * sorted_var list * smtExpr
     override x.ToString() =
         match x with
         | Definition df -> df.ToString()
         | Command cmnd -> cmnd.ToString()
         | Assert f -> $"(assert {f})"
+        | Lemma(pred, vars, lemma) -> $"""(lemma {pred} ({vars |> List.map (fun (v, s) -> $"(%O{v} %O{s})") |> join " "}) {lemma})"""
 type transformedCommand =
     | OriginalCommand of command
     | TransformedCommand of rule

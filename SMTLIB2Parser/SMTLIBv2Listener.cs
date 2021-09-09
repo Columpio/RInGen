@@ -692,6 +692,16 @@ public interface ISMTLIBv2Listener : IParseTreeListener {
 	/// <param name="context">The parse tree.</param>
 	void ExitCmd_getValue([NotNull] SMTLIBv2Parser.Cmd_getValueContext context);
 	/// <summary>
+	/// Enter a parse tree produced by <see cref="SMTLIBv2Parser.cmd_lemma"/>.
+	/// </summary>
+	/// <param name="context">The parse tree.</param>
+	void EnterCmd_lemma([NotNull] SMTLIBv2Parser.Cmd_lemmaContext context);
+	/// <summary>
+	/// Exit a parse tree produced by <see cref="SMTLIBv2Parser.cmd_lemma"/>.
+	/// </summary>
+	/// <param name="context">The parse tree.</param>
+	void ExitCmd_lemma([NotNull] SMTLIBv2Parser.Cmd_lemmaContext context);
+	/// <summary>
 	/// Enter a parse tree produced by <see cref="SMTLIBv2Parser.cmd_pop"/>.
 	/// </summary>
 	/// <param name="context">The parse tree.</param>
