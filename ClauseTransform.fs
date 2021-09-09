@@ -561,7 +561,56 @@ module private DefinitionsToDeclarations =
                 }
         eat [] []
 
-    let rec private defineCommandToDeclarations assertsToQueries typer wereDefines = function
+    let private substVarsWithTerms varsToTerms expr =
+        let rec substInExpr = function
+            | Apply(op, ts) -> Apply(op, substInExprs ts)
+            | Ident(v, s) as e ->
+                match Map.tryFind (v, s) varsToTerms with
+                | Some t -> t
+                | None -> e
+            | Number _
+            | BoolConst _ as e -> e
+            | Not e -> e |> substInExpr |> Not
+            | And es -> es |> substInExprs |> And
+            | Or es -> es |> substInExprs |> Or
+            | Hence(a, b) -> Hence(substInExpr a, substInExpr b)
+            | Ite(i, t, e) -> Ite(substInExpr i, substInExpr t, substInExpr e)
+            | Exists(vars, body) -> Exists(vars, substInExpr body)
+            | Forall(vars, body) -> Forall(vars, substInExpr body)
+            | Let(binds, body) -> Let(List.map (fun (v, e) -> v, substInExpr e) binds, substInExpr body)
+            | Match(e, cases) -> Match(substInExpr e, List.map (fun (v, e) -> v, substInExpr e) cases)
+        and substInExprs = List.map substInExpr
+        substInExpr expr
+
+    let private callLemmaOn lemmaOp vars lemma ts =
+        Or [substVarsWithTerms (Map.ofList <| List.zip vars ts) lemma; Apply(lemmaOp, ts)]
+
+    let private substitutePredicateCallWithLemmas lemmas ts =
+        let lemmaPieces = lemmas |> List.map (fun (lemmaOp, vars, lemma) -> callLemmaOn lemmaOp vars lemma ts)
+        And lemmaPieces
+
+    let private substitutePredicateCallsWithLemmas lemmas_map expr =
+        let rec substInExpr = function
+            | Apply(op, ts) as e ->
+                match Map.tryFind (Operation.opName op) lemmas_map with
+                | Some lemmas -> substitutePredicateCallWithLemmas lemmas ts
+                | None -> e
+            | Ident _
+            | Number _
+            | BoolConst _ as e -> e
+            | Not e -> e |> substInExpr |> Not
+            | And es -> es |> substInExprs |> And
+            | Or es -> es |> substInExprs |> Or
+            | Hence(a, b) -> Hence(substInExpr a, substInExpr b)
+            | Ite(i, t, e) -> Ite(substInExpr i, substInExpr t, substInExpr e)
+            | Exists(vars, body) -> Exists(vars, substInExpr body)
+            | Forall(vars, body) -> Forall(vars, substInExpr body)
+            | Let(binds, body) -> Let(List.map (fun (v, e) -> v, substInExpr e) binds, substInExpr body)
+            | Match(e, cases) -> Match(e, List.map (fun (v, e) -> v, substInExpr e) cases)
+        and substInExprs = List.map substInExpr
+        substInExpr expr
+
+    let rec private defineCommandToDeclarations lemmas_map assertsToQueries typer wereDefines = function
         | Definition(DefineFun df)
         | Definition(DefineFunRec df) ->
             let name, def = definitionToDeclaration df
@@ -569,11 +618,32 @@ module private DefinitionsToDeclarations =
         | Definition(DefineFunsRec dfs) ->
             let names, defs = List.map definitionToDeclaration dfs |> List.unzip
             defs @ List.collect (definitionToAssertion typer) dfs, Set.union (Set.ofList names) wereDefines
-        | Assert e -> expressionToDeclarations assertsToQueries typer e, wereDefines
+        | Lemma _ -> [], wereDefines
+        | Assert e ->
+            let eWithLemmas = substitutePredicateCallsWithLemmas lemmas_map e
+            expressionToDeclarations assertsToQueries typer eWithLemmas, wereDefines
+        | Command(DeclareFun(pred, _, _) as c) ->
+            let declarations =
+                match Map.tryFind pred lemmas_map with
+                | None -> [c]
+                | Some lemmas -> lemmas |> List.map (fst3 >> Operation.declareOp)
+            List.map OriginalCommand declarations, wereDefines
         | Command c -> [OriginalCommand c], wereDefines
 
+    let private freshLemmaPredicate pred vars =
+        Operation.makeUserRelationFromVars (IdentGenerator.gensymp("Lemma_"+pred)) vars
+    let private collectLemma lemmas_map = function
+        | Lemma(pred, vars, lemma) ->
+            let lemmaEntry = freshLemmaPredicate pred vars, vars, lemma
+            match Map.tryFind pred lemmas_map with
+            | Some lemmas -> Map.add pred (lemmaEntry::lemmas) lemmas_map
+            | None -> Map.add pred [lemmaEntry] lemmas_map
+        | _ -> lemmas_map
+    let private collectLemmas commands = List.fold collectLemma Map.empty commands
+
     let definesToDeclarations assertsToQueries commands =
-        let commands, wereDefines = Typer.typerMapFold (defineCommandToDeclarations assertsToQueries) Set.empty commands
+        let lemmas_map = collectLemmas commands
+        let commands, wereDefines = Typer.typerMapFold (defineCommandToDeclarations lemmas_map assertsToQueries) Set.empty commands
         List.concat commands, wereDefines
 
 module private TIPFixes =
