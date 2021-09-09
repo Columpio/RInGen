@@ -54,79 +54,80 @@ Executable then can be found in the `~/RInGen/bin/Release/net5.0/<RID>/publish` 
 ```
 
 ## Modes and Options
-### `transform (--tip) (--sync-terms) (--sorts) (--quiet) (--output-directory PATH) /FULL/PATH`
-Only process input files, do not run any solvers.
-
-### `solve (--tip) (--sync-terms) (--keep-exist-quantifiers) (--timelimit SECONDS) (--quiet) (--output-directory PATH) SOLVER_NAME /FULL/PATH`
-Process input files and run one (or many) solvers.
-
-## Shared options for both modes
-### `/FULL/PATH`
+### General
+#### `-q`, `--quiet`
+Quiet mode. Only outputs are `sat`, `unsat`, `unknown` when in `solve` mode or nothing when in `transform` mode.
+#### `--timelimit`
+Time limit for transformation and/or solving, in seconds (default `300`).
+#### `-o`, `--output-directory` `PATH`
+A **full** path `PATH` to an output path where to put auxiliary files (default: same as input).
+Treated as a directory if ends with a directory separator (e.g., /).
+Otherwise, treated as a file.
+#### `--help`
+#### Common for both transformation and solving: `/FULL/PATH`
 Specifies **full** path to either a single SMTLIB2 file or a directory.
 If `/FULL/PATH.smt2` leads to a file and the `--output-directory` flag is not specified,
 the tool will generate Horn clauses in SMTLIB2 format and save them at `/FULL/PATH.*.0.smt2`.
 Otherwise if `/FULL/PATH.smt2` leads to a directory,
 the tool will recursively traverse the directory and process all `.smt2` files.
 
-### `-o`, `--output-directory` `PATH`
-A **full** path `PATH` to an output **directory** where to put a transformed file (default: same as input).
+### `transform (--mode MODE) /FULL/PATH --transform-options <transform-options>`
+Only transform input files, do not run any solvers.
+#### `-m`, `--mode` `<original|freesorts|prolog>`
+If `original` is specified, saves as `smt2` with ADTs.
 
-### `--tip`
+If `freesorts` is specified, saves as `smt2` with all algebraic datatypes transformed into sorts.
+Specifically, each ADT sort declaration with `declare-datatypes` is substituted with
+`declare-sort` for ADT sort and a number of `declare-fun` declarations for constructors.
+
+If `prolog` is specified, saves as `pl` Prolog problem.
+
+Default: `original`.
+
+### `solve (--table) --solver SOLVER_NAME (--in) (--path /FULL/PATH) (--transform-options <transform-options>)`
+Process input files and run one (or many) solvers.
+#### `--table`
+Generate a solver run statistics table. Useful after running several solvers.
+#### `--solver`, `-s` `SOLVER_NAME`
+Run a specific solver after processing. Available options:
+- [Z3](https://github.com/Z3Prover/z3) (`z3`)
+- [Eldarica](https://github.com/uuverifiers/eldarica) (`eldarica`)
+- [CVC4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf) (`cvc_fmf`)
+- [CVC4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/) (`cvc_ind`)
+- [VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/) (`verimap`)
+- [Vampire in SMTLIB2 mode](https://vprover.github.io/) (`vampire`)
+- all the above solvers (`all`)
+> Note that in order to run `Z3`, `Eldarica`, `CVC4`, `Vampire` and `VeriMAP` one should have
+> `z3`, `eld`, `cvc4`, `vampire` and `VeriMAP-iddt` executables accessible in the environment.
+> The easiest way to do that is to prefix tool running with:
+>
+> `env 'VeriMAP-iddt=/FULL/PATH/TO/VeriMAP-iddt-linux_x86_64/VeriMAP-iddt'`
+#### `--in`
+Interactive mode: reads `smt2` commands from stdin
+#### `--path /FULL/PATH`
+Noninteractive mode: read `smt2` commands from specified path (file or directory)
+#### `--transform-options <transform-options>`
+Transformation options to be performed before solving
+
+### A list of `<transform-options>`
+#### `--tip`
 Convert [TIP-like](https://tip-org.github.io/) systems to Horn clauses.
 This flag makes the tool treat all `assert`ions as **queries**, meaning that
 they are transformed to the following form:
 ```(assert (forall ... (=> .. false)))```
-
-### `-s`, `--sync-terms`
+#### `--sync-terms`
 Synchronize ADT terms of a CHC system by making all user predicates unary and introducing new predicates and combined ADT declarations.
 User predicate with signature `S1 * ... * Sn` will become a unary predicate over fresh ADT sort `S1...Sn`.
 Term synchronization is hardcoded (like in TATA): left subterm is synchronized with left subterm, right with right, etc.
 
-### `-q`, `--quiet`
-Quiet mode. Only outputs are `sat`, `unsat`, `unknown` when in `solve` mode or nothing when in `transform` mode.
-
-### `--help`, `--version`
-
-## `transform` options
-### `--sorts`
-After all other translation the following will be performed:
-all algebraic datatypes are transformed into sorts.
-Specifically, each ADT sort declaration with `declare-datatypes` is substituted with
-`declare-sort` for ADT sort and a number of `declare-fun` declarations for constructors.
-This preprocessing step is required to run the finite-model finder.
-
-## `solve` options
-### `-e`, `--keep-exist-quantifiers`
-Proceed to solving even if there are existential quantifiers after transformation. By default this option is disabled and `RInGen` will return `unknown` if existentials appeared after transformation.
-### `SOLVER_NAME`
-Run a specific solver after processing. Available options:
-- [Z3](https://github.com/Z3Prover/z3) (`z3`)
-- [Eldarica](https://github.com/uuverifiers/eldarica) (`eldarica`)
-- [CVC4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf) (`cvc4f`)
-- [CVC4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/) (`cvc4ind`)
-- [VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/) (`verimap`)
-- [Vampire in SMTLIB2 mode](https://vprover.github.io/)
-- all the above solvers (`--solver all`)
-> Note that in order to run `Z3`, `Eldarica`, `CVC4`, `Vampire` and `VeriMAP` one should have
-> `z3`, `eld`, `cvc4`, `vampire` and `VeriMAP-iddt` executables accessible in the environment.
-> The easiest way to do that is to prefix tool running with:
-> 
-> `env 'VeriMAP-iddt=/FULL/PATH/TO/VeriMAP-iddt-linux_x86_64/VeriMAP-iddt'`
-
-### `-t`, `--timelimit`
-Time limit for the specified `--solver`, in seconds (default `300`).
- 
-### `-f`, `--force`
-Force transformed file generation. If omitted, no transformation will be performed if other transformed file already exist in the output directory.
-
 ## Examples
-### Convert benchmarks from `DIRECTORY` into Horn clauses
-`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll transform /FULL/PATH/TO/DIRECTORY`
+### Convert benchmarks from `DIRECTORY` into SMTLIB2 Horn clauses
+`$ ringen transform /FULL/PATH/TO/DIRECTORY`
 
-Obtained clauses are in the `/FULL/PATH/TO/DIRECTORY.Transformed` folder.
+Obtained clauses are in the `/FULL/PATH/TO/DIRECTORY.Original` folder.
 
 ### Convert benchmark into Horn clauses and run Z3 over the result with timelimit 5 sec
-`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll solve --timelimit 5 z3 ~/RInGen/samples/one-zeroary-constr.smt2`
+`$ ringen --timelimit 5 solve z3 --path .../samples/one-zeroary-constr.smt2 -t`
 
 Obtained clauses are in the `~/RInGen/samples/one-zeroary-constr.Z3.0.smt2` file.
 
