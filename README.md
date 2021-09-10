@@ -12,6 +12,7 @@ It can optionally run a number of CHC and other solvers over output clauses, cur
 [Vampire](https://vprover.github.io/).
 
 ## Features
+- [x] Supports extra `(lemma P *args* *lemma-expr*)` syntax (see, e.g., `samples/lemmas_with_new_syntax.smt2`).
 - [x] Supports `define-fun`, `define-fun-rec` and `define-funs-rec` translation to
 predicates
   - [x] Functions are translated to predicates with a supplementary return-argument
@@ -103,7 +104,8 @@ Run a specific solver after processing. Available options:
 >
 > `env 'VeriMAP-iddt=/FULL/PATH/TO/VeriMAP-iddt-linux_x86_64/VeriMAP-iddt'`
 #### `--in`
-Interactive mode: reads `smt2` commands from stdin
+Interactive mode: reads `smt2` commands from stdin.
+Runs solver on `(check-sat)` SMTLIB2 command.
 #### `--path /FULL/PATH`
 Noninteractive mode: read `smt2` commands from specified path (file or directory)
 #### `--transform-options <transform-options>`
@@ -127,13 +129,44 @@ Term synchronization is hardcoded (like in TATA): left subterm is synchronized w
 Obtained clauses are in the `/FULL/PATH/TO/DIRECTORY.Original` folder.
 
 ### Convert benchmark into Horn clauses and run Z3 over the result with timelimit 5 sec
-`$ ringen --timelimit 5 solve z3 --path .../samples/one-zeroary-constr.smt2 -t`
+`$ ringen --timelimit 5 solve --solver z3 --path .../samples/one-zeroary-constr.smt2 -t`
 
-Obtained clauses are in the `~/RInGen/samples/one-zeroary-constr.Z3.0.smt2` file.
+Obtained clauses are in the `.../samples/one-zeroary-constr.Original.smt2` file.
 
-Result of the `z3` run will be output to `stdout`. For `one-zeroary-constr.Z3.0.smt2` example it is `SAT`.
+Result of the `z3` run will be output to `.../samples/one-zeroary-constr.Original.Z3.smt2` file.
+For `one-zeroary-constr` example it will contain four lines:
+
+| Result file line | description                   |                 |
+|------------------|-------------------------------|-----------------|
+| 0                | rounded transformed file size | in kilobytes    |
+| 13176            | solver run memory             | in kilobytes    |
+| 0                | solver run time               | in milliseconds |
+| SAT ElemFormula  | solver result                 | `<solver result>` |
+
+#### `<solver result>` type
+Has SMTLIB2 status (`sat`, `unsat`,..) and *invariant representation type* if status is `sat`.
 
 ### Use the finite-model finder in CVC4 as an ADT Horn-solver on a TIP benchmark
-`~/RInGen$ dotnet bin/Release/net5.0/RInGen.dll solve --tip --quiet cvc4f ~/RInGen/samples/prop_20.smt2`
+`$ ringen --quiet solve --solver cvc_fmf --path .../samples/prop_20.smt2 -t --tip`
 
 The output is `sat`.
+
+### Use the finite-model finder in CVC4 as an ADT Horn-solver in *interactive mode*
+`$ ringen --quiet solve --solver cvc_fmf --in -t`
+
+For example, one can copy-paste `samples/lemmas_with_new_syntax.smt2` line-by-line obtaining:
+```
+smt2> (set-logic HORN)
+smt2> (declare-datatypes ((Nat 0)) (((Z) (S (unS Nat)))))
+smt2> (declare-fun P (Nat) Bool)
+smt2> (lemma P ((x Nat)) (= x Z))
+smt2> (lemma P ((y Nat)) (= y (S (S Z))))
+smt2> (assert (forall ((x Nat)) (=> (= x Z) (P x))))
+smt2> (assert (forall ((x Nat)) (=> (P x) (P (S (S x))))))
+smt2> (assert (forall ((x Nat)) (=> (and (P x) (= x (S Z))) false)))
+smt2> (check-sat)
+sat
+smt2> 
+```
+
+One could also omit the `--quiet` flag to obtain more verbose output (with locations of auxiliary files).
