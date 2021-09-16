@@ -4,10 +4,10 @@ open IdentGenerator
 
 type BoolAxiomatization () =
     inherit TheorySubstitutor ()
-    let new_bool_sort = gensyms "Bool" |> PrimitiveSort
+    let new_bool_sort = gensymp "Bool" |> PrimitiveSort
 
-    let false_constr = gensyms "false"
-    let true_constr = gensyms "true"
+    let false_constr = gensymp "false"
+    let true_constr = gensymp "true"
     let bool_datatype = DeclareDatatype(new_bool_sort, [false_constr, []; true_constr, []])
     let truet = TConst(true_constr, new_bool_sort)
     let falset = TConst(false_constr, new_bool_sort)

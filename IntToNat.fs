@@ -5,21 +5,21 @@ open RInGen.IdentGenerator
 
 type IntToNat () =
     inherit TheorySubstitutor ()
-    let nat_sort = gensyms "Nat" |> PrimitiveSort
+    let nat_sort = gensymp "Nat" |> PrimitiveSort
 
-    let Z_constr = gensyms "Z"
-    let S_constr = gensyms "S"
-    let unS_constr = gensyms "unS"
+    let Z_constr = gensymp "Z"
+    let S_constr = gensymp "S"
+    let unS_constr = gensymp "unS"
     let S_op = Operation.makeElementaryOperationFromSorts S_constr [nat_sort] nat_sort
     let Z = TConst(Z_constr, nat_sort)
     let S t = TApply(S_op, [t])
 
     let rec int_to_natrec (n : int64) = if n <= 0L then Z else S (int_to_natrec (n - 1L))
 
-    let x = gensyms "x"
-    let y = gensyms "y"
-    let r = gensyms "r"
-    let z = gensyms "z"
+    let x = gensymp "x"
+    let y = gensymp "y"
+    let r = gensymp "r"
+    let z = gensymp "z"
     let xvar = (x, nat_sort)
     let yvar = (y, nat_sort)
     let rvar = (r, nat_sort)

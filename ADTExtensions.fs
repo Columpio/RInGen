@@ -30,7 +30,7 @@ let patternsToConstraints (typer : Typer) usedPatterns currentPattern exprToMatc
         collector {
             let! opName = Set.difference (Set.ofList allConstructorNames) (Set.ofList heads) |> Set.toList
             let op = typer.find opName
-            let args = IdentGenerator.generateArguments op
+            let args = Operation.generateArguments op
             let! conds, pat = toTerm <| Apply(op, List.map Ident args)
             return args, conds, Equal(exprToMatch, pat)
         }

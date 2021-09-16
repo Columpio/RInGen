@@ -2,11 +2,11 @@ module RInGen.SolverResult
 
 type Model = ElemFormula | SizeElemFormula | FiniteModel | Saturation | NoModel
 type SolverResult =
-    | SAT of Model | UNSAT | ERROR of string | UNKNOWN of string | SOLVER_TIMELIMIT | OUTOFMEMORY
+    | SAT of Model | UNSAT of string | ERROR of string | UNKNOWN of string | SOLVER_TIMELIMIT | OUTOFMEMORY
     override x.ToString() =
         match x with
         | SAT m -> $"SAT %O{m}"
-        | UNSAT -> "UNSAT"
+        | UNSAT refutation -> $"UNSAT\n{refutation}"
         | SOLVER_TIMELIMIT -> "SOLVER_TIMELIMIT"
         | OUTOFMEMORY -> "OUTOFMEMORY"
         | ERROR s -> $"ERROR %s{s}"
@@ -19,7 +19,7 @@ let compactStatus = function
 
 let quietModeToString = function
     | SAT _ -> "sat"
-    | UNSAT -> "unsat"
+    | UNSAT _ -> "unsat"
     | _ -> "unknown"
 
 let tryParseSolverResult (s : string) =
@@ -33,7 +33,7 @@ let tryParseSolverResult (s : string) =
         | ["Saturation"] -> SAT Saturation
         | _ -> SAT NoModel
         |> Some
-    | "UNSAT"::_ -> UNSAT |> Some
+    | "UNSAT"::_ -> UNSAT "" |> Some
     | "ERROR"::reason -> ERROR (join " " reason) |> Some
     | "UNKNOWN"::reason -> UNKNOWN (join " " reason) |> Some
     | "SOLVER_TIMELIMIT"::_ -> SOLVER_TIMELIMIT |> Some

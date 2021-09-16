@@ -29,7 +29,7 @@ let operationsOfADT ((adtname, cs) : symbol * (symbol * sorted_var list) list) =
     List.collect handle_constr cs
 
 let createNAryRelation name sorts =
-    let name = IdentGenerator.gensyms name
+    let name = IdentGenerator.gensymp name
     let op = Operation.makeElementaryRelationFromSorts name sorts
     let decl = DeclareFun(name, sorts, boolSort)
     decl, op
@@ -45,7 +45,7 @@ let createUnaryRelation name sort =
     app, decl, op
 
 let createNAryOperation name sorts retSort =
-    let name = IdentGenerator.gensyms name
+    let name = IdentGenerator.gensymp name
     let op = createRelativeOperation ElementaryOperation name sorts retSort
     let decl = reldeclare name sorts retSort
     decl, op

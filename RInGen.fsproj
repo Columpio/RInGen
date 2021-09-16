@@ -12,12 +12,12 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <Compile Include="IdentGenerator.fs" />
         <Compile Include="Prelude.fs" />
         <Compile Include="Options.fs" />
         <Compile Include="Programs.fs" />
 <!--        <Compile Include="Runtime.fs" />-->
         <Compile Include="Operations.fs" />
-        <Compile Include="IdentGenerator.fs" />
         <Compile Include="Typer.fs" />
         <Compile Include="ADTExtensions.fs" />
         <Compile Include="VarEnv.fs" />

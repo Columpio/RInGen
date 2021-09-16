@@ -33,6 +33,14 @@ module Operation =
         | ElementaryOperation(name, [], ret) -> Ident(name, ret)
         | op -> failwithf $"Can't create identifier from operation: {op}"
 
+    let generateReturnArgument op =
+        let retType = returnType op
+        let retArg = IdentGenerator.gensym (), retType
+        let retVar = TIdent retArg
+        retArg, retVar
+
+    let generateArguments = argumentTypes >> List.map (fun s -> IdentGenerator.gensym (), s)
+
 let arithmeticOperations =
     let infix = true
     [
@@ -84,8 +92,8 @@ let private congruenceBySort empty opMap (sort : sort) =
 let equalBySort = congruenceBySort emptyEqSubstitutor
 let disequalBySort = congruenceBySort emptyDiseqSubstitutor
 let opSubstitutor empty opMap t1 t2 =
-    let typ1 = typeOfTerm t1
-    let typ2 = typeOfTerm t2
+    let typ1 = Term.typeOf t1
+    let typ2 = Term.typeOf t2
     if typ1 <> typ2
         then failwithf $"(Dis)equality of different sorts: {typ1} and {typ2}"
         else congruenceBySort empty opMap typ1 t1 t2
@@ -97,7 +105,7 @@ let userOpToIdent = function
     | op -> failwithf $"Can't create identifier from operation: {op}"
 
 let selectFromArraySort arraySort =
-    let indexSort, itemSort = argumentSortsOfArraySort arraySort
+    let indexSort, itemSort = Sort.argumentSortsOfArraySort arraySort
     Operation.makeElementaryOperationFromSorts (symbol "select") [arraySort; indexSort] itemSort
 
 let fillDummyOperationTypes op argTypes =

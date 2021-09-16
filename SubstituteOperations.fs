@@ -35,7 +35,7 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
     let relativizationsSubstitutor op ts justSubstOp defaultResult =
         match searchInRelativizations op with
         | Some (op', true) ->
-            let newVar, newVarIdent = IdentGenerator.generateReturnArgument op
+            let newVar, newVarIdent = Operation.generateReturnArgument op
             [newVar], [Relativization.relapply op' ts newVarIdent], newVarIdent
         | Some (op', false) -> [], [], justSubstOp op'
         | None -> [], [], defaultResult
@@ -79,43 +79,55 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         | Some(op', _) -> wasSubstituted <- true; AApply(op', ts)
         | None -> AApply(op, ts)
 
-    let rec substituteOperationsWithRelationsInAtom = function
-        | Top | Bot as a -> [], [], a
-        | Equal(a, b) ->
-            let avars, aconds, a = substituteOperationsWithRelationsInTerm a
-            let bvars, bconds, b = substituteOperationsWithRelationsInTerm b
-            let d = eqSubstitutor a b
-            avars @ bvars, aconds @ bconds, d
-        | Distinct(a, b) ->
-            let avars, aconds, a = substituteOperationsWithRelationsInTerm a
-            let bvars, bconds, b = substituteOperationsWithRelationsInTerm b
-            let d = diseqSubstitutor a b
-            avars @ bvars, aconds @ bconds, d
-        | AApply(op, ts) ->
-            let vars, conds, ts = substituteOperationsWithRelationsInTermList ts
-            match Map.tryFind op atomOperations with
-            | Some assoc when List.length ts >= 2 ->
-                let makeApp =
-                    match op with
-                    | ElementaryOperation("=", _, _) -> (<||) eqSubstitutor
-                    | ElementaryOperation("distinct", _, _) -> (<||) diseqSubstitutor
-                    | _ -> fun (x, y) -> substituteOperationsWithRelationsInAtomApplication op [x; y]
-                let pairs =
-                    match assoc with
-                    | Chainable -> List.pairwise
-                    | Pairwise -> List.triangle
-                match ts |> pairs |> List.map makeApp with
-                | at::ats -> vars, ats @ conds, at
-                | _ -> __unreachable__()
-            | _ -> vars, conds, substituteOperationsWithRelationsInAtomApplication op ts
+    let substituteOperationsWithRelationsInAtomWithPositivity posK k (oldVars, oldConds) a =
+        let a', (newVars, newConds) =
+            match a with
+            | Top | Bot as a -> k a, ([], [])
+            | Equal(a, b) ->
+                let avars, aconds, a = substituteOperationsWithRelationsInTerm a
+                let bvars, bconds, b = substituteOperationsWithRelationsInTerm b
+                let d = posK diseqSubstitutor eqSubstitutor a b
+                d, (avars @ bvars, aconds @ bconds)
+            | Distinct(a, b) ->
+                let avars, aconds, a = substituteOperationsWithRelationsInTerm a
+                let bvars, bconds, b = substituteOperationsWithRelationsInTerm b
+                let d = posK eqSubstitutor diseqSubstitutor a b
+                d, (avars @ bvars, aconds @ bconds)
+            | AApply(op, ts) ->
+                let vars, conds, ts = substituteOperationsWithRelationsInTermList ts
+                match Map.tryFind op atomOperations with
+                | Some assoc when List.length ts >= 2 ->
+                    let makeApp =
+                        match op with
+                        | ElementaryOperation("=", _, _) -> (<||) eqSubstitutor
+                        | ElementaryOperation("distinct", _, _) -> (<||) diseqSubstitutor
+                        | _ -> fun (x, y) -> substituteOperationsWithRelationsInAtomApplication op [x; y]
+                    let pairs =
+                        match assoc with
+                        | Chainable -> List.pairwise
+                        | Pairwise -> List.triangle
+                    match ts |> pairs |> List.map makeApp with
+                    | at::ats -> k at, (vars, ats @ conds)
+                    | _ -> __unreachable__()
+                | _ -> k <| substituteOperationsWithRelationsInAtomApplication op ts, (vars, conds)
+        a', (newVars @ oldVars, newConds @ oldConds)
 
-    let rec substInRule = function
-        | BaseRule(premises, consequence) ->
-            let pvss, pcss, ps = List.map substituteOperationsWithRelationsInAtom premises |> List.unzip3
-            let cvs, ccs, c = substituteOperationsWithRelationsInAtom consequence
-            rule (List.concat (cvs :: pvss)) (List.concat (ccs :: ps :: pcss)) c
-        | ForallRule(vars, body) -> forallrule vars (substInRule body)
-        | ExistsRule(vars, body) -> existsrule vars (substInRule body)
+    let substituteOperationsWithRelationsInAtom = substituteOperationsWithRelationsInAtomWithPositivity (fun _ -> id) id
+    let substituteOperationsWithRelationsInAtoms = List.mapFold substituteOperationsWithRelationsInAtom
+
+    let rec substInRule qs premises consequence =
+        let ps, vcs = substituteOperationsWithRelationsInAtoms ([], []) premises
+        let c, (vars, conds) = substituteOperationsWithRelationsInAtom vcs consequence
+        Rule(Quantifiers.combine qs (Quantifiers.forall vars), ps @ conds, c)
+
+    let substituteOperationsWithRelationsInFOL =
+        let posK pos dualSubst subst a b = if pos then subst a b |> FOLAtom else dualSubst a b |> FOLAtom |> FOLNot
+        FOL.mapFoldPositivity (fun pos -> substituteOperationsWithRelationsInAtomWithPositivity (posK pos) FOLAtom)
+
+    let substInLemma pos (qs, (premises, lemma)) =
+        let ps, vcs = substituteOperationsWithRelationsInAtoms ([], []) premises
+        let c, (newVars, newConds) = substituteOperationsWithRelationsInFOL pos vcs lemma
+        Quantifiers.combine qs (Quantifiers.forall newVars), (ps @ newConds, c)
 
     new (relativizations) = SubstituteOperations(relativizations, emptyEqSubstitutor, smartDiseqSubstitutor, fun _ -> None)
     new (relativizations, constantMap) = SubstituteOperations(relativizations, emptyEqSubstitutor, smartDiseqSubstitutor, constantMap)
@@ -125,7 +137,11 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
     member x.WasSubstituted () = wasSubstituted
 
     member x.SubstituteOperationsWithRelations = function
-        | TransformedCommand r -> substInRule r |> TransformedCommand
+        | TransformedCommand(Rule(qs, body, head)) -> substInRule qs body head |> TransformedCommand
+        | LemmaCommand(pred, vars, bodyLemma, headCube) ->
+            let bodyLemma = substInLemma true bodyLemma
+            let headCube = substInLemma false headCube
+            LemmaCommand(pred, vars, bodyLemma, headCube)
         | c -> c
 
 type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool) =
@@ -196,19 +212,22 @@ type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool
             DeclareConst(name, retSort), sorts
         | c -> c, sorts
 
+    let mapQuantifiers = Quantifiers.mapFold (Quantifier.mapFold mapSortedVars)
+
     let rec mapRule sorts = function
-        | ForallRule(vars, body) ->
-            let vars, sorts = mapSortedVars sorts vars
-            let body, sorts = mapRule sorts body
-            ForallRule(vars, body), sorts
-        | ExistsRule(vars, body) ->
-            let vars, sorts = mapSortedVars sorts vars
-            let body, sorts = mapRule sorts body
-            ExistsRule(vars, body), sorts
-        | BaseRule(premises, conclusion) ->
+        | Rule(qs, premises, conclusion) ->
+            let qs, sorts = mapQuantifiers sorts qs
             let premises, sorts = mapAtoms sorts premises
             let conclusion, sorts = mapAtom sorts conclusion
-            BaseRule(premises, conclusion), sorts
+            Rule(qs, premises, conclusion), sorts
+
+    let mapFOLFormula = FOL.mapFold mapAtom
+
+    let mapLemma sorts (qs, (premises, lemma)) =
+        let qs, sorts = mapQuantifiers sorts qs
+        let premises, sorts = mapAtoms sorts premises
+        let lemma, sorts = mapFOLFormula sorts lemma
+        (qs, (premises, lemma)), sorts
 
     new (mapSort) = MapSorts(mapSort, true)
 
@@ -222,6 +241,11 @@ type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool
         | TransformedCommand r ->
             let r, sorts = mapRule sorts r
             TransformedCommand r, sorts
+        | LemmaCommand(pred, vars, bodyLemma, headCube) ->
+            let vars, sorts = mapSortedVars sorts vars
+            let bodyLemma, sorts = mapLemma sorts bodyLemma
+            let headCube, sorts = mapLemma sorts headCube
+            LemmaCommand(pred, vars, bodyLemma, headCube), sorts
 
 [<Extension>]
 type Utils () =

@@ -114,26 +114,28 @@ let private transformerForSolver transformOptions runSame = function
     | CVC_FMF -> newFreeSortsTransformerProgram transformOptions runSame
 
 let private solve_interactive (solver : SolverProgramRunner) (transformer : TransformerProgram option) (outputPath : path option) =
-    let tmpFileName () =
+    let tmpFileCounter = IdentGenerator.Counter()
+    let tmpFileName () = Path.Combine(Path.GetTempPath(), $"iteration_%d{tmpFileCounter.Count ()}.tmp")
+    let tmpFileName =
         match outputPath with
         | Some outputDirectory when Path.EndsInDirectorySeparator(outputDirectory) ->
-            Path.Combine(outputDirectory, Path.GetFileName(Path.GetTempFileName()))
-        | Some path -> path
-        | None -> Path.GetTempFileName()
-        |> fun dstPath -> Path.ChangeExtension(dstPath, solver.FileExtension)
+            fun () -> Path.Combine(outputDirectory, Path.GetFileName(tmpFileName ()))
+        | Some path -> fun () -> path
+        | None -> tmpFileName
+        >> fun dstPath -> Path.ChangeExtension(dstPath, solver.FileExtension)
+    let performTransformation performer commands =
+        let dstPath = tmpFileName ()
+        let srcPath = Path.ChangeExtension(dstPath, $".input%s{solver.FileExtension}")
+        let lines = List.map toString commands
+        Program.SaveFile srcPath lines
+        performer commands dstPath
+        dstPath
     let runTransformation =
-        match transformer with
-        | Some transformer ->
-            fun commands ->
-            let dstPath = tmpFileName ()
-            transformer.PerformTransform commands InteractiveRun dstPath
-            dstPath
-        | None ->
-            fun commands ->
-            let dstPath = tmpFileName ()
-            let lines = List.map toString commands
-            Program.SaveFile dstPath lines
-            dstPath
+        let performer =
+            match transformer with
+            | Some transformer -> transformer.PerformTransform InteractiveRun
+            | None -> fun _ _ -> ()
+        performTransformation performer
     let runOn commands =
         let transformedPath = runTransformation commands
         match solver.Run transformedPath outputPath with
@@ -141,14 +143,20 @@ let private solve_interactive (solver : SolverProgramRunner) (transformer : Tran
         | Some path'' ->
             print_verbose $"%s{solver.Name} run on %s{transformedPath} and the result is saved at %s{path''}"
     let parser = SMTExpr.Parser()
+    let prompt = if IN_QUIET_MODE () then fun () -> () else fun () -> printf "smt2> "
+    let foldInputStream commands = function
+        | Command CheckSat -> runOn (List.rev commands); commands
+        | c -> c::commands
     seq {
         while true do
-            printf "smt2> "
+            prompt ()
             let line = Console.ReadLine()
+            if line = null then () else
+            eprint_extra_verbose $"received %d{line.Length}: %s{line}"
             let commands = parser.ParseLine(line)
             yield! commands
     }
-    |> Seq.fold (fun commands -> function Command CheckSat -> runOn (List.rev commands); [] | c -> c::commands) []
+    |> Seq.fold foldInputStream []
     |> ignore
 
 let private solve_from_path (solver : SolverProgramRunner) (transformer : TransformerProgram option) outputPath (options : ParseResults<SolveArguments>) path =
@@ -234,7 +242,7 @@ type SelfProgramRunner (parser : ArgumentParser<_>, generalArgs, transArgs : Par
     override x.RunOnFile srcPath dstPath =
         currentDSTPath <- dstPath
         let statisticsFile, hasFinished, error, output = x.RunProcessOn srcPath
-        Printf.printfn_nonempty output
+        if not <| IN_QUIET_MODE () then Printf.printfn_nonempty output
         Printf.eprintfn_nonempty error
         hasFinished
 

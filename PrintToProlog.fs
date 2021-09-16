@@ -60,10 +60,8 @@ let private mapAtomInHead vars a =
         | _ -> None
     | a -> a
 
-let rec private mapRule vars = function
-    | ExistsRule _ -> None
-    | ForallRule(vars', r) -> mapRule (vars @ vars') r
-    | BaseRule(premises, head) ->
+let private mapRule = function
+    | Rule(Quantifiers.ForallQuantifiersOrEmpty vars, premises, head) ->
         let vars = vars |> List.map fst |> Set.ofList
         let premises = List.choose (mapAtomInPremise vars) premises
         match mapAtomInHead vars head with
@@ -74,6 +72,7 @@ let rec private mapRule vars = function
                 | [] -> head
                 | _ -> premises |> join ", " |> sprintf "%s :- %s" head
             Some $"%s{clause}."
+    | _ -> None
 
 let private mapDatatypeDeclaration (name, cs) =
     let handleConstr (constr, selectors) =
@@ -107,11 +106,13 @@ let private mapOriginalCommand = function
 
 let private mapTransformedCommand = function
     | OriginalCommand cmnd -> mapOriginalCommand cmnd
-    | TransformedCommand r -> mapRule [] r |> Option.map List.singleton
+    | TransformedCommand r -> mapRule r |> Option.map List.singleton
+    | LemmaCommand _ -> __unreachable__()
 
 let isFirstOrderPrologProgram commands =
     let hasSortDecls = List.exists (function OriginalCommand (DeclareSort _) -> true | _ -> false) commands
-    not hasSortDecls
+    let hasLemmas = List.exists (function LemmaCommand _ -> true | _ -> false) commands //TODO: support lemmas
+    not hasSortDecls && not hasLemmas
 
 let toPrologFile commands =
     let preamble = mapPredicateDeclaration queryName []

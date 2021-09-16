@@ -25,3 +25,6 @@ let print_warn_verbose (format : string) : unit =
 
 let failwith_verbose (format : string) : 'T =
     if IN_VERBOSE_MODE () then failwith format else Unchecked.defaultof<'T>
+
+let eprint_extra_verbose (format : string) : unit =
+    if IN_EXTRA_VERBOSE_MODE () then eprintfn $"%s{format}" else ()

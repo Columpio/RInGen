@@ -207,19 +207,38 @@ let (|ArraySort|_|) = function
     | CompoundSort("Array", [s1; s2]) -> Some(s1, s2)
     | _ -> None
 let ArraySort(s1, s2) = CompoundSort("Array", [s1; s2])
-let sortToFlatString s =
-    let rec sortToFlatString = function
-        | PrimitiveSort s -> [s.ToString()]
-        | CompoundSort(name, sorts) -> name :: List.collect sortToFlatString sorts
-    sortToFlatString s |> join ""
 let boolSort = PrimitiveSort(symbol("Bool"))
 let integerSort = PrimitiveSort(symbol("Int"))
 let dummySort = PrimitiveSort(symbol("*dummy-sort*"))
-let argumentSortsOfArraySort = function
-    | ArraySort(s1, s2) -> s1, s2
-    | _ -> __unreachable__()
+
+module Sort =
+    let gensym = function
+        | PrimitiveSort s -> IdentGenerator.gensymp s |> PrimitiveSort
+        | _ -> __unreachable__()
+
+    let argumentSortsOfArraySort = function
+        | ArraySort(s1, s2) -> s1, s2
+        | _ -> __unreachable__()
+
+    let sortToFlatString s =
+        let rec sortToFlatString = function
+            | PrimitiveSort s -> [s.ToString()]
+            | CompoundSort(name, sorts) -> name :: List.collect sortToFlatString sorts
+        sortToFlatString s |> join ""
+
 type pattern = symbol list
 type sorted_var = symbol * sort
+
+module SortedVar =
+    let fresh ((v, s) : sorted_var) : sorted_var = IdentGenerator.gensymp v, s
+
+module SortedVars =
+    let mapFold = List.mapFold
+
+    let withFreshVariables = List.mapFold (fun freshVarsMap vs -> let vs' = SortedVar.fresh vs in vs', Map.add vs vs' freshVarsMap)
+
+    let toString : sorted_var list -> string = List.map (fun (v, s) -> $"({v} {s})") >> join " "
+
 type operation =
     | ElementaryOperation of ident * sort list * sort
     | UserDefinedOperation of ident * sort list * sort
@@ -244,9 +263,9 @@ type smtExpr =
     override x.ToString() =
         let term_list_to_string = List.map toString >> join " "
         let atom_list_to_string = List.map toString >> join " "
-        let sorted_vars_to_string = List.map (fun (v, e) -> $"({v} {e})") >> join " "
         let bindings_to_string = List.map (fun ((v, _), e) -> $"({v} {e})") >> join " "
         match x with
+        | Apply(f, []) -> f.ToString()
         | Apply(f, xs) -> $"({f} %s{term_list_to_string xs})"
         | Number n -> toString n
         | BoolConst true -> "true"
@@ -262,9 +281,9 @@ type smtExpr =
         | Not x -> $"(not {x})"
         | Hence(i, t) -> $"(=> {i} {t})"
         | Forall(vars, body) ->
-            $"(forall (%s{sorted_vars_to_string vars}) {body})"
+            $"(forall (%s{SortedVars.toString vars}) {body})"
         | Exists(vars, body) ->
-            $"(exists (%s{sorted_vars_to_string vars}) {body})"
+            $"(exists (%s{SortedVars.toString vars}) {body})"
 type function_def = symbol * sorted_var list * sort * smtExpr
 type term =
     | TConst of ident * sort
@@ -276,11 +295,7 @@ type term =
         | TIdent(name, _) -> name.ToString()
         | TApply(op, []) -> op.ToString()
         | TApply(f, xs) -> sprintf "(%O %s)" f (xs |> List.map toString |> join " ")
-let typeOfTerm = function
-    | TConst(_, typ)
-    | TIdent(_, typ)
-    | TApply(ElementaryOperation(_, _, typ), _)
-    | TApply(UserDefinedOperation(_, _, typ), _) -> typ
+
 type atom =
     | Top
     | Bot
@@ -295,42 +310,216 @@ type atom =
         | Distinct(t1, t2) -> $"(not (= {t1} {t2}))"
         | AApply(op, []) -> op.ToString()
         | AApply(op, ts) -> sprintf "(%O %s)" op (ts |> List.map toString |> join " ")
+
+module Terms =
+    let mapFold = List.mapFold
+    let map = List.map
+
+module Term =
+    let typeOf = function
+        | TConst(_, typ)
+        | TIdent(_, typ)
+        | TApply(ElementaryOperation(_, _, typ), _)
+        | TApply(UserDefinedOperation(_, _, typ), _) -> typ
+
+    let rec mapFold f z = function
+        | TConst(name, typ) ->
+            let (name, typ), z = f z (name, typ)
+            TConst(name, typ), z
+        | TIdent(name, typ) ->
+            let (name, typ), z = f z (name, typ)
+            TIdent(name, typ), z
+        | TApply(op, ts) ->
+            let ts, z = Terms.mapFold (mapFold f) z ts
+            TApply(op, ts), z
+
+    let rec map f = function
+        | TConst(name, typ) ->
+            let name, typ = f (name, typ)
+            TConst(name, typ)
+        | TIdent(name, typ) ->
+            let name, typ = f (name, typ)
+            TIdent(name, typ)
+        | TApply(op, ts) ->
+            let ts = Terms.map (map f) ts
+            TApply(op, ts)
+
+    let withFreshVariables freshVarsMap = map (fun vs -> Option.defaultValue vs <| Map.tryFind vs freshVarsMap)
+
+module Atom =
+    let mapFold f z = function
+        | Top
+        | Bot as a -> a, z
+        | Equal(t1, t2) ->
+            let t1, z = f z t1
+            let t2, z = f z t2
+            Equal(t1, t2), z
+        | Distinct(t1, t2) ->
+            let t1, z = f z t1
+            let t2, z = f z t2
+            Distinct(t1, t2), z
+        | AApply(op, ts) ->
+            let ts, z = Terms.mapFold f z ts
+            AApply(op, ts), z
+
+    let map f = function
+        | Top
+        | Bot as a -> a
+        | Equal(t1, t2) ->
+            let t1 = f t1
+            let t2 = f t2
+            Equal(t1, t2)
+        | Distinct(t1, t2) ->
+            let t1 = f t1
+            let t2 = f t2
+            Distinct(t1, t2)
+        | AApply(op, ts) ->
+            let ts = Terms.map f ts
+            AApply(op, ts)
+
+    let withFreshVariables freshVarsMap = map (Term.withFreshVariables freshVarsMap)
+
+module Atoms =
+    let map = List.map
+    let mapFold = List.mapFold
+
+type 'a conjunction = Conjunction of 'a list
+type 'a disjunction = Disjunction of 'a list
+type dnf = atom conjunction disjunction
+type cnf = atom disjunction conjunction
+
+type conditional<'a> = atom list * 'a
+module Conditional =
+    let toCondition x : 'a conditional = [], x
+
+    let toString ((conds, a) : 'a conditional) =
+        let a = a.ToString()
+        match conds with
+        | [] -> a
+        | [c] -> $"(=> %O{c} {a})"
+        | _ -> $"""(=> (and {conds |> List.map toString |> join " "}) {a})"""
+
+    let pair ((conds1, x1) : term conditional) ((conds2, x2) : term conditional) : (term * term) conditional = conds1 @ conds2, (x1, x2)
+    let list (cnds : 'a conditional list) : ('a list) conditional =
+        let cnds, xs = List.unzip cnds
+        List.concat cnds, xs
+    let mapHead f ((conds, x) : 'a conditional) : 'b conditional = conds, f x
+    let strengthen conds1 ((conds2, x) : 'a conditional) : 'a conditional = conds1 @ conds2, x
+    let bind f ((conds1, x) : 'a conditional) : 'b conditional =
+        let conds2, y = f x
+        conds1 @ conds2, y
+    let map2 f ((conds1, x) : 'a conditional) ((conds2, y) : 'b conditional) = conds1 @ conds2, f x y
+    let toConj ((conds, x) : atom conditional) : atom conjunction = Conjunction <| x :: conds
+
+    let map fConds mapChild ((conds, a) : 'a conditional) : 'b conditional =
+        Atoms.map fConds conds, mapChild a
+
+    let mapFold fConds mapFoldChild z ((conds, a) : 'a conditional) : 'a conditional * _ =
+        let conds, z = Atoms.mapFold fConds z conds
+        let a, z = mapFoldChild z a
+        (conds, a), z
+
+    let withFreshVariables freshVarsMap = map (Atom.withFreshVariables freshVarsMap)
+
+type quantifier =
+    | ForallQuantifier of sorted_var list
+    | ExistsQuantifier of sorted_var list
+    | StableForallQuantifier of sorted_var list // for metavariables, such as in let bindings
+
+type quantifiers = quantifier list
+
+module Quantifier =
+    let negate = function
+        | ForallQuantifier vars -> ExistsQuantifier vars
+        | ExistsQuantifier vars -> ForallQuantifier vars
+        | StableForallQuantifier _ as q -> q
+
+    let unquantify = function
+        | ForallQuantifier vars -> ForallQuantifier, vars
+        | ExistsQuantifier vars -> ExistsQuantifier, vars
+        | StableForallQuantifier vars -> StableForallQuantifier, vars
+
+    let mapFold f z q =
+        let qConstr, vars = unquantify q
+        let vars, z = f z vars
+        qConstr vars, z
+
+    let withFreshVariables = mapFold SortedVars.withFreshVariables
+
+    let toString q =
+        let name, vars =
+            match q with
+            | ForallQuantifier vars -> "forall", vars
+            | ExistsQuantifier vars -> "exists", vars
+            | StableForallQuantifier vars -> "forall", vars
+        fun body -> $"""(%s{name} (%s{vars |> List.map (fun (v, e) -> $"({v} {e})") |> join " "})%s{"\n\t"}%s{body})"""
+
+module Quantifiers =
+    let empty : quantifiers = []
+
+    let mapFold f z (qs : quantifiers) = List.mapFold f z qs
+
+    let existsp : (quantifier -> bool) -> quantifiers -> bool = List.exists
+
+    let (|ForallQuantifiersOrEmpty|_|) qs =
+        List.foldChoose (fun vars -> function ForallQuantifier vars' | StableForallQuantifier vars' -> Some (vars @ vars') | _ -> None) [] qs
+
+    let add q (qs : quantifiers) : quantifiers =
+        match q with
+        | ForallQuantifier []
+        | ExistsQuantifier []
+        | StableForallQuantifier [] -> qs
+        | _ ->
+        match qs with
+        | [] -> [q]
+        | q'::qs ->
+        match q, q' with
+        | ForallQuantifier vars, ForallQuantifier vars' -> ForallQuantifier (vars @ vars')::qs
+        | ExistsQuantifier vars, ExistsQuantifier vars' -> ExistsQuantifier (vars @ vars')::qs
+        | StableForallQuantifier vars, StableForallQuantifier vars' -> StableForallQuantifier (vars @ vars')::qs
+        | _ -> q::q'::qs
+
+    let combine (outer : quantifiers) (inner : quantifiers) : quantifiers =
+        match inner with
+        | [] -> outer
+        | _ ->
+            let inner, innerLast = List.butLast inner
+            inner @ add innerLast outer
+
+    let combineMany (qss : quantifiers list) : quantifiers =
+        match qss with
+        | [] -> empty
+        | qs::qss -> List.fold combine qs qss
+
+    let forall vars : quantifiers = add (ForallQuantifier vars) empty
+    let exists vars : quantifiers = add (ExistsQuantifier vars) empty
+    let stableforall vars : quantifiers = add (StableForallQuantifier vars) empty
+
+    let negate (qs : quantifiers) : quantifiers = List.map Quantifier.negate qs
+
+    let withFreshVariables (qs : quantifiers) : quantifiers * Map<_,_> =
+        mapFold Quantifier.withFreshVariables Map.empty qs
+
+    let private squashStableIntoForall (qs : quantifiers) =
+        List.foldBack add (List.map (function StableForallQuantifier vars -> ForallQuantifier vars | q -> q) qs) empty
+
+    let toString (qs : quantifiers) o = List.foldBack Quantifier.toString (squashStableIntoForall qs) (o.ToString())
+
 type rule =
-    | BaseRule of atom list * atom
-    | ForallRule of sorted_var list * rule
-    | ExistsRule of sorted_var list * rule
+    | Rule of quantifiers * atom list * atom
     override x.ToString() =
-        let quant quantName vars = if List.isEmpty vars then id else vars |> List.map (fun (v, e) -> $"({v} {e})") |> join " " |> sprintf "(%s (%s)\n\t%s)" quantName
-        let rec basicPrint x =
-            match x with
-            | BaseRule(xs, x) ->
-                match xs with
-                | [] -> $"{x}"
-                | [y] -> $"(=> {y}\n\t    {x})"
-                | _ -> sprintf "(=>\t(and %s)\n\t\t%O)" (xs |> List.map toString |> join "\n\t\t\t") x
-            | ForallRule(vars, body) -> quant "forall" vars (basicPrint body)
-            | ExistsRule(vars, body) -> quant "exists" vars (basicPrint body)
-        basicPrint x
-let rec forallrule = function
-    | [] -> id
-    | vars -> function
-        | ForallRule(vars', body) -> forallrule (vars @ vars') body
-        | body -> ForallRule(vars, body)
-let rec existsrule = function
-    | [] -> id
-    | vars -> function
-        | ExistsRule(vars', body) -> existsrule (vars @ vars') body
-        | body -> ExistsRule(vars, body)
-let baseRule fromAtoms toAtom =
+        match x with
+        | Rule(qs, xs, x) ->
+            match xs with
+            | [] -> $"{x}"
+            | [y] -> $"(=> {y}\n\t    {x})"
+            | _ -> sprintf "(=>\t(and %s)\n\t\t%O)" (xs |> List.map toString |> join "\n\t\t\t") x
+            |> Quantifiers.toString qs
+let private baseRule q fromAtoms toAtom =
     let fromAtoms = List.filter ((<>) Top) fromAtoms
-    BaseRule(fromAtoms, toAtom)
-let aerule forallVars existsVars fromAtoms toAtom = forallrule forallVars (existsrule existsVars (baseRule fromAtoms toAtom))
-let rule vars fromAtoms toAtom = forallrule vars (baseRule fromAtoms toAtom)
-let (|Rule|_|) = function
-    | ForallRule(vars, BaseRule(f, t)) -> Some(vars, f, t)
-    | BaseRule(f, t) -> Some([], f, t)
-    | _ -> None
-let private sorted_var_to_string = List.map (fun (v, s) -> $"({v} {s})") >> join " "
+    Rule(q, fromAtoms, toAtom)
+let aerule forallVars existsVars fromAtoms toAtom = baseRule (Quantifiers.add (ExistsQuantifier existsVars) <| Quantifiers.forall forallVars) fromAtoms toAtom
+let rule vars fromAtoms toAtom = baseRule (Quantifiers.forall vars) fromAtoms toAtom
 type definition =
     | DefineFun of function_def
     | DefineFunRec of function_def
@@ -338,12 +527,12 @@ type definition =
     override x.ToString() =
         match x with
         | DefineFunRec(name, vars, returnType, body) ->
-            $"(define-fun-rec {Symbols.sprintForDeclare name} (%s{sorted_var_to_string vars}) {returnType} {body})"
+            $"(define-fun-rec {Symbols.sprintForDeclare name} (%s{SortedVars.toString vars}) {returnType} {body})"
         | DefineFun(name, vars, returnType, body) ->
-            $"(define-fun {Symbols.sprintForDeclare name} (%s{sorted_var_to_string vars}) {returnType} {body})"
+            $"(define-fun {Symbols.sprintForDeclare name} (%s{SortedVars.toString vars}) {returnType} {body})"
         | DefineFunsRec fs ->
             let signs, bodies = List.map (fun (n, vs, s, b) -> (n, vs, s), b) fs |> List.unzip
-            let signs = signs |> List.map (fun (name, vars, sort) -> $"(%s{Symbols.sprintForDeclare name} (%s{sorted_var_to_string vars}) {sort})") |> join " "
+            let signs = signs |> List.map (fun (name, vars, sort) -> $"(%s{Symbols.sprintForDeclare name} (%s{SortedVars.toString vars}) {sort})") |> join " "
             let bodies = bodies |> List.map toString |> join " "
             $"(define-funs-rec (%s{signs}) (%s{bodies}))"
 type command =
@@ -362,7 +551,7 @@ type command =
     | DeclareConst of symbol * sort
     override x.ToString() =
         let constrs_to_string =
-            List.map (fun (c, args) -> $"({c} %s{sorted_var_to_string args})") >> join " " >> sprintf "(%s)"
+            List.map (fun (c, args) -> $"({c} %s{SortedVars.toString args})") >> join " " >> sprintf "(%s)"
         let dtsToString dts =
             let sorts, decs = List.unzip dts
             let sorts = sorts |> List.map (sprintf "(%O 0)") |> join " "
@@ -382,6 +571,8 @@ type command =
         | DeclareDatatype(name, constrs) -> dtsToString [name, constrs]
             // sprintf "(declare-datatype %O %s)" name (constrs_to_string constrs)
         | DeclareDatatypes dts -> dtsToString dts
+let private lemmaToString pred vars lemma =
+    $"""(lemma {pred} ({vars |> List.map (fun (v, s) -> $"(%O{v} %O{s})") |> join " "}) %O{lemma})"""
 type originalCommand =
     | Definition of definition
     | Command of command
@@ -392,22 +583,128 @@ type originalCommand =
         | Definition df -> df.ToString()
         | Command cmnd -> cmnd.ToString()
         | Assert f -> $"(assert {f})"
-        | Lemma(pred, vars, lemma) -> $"""(lemma {pred} ({vars |> List.map (fun (v, s) -> $"(%O{v} %O{s})") |> join " "}) {lemma})"""
+        | Lemma(pred, vars, lemma) -> lemmaToString pred vars lemma
+type folFormula =
+    | FOLAtom of atom
+    | FOLNot of folFormula
+    | FOLOr of folFormula list
+    | FOLAnd of folFormula list
+    override x.ToString() =
+        match x with
+        | FOLAtom a -> a.ToString()
+        | FOLNot a -> $"(not %O{a})"
+        | FOLOr ats -> $"""(or {ats |> List.map toString |> join " "})"""
+        | FOLAnd ats -> $"""(and {ats |> List.map toString |> join " "})"""
+
+module FOL =
+    let map f =
+        let rec iter = function
+            | FOLAtom a -> FOLAtom (f a)
+            | FOLNot f -> f |> iter |> FOLNot
+            | FOLAnd fs -> fs |> List.map iter |> FOLAnd
+            | FOLOr fs -> fs |> List.map iter |> FOLOr
+        iter
+
+    let bind f =
+        let rec iter = function
+            | FOLAtom a -> f a
+            | FOLNot f -> f |> iter |> FOLNot
+            | FOLAnd fs -> fs |> List.map iter |> FOLAnd
+            | FOLOr fs -> fs |> List.map iter |> FOLOr
+        iter
+
+    let mapFold f z =
+        let rec iter z = function
+            | FOLAtom a ->
+                let a', z' = f z a
+                FOLAtom a', z'
+            | FOLNot f ->
+                let f', z' = iter z f
+                FOLNot f', z'
+            | FOLAnd fs ->
+                let fs', z' = List.mapFold iter z fs
+                FOLAnd fs', z'
+            | FOLOr fs ->
+                let fs', z' = List.mapFold iter z fs
+                FOLOr fs', z'
+        iter z
+
+    let mapFoldPositivity f pos z =
+        let rec iter pos z = function
+            | FOLAtom a ->
+                let a', z' = f pos z a
+                a', z'
+            | FOLNot f ->
+                let f', z' = iter (not pos) z f
+                FOLNot f', z'
+            | FOLAnd fs ->
+                let fs', z' = List.mapFold (iter pos) z fs
+                FOLAnd fs', z'
+            | FOLOr fs ->
+                let fs', z' = List.mapFold (iter pos) z fs
+                FOLOr fs', z'
+        iter pos z
+
+    let withFreshVariables freshVarsMap = map (Atom.withFreshVariables freshVarsMap)
+
+type lemma = quantifiers * folFormula conditional
+
+module Lemma =
+    let withFreshVariables ((qs, cond) : lemma) =
+        let qs, freshVarsMap = Quantifiers.withFreshVariables qs
+        let cond = Conditional.withFreshVariables freshVarsMap (FOL.withFreshVariables freshVarsMap) cond
+        qs, cond
+
+    let toString ((qs, cond) : lemma) =
+        Conditional.toString cond |> Quantifiers.toString qs
+
+let private simplQuant constr zero one e = function
+    | [] -> e
+    | vars -> if e = zero then zero elif e = one then one else constr(vars, e)
+let private simplBinary zero one deconstr constr =
+    let rec iter k = function
+        | [] -> k []
+        | x :: xs ->
+            if x = one then x
+            elif x = zero then iter k xs
+            else
+                match deconstr x with
+                | Some ys -> iter (fun ys -> iter (fun xs -> k (ys @ xs)) xs) ys
+                | None -> iter (fun res -> k (x :: res)) xs
+    iter (function [] -> zero | [t] -> t | ts -> ts |> List.rev |> constr)
+let truee = BoolConst true
+let falsee = BoolConst false
+let ore = simplBinary falsee truee (function Or xs -> Some xs | _ -> None) Or
+let ande = simplBinary truee falsee (function And xs -> Some xs | _ -> None) And
+let forall vars e = simplQuant Forall falsee truee e vars
+let exists vars e = simplQuant Exists falsee truee e vars
+let folOr = simplBinary (FOLAtom Bot) (FOLAtom Top) (function FOLOr xs -> Some xs | _ -> None) FOLOr
+let folAnd = simplBinary (FOLAtom Top) (FOLAtom Bot) (function FOLAnd xs -> Some xs | _ -> None) FOLAnd
+//let folForall, folExists =
+//    let zero = FOLBase (FOLAtom Bot)
+//    let one = FOLBase (FOLAtom Top)
+//    let folForall vars body = simplQuant FOLForall zero one body vars
+//    let folExists vars body = simplQuant FOLExists zero one body vars
+//    folForall, folExists
 type transformedCommand =
     | OriginalCommand of command
     | TransformedCommand of rule
+    | LemmaCommand of symbol * sorted_var list * lemma * lemma // body lemma, head cube
     override x.ToString() =
         match x with
         | OriginalCommand x -> x.ToString()
         | TransformedCommand x -> $"(assert %O{x})"
-let orig = OriginalCommand
-let trans = TransformedCommand
-let truee = BoolConst true
-let falsee = BoolConst false
+        | LemmaCommand(pred, vars, bodyLemma, headCube) ->
+            lemmaToString pred vars (join " " [Lemma.toString bodyLemma; Lemma.toString headCube])
+type folCommand =
+    | FOLOriginalCommand of command
+    | FOLAssertion of quantifiers * folFormula
+    override x.ToString() =
+        match x with
+        | FOLOriginalCommand x -> x.ToString()
+        | FOLAssertion(qs, x) -> $"(assert %s{Quantifiers.toString qs x})"
 let truet = TConst("true", boolSort)
 let falset = TConst("false", boolSort)
-let boolToConst b = if b then truet else falset
-let intToConst n = TConst(toString n, integerSort)
 let distinct t1 t2 =
     match t1, t2 with
     | TConst("true", _), TConst("true", _) -> Bot
@@ -419,28 +716,20 @@ let distinct t1 t2 =
     | t, TConst("true", _)
     | TConst("true", _), t -> Equal(t, falset)
     | _ -> Distinct(t1, t2)
-let ore =
-    let rec ore acc = function
-        | [] ->
-            match acc with
-            | [] -> falsee
-            | [t] -> t
-            | ts -> Or <| List.rev ts
-        | BoolConst true :: _ -> truee
-        | BoolConst false :: xs -> ore acc xs
-        | x :: xs -> ore (x :: acc) xs
-    ore []
-let ande =
-    let rec ande acc = function
-        | [] ->
-            match acc with
-            | [] -> truee
-            | [t] -> t
-            | ts -> And <| List.rev ts
-        | BoolConst false :: _ -> falsee
-        | BoolConst true :: xs -> ande acc xs
-        | x :: xs -> ande (x :: acc) xs
-    ande []
+let notMapApply f z = function
+    | Top -> z Bot
+    | Bot -> z Top
+    | Equal(t1, t2) -> z <| Distinct(t1, t2)
+    | Distinct(t1, t2) -> z <| Equal(t1, t2)
+    | AApply(op, ts) -> f op ts
+let rec folNot = function
+    | FOLNot f -> f
+    | FOLAtom a -> notMapApply (fun op ts -> AApply(op, ts) |> FOLAtom |> FOLNot) FOLAtom a
+    | f -> FOLNot f
+let folAssert (qs, e) =
+    match e with
+    | FOLAtom Top -> None
+    | _ -> Some (FOLAssertion(qs, e))
 let hence ts t =
     match ts with
     | [] -> t
@@ -461,13 +750,6 @@ and private simplee = function
     | And e -> ande e
     | Or e -> ore e
     | e -> e
-let forall vars e = if List.isEmpty vars then e else Forall(vars, e)
-let exists vars e = if List.isEmpty vars then e else Exists(vars, e)
-
-type 'a conjunction = Conjunction of 'a list
-type 'a disjunction = Disjunction of 'a list
-type dnf = atom conjunction disjunction
-type cnf = atom disjunction conjunction
 
 module Conj =
     let singleton x = Conjunction [x]
@@ -478,6 +760,7 @@ module Conj =
     let bind (produce_disjunction : atom -> atom list) =
         map (function Disjunction ds -> List.collect produce_disjunction ds)
     let flatten (Conjunction css : 'a conjunction conjunction) = List.collect (function Conjunction cs -> cs) css |> Conjunction
+    let toFOL (Conjunction cs : atom conjunction) = cs |> List.map FOLAtom |> folAnd
 
 module Disj =
     let singleton x = Disjunction [x]
@@ -496,6 +779,7 @@ module DNF =
     let empty : dnf = Disjunction [Conjunction []]
     let singleton : atom -> dnf = Conj.singleton >> Disj.singleton
     let flip (Disjunction cs : dnf) : cnf = cs |> List.map (function Conjunction cs -> Disjunction cs) |> Conjunction
+    let toFOL (Disjunction cs : dnf) = cs |> List.map Conj.toFOL |> folOr
 
 [<Struct>]
 type CollectBuilder =

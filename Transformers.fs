@@ -36,18 +36,12 @@ type TransformerProgram (options : transformOptions) =
         hasDefines && hasDeclareFuns
 
     let tryFindExistentialClauses =
-        let rec tryFindExistentialClauses = function
-            | BaseRule _ -> None
-            | ExistsRule _ as r -> Some r
-            | ForallRule(_, r) -> tryFindExistentialClauses r
         let tryFindExistentialClauses = function
-            | TransformedCommand r -> tryFindExistentialClauses r
+            | TransformedCommand(Rule(qs, _, _) as r) when Quantifiers.existsp (function ExistsQuantifier _ -> true | _ -> false) qs -> Some r
             | _ -> None
         List.tryPick tryFindExistentialClauses
 
-    abstract Transform : transformedCommand list -> transformedCommand list
-    abstract CommandsToStrings : transformedCommand list -> string list
-    default x.CommandsToStrings commands = List.map toString commands
+    abstract Transform : transformedCommand list -> string list
 
     static member FailInfoFileExtension = ".transformation_info"
 
@@ -56,30 +50,26 @@ type TransformerProgram (options : transformOptions) =
         File.WriteAllText(dstPath, toString problem)
         print_warn_verbose message
 
-    member private x.SaveClauses dst commands =
-        match tryFindExistentialClauses commands with
-        | Some r -> x.ReportTransformationProblem dst TRANS_CONTAINS_EXISTENTIALS $"Transformed %s{dst} contains existential subclause: %O{r}"
-        | None ->
-            let lines = x.CommandsToStrings commands
-            Program.SaveFile dst lines
-
     member private x.ReportTimelimit srcPath dstPath =
         x.ReportTransformationProblem dstPath TRANS_TIMELIMIT $"Transformation of %s{srcPath} halted due to a timelimit"
 
     member private x.ParseAndTransform (srcPath : string) dstPath =
         let exprs = SMTExpr.Parser().ParseFile srcPath
-        x.PerformTransform exprs (PathRun srcPath) dstPath
+        x.PerformTransform (PathRun srcPath) exprs dstPath
 
-    member x.PerformTransform exprs (srcPath : RunConfig) dstPath =
+    member x.PerformTransform (srcPath : RunConfig) exprs dstPath =
 //        let mutable files = 0
 //        let mutable successful = 0
 //        let mutable total_generated = 0
 //                files <- files + 1
         if isHighOrderBenchmark exprs then x.ReportTransformationProblem dstPath TRANS_HIGH_ORDER_PROBLEM $"%O{srcPath} will not be transformed as it has a mix of define-fun and declare-fun commands" else
         try
-            let originalProgram = ClauseTransform.toClauses options exprs
-            let transformedProgram = x.Transform originalProgram
-            x.SaveClauses dstPath transformedProgram
+            let commands = ClauseTransform.toClauses options exprs
+            match tryFindExistentialClauses commands with
+            | Some r -> x.ReportTransformationProblem dstPath TRANS_CONTAINS_EXISTENTIALS $"Transformed %s{dstPath} contains existential subclause: %O{r}"
+            | None ->
+            let transformedProgram = x.Transform commands
+            Program.SaveFile dstPath transformedProgram
 //            total_generated <- total_generated + x.SaveClauses opts.path dst newTests
 //            successful <- successful + 1
         with
@@ -110,7 +100,8 @@ type OriginalTransformerProgram (options) =
     override x.TargetPath path = $"%s{path}.Original"
 
     override x.Transform commands =
-        preambulizeCommands "HORN" commands
+        let commands' = preambulizeCommands "HORN" commands
+        List.map toString commands'
 
 type FreeSortsTransformerProgram (options) =
     inherit TransformerProgram(options)
@@ -119,16 +110,19 @@ type FreeSortsTransformerProgram (options) =
 
     override x.Transform commands =
         let noADTSystem = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
-        preambulizeCommands "UF" noADTSystem
+        let commands = preambulizeCommands "UF" noADTSystem
+        let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
+        List.map toString commands
 
 type PrologTransformerProgram (options) =
-    inherit OriginalTransformerProgram(options)
+    inherit TransformerProgram(options)
 
     override x.TargetPath path = $"%s{path}.Prolog"
 
     override x.FileExtension = ".pl"
 
-    override x.CommandsToStrings commands =
+    override x.Transform commands =
+        let commands = preambulizeCommands "HORN" commands
         if PrintToProlog.isFirstOrderPrologProgram commands
             then PrintToProlog.toPrologFile commands
             else failwith_verbose "not a first order Prolog program"

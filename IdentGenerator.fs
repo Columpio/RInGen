@@ -2,12 +2,18 @@ module RInGen.IdentGenerator
 
 open System.Collections.Generic
 open System.Text.RegularExpressions
-open RInGen.Operations
+
+type Counter () =
+    let mutable counter = -1
+
+    member x.Count () =
+        counter <- counter + 1
+        counter
 
 type IdentGenerator() =
     let symbols = Dictionary<string, int>()
 
-    member x.gensymp (prefix : symbol) =
+    member x.gensymp prefix =
         let prefixStr = prefix.ToString()
         let prefixStr = Regex.Replace(prefixStr, "[^a-zA-Z]", "")
         let prefixStr = if prefixStr = "" then "x" else prefixStr
@@ -19,19 +25,7 @@ type IdentGenerator() =
             symbols.Add(prefixStrLow, 1)
         $"%s{prefixStr}_%d{!counter}"
 
-let idgen = IdentGenerator()
+let private idgen = IdentGenerator()
 
-let gensymp (prefix : symbol) : symbol = idgen.gensymp prefix
-let gensyms  : string -> symbol = symbol >> gensymp
-let gensym () = gensyms "x"
-let gensymsort = function
-    | PrimitiveSort s -> gensymp s |> PrimitiveSort
-    | _ -> __unreachable__()
-
-let generateReturnArgument op =
-    let retType = Operation.returnType op
-    let retArg = gensym (), retType
-    let retVar = TIdent retArg
-    retArg, retVar
-
-let generateArguments = Operation.argumentTypes >> List.map (fun s -> gensym(), s)
+let gensymp prefix = idgen.gensymp prefix
+let gensym () = gensymp "x"

@@ -132,7 +132,7 @@ module private RemoveVariableOverlapping =
         (newName, args, substWithSortMap sortMap retSort, body), (nameMap, sortMap)
 
     let private addDatatypeSorts (nameMap, sortMap) (name, cs) =
-        let newName = IdentGenerator.gensymsort name
+        let newName = Sort.gensym name
         (nameMap, Map.add name newName sortMap)
     let private substDatatypeSorts (nameMap, sortMap) (name, cs) =
         let mapTester nameMap constr newConstr =
@@ -159,7 +159,7 @@ module private RemoveVariableOverlapping =
             let newName = IdentGenerator.gensymp name
             Map.add name newName nameMap, sortMap, Command(DeclareFun(newName, substWithSortMapList sortMap argTypes, substWithSortMap sortMap sort))
         | Command(DeclareSort name) ->
-            let newName = IdentGenerator.gensymsort name
+            let newName = Sort.gensym name
             nameMap, Map.add name newName sortMap, Command(DeclareSort newName)
         | Definition(DefineFunRec df) ->
             let df, (nameMap, sortMap) = prepareDefinition (nameMap, sortMap) df
@@ -190,31 +190,15 @@ module private RemoveVariableOverlapping =
         List.mapFold (renameIdentsInCommand typer) (Map.empty, Map.empty) >> fst
 
 module private DefinitionsToDeclarations =
-    [<AutoOpen>]
-    module private Conditional =
-        type conditional<'a> = atom list * 'a
-        let toCondition x : 'a conditional = [], x
-        let assumeTrue x = [x], truet
-        let assumeFalse x = [x], falset
-
-        let pair ((conds1, x1) : term conditional) ((conds2, x2) : term conditional) : (term * term) conditional = conds1 @ conds2, (x1, x2)
-        let list (cnds : 'a conditional list) : ('a list) conditional =
-            let cnds, xs = List.unzip cnds
-            List.concat cnds, xs
-        let map f ((conds, x) : 'a conditional) : 'b conditional = conds, f x
-        let strengthen conds1 ((conds2, x) : 'a conditional) : 'a conditional = conds1 @ conds2, x
-        let bind f ((conds1, x) : 'a conditional) : 'b conditional =
-            let conds2, y = f x
-            conds1 @ conds2, y
-        let map2 f ((conds1, x) : 'a conditional) ((conds2, y) : 'b conditional) = conds1 @ conds2, f x y
-        let toConj ((conds, x) : atom conditional) : atom conjunction = Conjunction <| x :: conds
+    let assumeTrue x = [x], truet
+    let assumeFalse x = [x], falset
 
     [<AutoOpen>]
     module private Choosable =
         type choosable<'a> = 'a conditional list
-        let toChoosable x : 'a choosable = [toCondition x]
-        let combinations (oneToMany : 'a -> 'b choosable) : 'a list -> 'b list choosable = List.map oneToMany >> List.product >> List.map list
-        let map (f : 'a -> 'b) (ch : 'a choosable) : 'b choosable = List.map (Conditional.map f) ch
+        let toChoosable x : 'a choosable = [Conditional.toCondition x]
+        let combinations (oneToMany : 'a -> 'b choosable) : 'a list -> 'b list choosable = List.map oneToMany >> List.product >> List.map Conditional.list
+        let map (f : 'a -> 'b) (ch : 'a choosable) : 'b choosable = List.map (Conditional.mapHead f) ch
         let strengthen conds (c : 'a choosable) : 'a choosable = List.map (Conditional.strengthen conds) c
         let flatten (xss : 'a choosable choosable) : 'a choosable =
             List.collect (fun (conds, xs) -> strengthen conds xs) xss
@@ -254,7 +238,7 @@ module private DefinitionsToDeclarations =
     let private tnot t = TApply(DummyOperations.notOp, [t])
 //    let private anot ts = Equal(tnot ts, truet)
 
-    let private negateDNF typer e =                     // expr   !((is-A x /\ is-B y) \/ (is-A z /\ is-B t))
+    let private negateDNF typer e : dnf =               // expr   !((is-A x /\ is-B y) \/ (is-A z /\ is-B t))
         let dnf_e = e                                   //          (is-A x /\ is-B y) \/ (is-A z /\ is-B t)
         let cnf_e = DNF.flip dnf_e                      // ~flip~>  (is-A x \/ is-B y) /\ (is-A z \/ is-B t)
         let neg_cnf_e = Conj.bind (nota typer) cnf_e    // ~not~>   (is-B x \/ is-A y) /\ (is-B z \/ is-A t)
@@ -269,8 +253,8 @@ module private DefinitionsToDeclarations =
 
     let rec private exprToTerm atomsAreTerms : smtExpr -> term choosable = function
         | Ident(name, sort) -> TIdent(name, sort) |> toChoosable
-        | BoolConst b -> b |> boolToConst |> toChoosable
-        | Number n -> n |> intToConst |> toChoosable //TODO: IntToNat
+        | BoolConst b -> (if b then truet else falset) |> toChoosable
+        | Number n -> TConst(toString n, integerSort) |> toChoosable //TODO: IntToNat
         | Apply(op, ts) ->
             let toChoose ts = TApply(op, ts) |> Choosable.destruct
             bindBoolOperator toChoose (exprsToTerms atomsAreTerms ts)
@@ -313,50 +297,15 @@ module private DefinitionsToDeclarations =
 
     let private functionExprToTerm = exprToTerm true
 
-    type private syntaxRule =
-        | AllRule of sorted_var list * syntaxRule
-        | ExRule of sorted_var list * syntaxRule
-        | StableAllRule of sorted_var list * syntaxRule
-        | BRule of atom list * atom
-    let rec private syntaxRuleToRule = function
-        | AllRule(vars, body)
-        | StableAllRule(vars, body) -> ForallRule(vars, syntaxRuleToRule body)
-        | ExRule(vars, body) -> ExistsRule(vars, syntaxRuleToRule body)
-        | BRule(p, c) -> BaseRule(p, c)
-    let rec private forallrule = function
-        | [] -> id
-        | vars -> function
-            | AllRule(vars', body) -> forallrule (vars @ vars') body
-            | body -> AllRule(vars, body)
-    let rec private existsrule = function
-        | [] -> id
-        | vars -> function
-            | ExRule(vars', body) -> existsrule (vars @ vars') body
-            | body -> ExRule(vars, body)
-    let rec private stableallrule = function
-        | [] -> id
-        | vars -> function
-            | StableAllRule(vars', body) -> stableallrule (vars @ vars') body
-            | body -> StableAllRule(vars, body)
-    let private emptyQuantifier = id
-    let rec private combineQuantifiers q1 q2 = q1 << q2
-    let private negateQuantifiers q =
-        let rec negate = function
-            | AllRule(vars, body) -> combineQuantifiers (existsrule vars) (negate body)
-            | ExRule(vars, body) -> combineQuantifiers (forallrule vars) (negate body)
-            | StableAllRule(vars, body) -> combineQuantifiers (stableallrule vars) (negate body)
-            | BRule _ -> emptyQuantifier
-        negate (q (BRule([], Bot)))
-
     let rec private toRuleProduct tes args =
         let combine2 arg st =
             let arg = exprToRule tes arg
             collector {
                 let! v, a, r = st
                 let! v', a', r' = arg
-                return combineQuantifiers v' v, a' @ a, r' :: r
+                return Quantifiers.combine v' v, a' @ a, r' :: r
             }
-        List.foldBack combine2 args [emptyQuantifier, [], []]
+        List.foldBack combine2 args [Quantifiers.empty, [], []]
     and private toRuleHandleProduct tes constructor ts =
         collector {
             let! vs, cs, rs = toRuleProduct tes ts
@@ -367,31 +316,31 @@ module private DefinitionsToDeclarations =
         | Ident(name, sort) when sort = boolSort && Map.containsKey name subst -> Map.find name subst
         | Ident _
         | Number _
-        | BoolConst _ as e -> [emptyQuantifier, [], e]
+        | BoolConst _ as e -> [Quantifiers.empty, [], e]
         | And fs -> toRuleHandleProduct tes ande fs
         | Or fs -> toRuleHandleProduct tes ore fs
         | Hence(a, b) ->
             collector {
                 let! avs, acs, ar = exprToRule tes a
                 let! bvs, bcs, br = exprToRule tes b
-                return combineQuantifiers (negateQuantifiers avs) bvs, acs @ bcs, Hence(ar, br)
+                return Quantifiers.combine (Quantifiers.negate avs) bvs, acs @ bcs, Hence(ar, br)
             }
         | Not e ->
             collector {
                 let! vs, cs, r = exprToRule tes e
-                return negateQuantifiers vs, cs, note r
+                return Quantifiers.negate vs, cs, note r
             }
         | Forall(vars, body) ->
             let tes = VarEnv.replace te vars, subst
             collector {
                 let! bodyVars, bodyConditions, bodyResult = exprToRule tes body
-                return combineQuantifiers (forallrule vars) bodyVars, bodyConditions, bodyResult
+                return Quantifiers.combine (Quantifiers.forall vars) bodyVars, bodyConditions, bodyResult
             }
         | Exists(vars, body) ->
             let tes = VarEnv.replace te vars, subst
             collector {
                 let! bodyVars, bodyConditions, bodyResult = exprToRule tes body
-                return combineQuantifiers (existsrule vars) bodyVars, bodyConditions, bodyResult
+                return Quantifiers.combine (Quantifiers.exists vars) bodyVars, bodyConditions, bodyResult
             }
         | Let(assignments, body) ->
             let handleAssignment (te, subst) (v, expr) =
@@ -399,21 +348,21 @@ module private DefinitionsToDeclarations =
                 match v with
                 | (name, b) when b = boolSort ->
                     let e = exprToRule tes expr
-                    [emptyQuantifier, []], (te, Map.add name e subst)
+                    [Quantifiers.empty, []], (te, Map.add name e subst)
                 | _ ->
                     collector {
                         let! exprvs, exprcs, expr = exprToRule tes expr
                         let! exprConds, expr = functionExprToTerm expr
-                        return combineQuantifiers (stableallrule [v]) exprvs, (Equal(TIdent v, expr) :: exprConds @ exprcs)
+                        return Quantifiers.combine (Quantifiers.stableforall [v]) exprvs, (Equal(TIdent v, expr) :: exprConds @ exprcs)
                     }, (te, subst)
             let assignments, tes = List.mapFold handleAssignment tes assignments  // [[even; odd]; [0mod3; 1mod3; 2mod3]]
             collector {
                 let! assignments = List.product assignments                     // [[even; 0mod3]; [even; 1mod3]; ...]
                 let vars, conds = List.unzip assignments
-                let vars = List.reduceBack combineQuantifiers vars
+                let vars = List.reduceBack Quantifiers.combine vars
                 let conds = List.concat conds
                 let! bodyvs, bodycs, body = exprToRule tes body
-                return combineQuantifiers vars bodyvs, conds @ bodycs, body
+                return Quantifiers.combine vars bodyvs, conds @ bodycs, body
             }
         | Match(expr, cases) ->
             let handle_case patterns (pattern, body) =
@@ -421,7 +370,7 @@ module private DefinitionsToDeclarations =
                 let tes = VarEnv.replace te varsList, subst
                 let body =
                     exprToRule tes body
-                    |> List.map (fun (vars', assumptions, body) -> pattern, patterns, combineQuantifiers (stableallrule varsList) vars', assumptions, body)
+                    |> List.map (fun (vars', assumptions, body) -> pattern, patterns, Quantifiers.combine (Quantifiers.stableforall varsList) vars', assumptions, body)
                 body, pattern::patterns
             let expr = exprToRule tes expr
             let cases = List.mapFold handle_case [] cases |> fst |> List.concat
@@ -430,15 +379,15 @@ module private DefinitionsToDeclarations =
                 let! tretExprConds, tretExpr = functionExprToTerm tretExpr
                 let! pattern, patterns, brvars, brassumptions, brretExpr = cases
                 let! pvars, patConds, pattern_match = ADTExtensions.patternsToConstraints typer patterns pattern tretExpr functionExprToTerm
-                return combineQuantifiers (stableallrule pvars) (combineQuantifiers tvars brvars), pattern_match :: tretExprConds @ patConds @ tassumptions @ brassumptions, brretExpr
+                return Quantifiers.combine (Quantifiers.stableforall pvars) (Quantifiers.combine tvars brvars), pattern_match :: tretExprConds @ patConds @ tassumptions @ brassumptions, brretExpr
             }
         | Ite(i, t, e) ->
             collector {
                 let! ivs, ics, ir = exprToRule tes i
                 let! tvs, tcs, tr = exprToRule tes t
                 let! evs, ecs, er = exprToRule tes e
-                let thenBranchQuantifiers = combineQuantifiers ivs tvs
-                let elseBranchQuantifiers = combineQuantifiers ivs evs
+                let thenBranchQuantifiers = Quantifiers.combine ivs tvs
+                let elseBranchQuantifiers = Quantifiers.combine ivs evs
                 let! Conjunction thenBranchConditions = exprToAtoms typer true ir |> Disj.get
                 let! Conjunction elseBranchConditions = exprToAtoms typer true (note ir) |> Disj.get
                 let thenBranch = thenBranchQuantifiers, thenBranchConditions @ ics @ tcs, tr
@@ -452,7 +401,7 @@ module private DefinitionsToDeclarations =
         name, OriginalCommand decl
 
     let private defineOperationName = symbol "*define*"
-    let private defineOperation call body = Operation.makeElementaryOperationFromSorts defineOperationName [typeOfTerm call; typeOfTerm body] boolSort
+    let private defineOperation call body = Operation.makeElementaryOperationFromSorts defineOperationName [Term.typeOf call; Term.typeOf body] boolSort
     let (|DefineOperation|_|) = function
         | AApply(ElementaryOperation(name, [_; _], s), [call; bodyResult]) when name = defineOperationName && s = boolSort -> Some (call, bodyResult)
         | _ -> None
@@ -464,15 +413,15 @@ module private DefinitionsToDeclarations =
     let private connectFunctionNameWithBody userFuncOp args bodyResult = connectFunctionCallWithBody (TApply(userFuncOp, List.map TIdent args)) bodyResult
 
     let private finalRule vars qbvars qhvars conds result =
-        combineQuantifiers (forallrule vars) (combineQuantifiers (negateQuantifiers qbvars) qhvars) (BRule(conds, result))
-        |> syntaxRuleToRule
+        let qs = Quantifiers.combine (Quantifiers.forall vars) (Quantifiers.combine (Quantifiers.negate qbvars) qhvars)
+        Rule(qs, conds, result)
 
     let private definitionToAssertion typer (name, vars, sort, body) =
         let userFuncOp = Operation.makeUserOperationFromVars name vars sort
         collector {
             let! bodyVars, bodyConditions, bodyResult = exprToRule (VarEnv.create typer vars, Map.empty) body
             let! conds, bodyResult = connectFunctionNameWithBody userFuncOp vars bodyResult
-            let body = finalRule vars emptyQuantifier bodyVars (conds @ bodyConditions) bodyResult
+            let body = finalRule vars Quantifiers.empty bodyVars (conds @ bodyConditions) bodyResult
             return TransformedCommand body
         }
 
@@ -561,56 +510,12 @@ module private DefinitionsToDeclarations =
                 }
         eat [] []
 
-    let private substVarsWithTerms varsToTerms expr =
-        let rec substInExpr = function
-            | Apply(op, ts) -> Apply(op, substInExprs ts)
-            | Ident(v, s) as e ->
-                match Map.tryFind (v, s) varsToTerms with
-                | Some t -> t
-                | None -> e
-            | Number _
-            | BoolConst _ as e -> e
-            | Not e -> e |> substInExpr |> Not
-            | And es -> es |> substInExprs |> And
-            | Or es -> es |> substInExprs |> Or
-            | Hence(a, b) -> Hence(substInExpr a, substInExpr b)
-            | Ite(i, t, e) -> Ite(substInExpr i, substInExpr t, substInExpr e)
-            | Exists(vars, body) -> Exists(vars, substInExpr body)
-            | Forall(vars, body) -> Forall(vars, substInExpr body)
-            | Let(binds, body) -> Let(List.map (fun (v, e) -> v, substInExpr e) binds, substInExpr body)
-            | Match(e, cases) -> Match(substInExpr e, List.map (fun (v, e) -> v, substInExpr e) cases)
-        and substInExprs = List.map substInExpr
-        substInExpr expr
+    let private dropWeakLiterals lemma =
+        lemma //TODO
 
-    let private callLemmaOn lemmaOp vars lemma ts =
-        Or [substVarsWithTerms (Map.ofList <| List.zip vars ts) lemma; Apply(lemmaOp, ts)]
+    let private doubleNegateLemma typer = FOL.bind (nota typer >> List.map (FOLAtom >> folNot) >> folAnd)
 
-    let private substitutePredicateCallWithLemmas lemmas ts =
-        let lemmaPieces = lemmas |> List.map (fun (lemmaOp, vars, lemma) -> callLemmaOn lemmaOp vars lemma ts)
-        And lemmaPieces
-
-    let private substitutePredicateCallsWithLemmas lemmas_map expr =
-        let rec substInExpr = function
-            | Apply(op, ts) as e ->
-                match Map.tryFind (Operation.opName op) lemmas_map with
-                | Some lemmas -> substitutePredicateCallWithLemmas lemmas ts
-                | None -> e
-            | Ident _
-            | Number _
-            | BoolConst _ as e -> e
-            | Not e -> e |> substInExpr |> Not
-            | And es -> es |> substInExprs |> And
-            | Or es -> es |> substInExprs |> Or
-            | Hence(a, b) -> Hence(substInExpr a, substInExpr b)
-            | Ite(i, t, e) -> Ite(substInExpr i, substInExpr t, substInExpr e)
-            | Exists(vars, body) -> Exists(vars, substInExpr body)
-            | Forall(vars, body) -> Forall(vars, substInExpr body)
-            | Let(binds, body) -> Let(List.map (fun (v, e) -> v, substInExpr e) binds, substInExpr body)
-            | Match(e, cases) -> Match(e, List.map (fun (v, e) -> v, substInExpr e) cases)
-        and substInExprs = List.map substInExpr
-        substInExpr expr
-
-    let rec private defineCommandToDeclarations lemmas_map assertsToQueries typer wereDefines = function
+    let rec private defineCommandToDeclarations assertsToQueries typer wereDefines = function
         | Definition(DefineFun df)
         | Definition(DefineFunRec df) ->
             let name, def = definitionToDeclaration df
@@ -618,32 +523,23 @@ module private DefinitionsToDeclarations =
         | Definition(DefineFunsRec dfs) ->
             let names, defs = List.map definitionToDeclaration dfs |> List.unzip
             defs @ List.collect (definitionToAssertion typer) dfs, Set.union (Set.ofList names) wereDefines
-        | Lemma _ -> [], wereDefines
-        | Assert e ->
-            let eWithLemmas = substitutePredicateCallsWithLemmas lemmas_map e
-            expressionToDeclarations assertsToQueries typer eWithLemmas, wereDefines
-        | Command(DeclareFun(pred, _, _) as c) ->
-            let declarations =
-                match Map.tryFind pred lemmas_map with
-                | None -> [c]
-                | Some lemmas -> lemmas |> List.map (fst3 >> Operation.declareOp)
-            List.map OriginalCommand declarations, wereDefines
+        | Lemma(pred, vars, lemma) ->
+            let tes = VarEnv.create typer vars, Map.empty
+            collector {
+                let! lemmaVars, lemmaConds, lemmaBody = exprToRule tes lemma
+                let lemma = exprToAtoms typer assertsToQueries lemmaBody
+                let lemmaFOL = lemma |> DNF.toFOL
+                let strongLemma = dropWeakLiterals lemmaFOL
+                let bodyLemma : lemma = lemmaVars, (lemmaConds, strongLemma)
+                let doubleNegatedLemma = doubleNegateLemma typer strongLemma
+                let headCube = Lemma.withFreshVariables(lemmaVars, (lemmaConds, doubleNegatedLemma))
+                return LemmaCommand(pred, vars, bodyLemma, headCube)
+            }, wereDefines
+        | Assert e -> expressionToDeclarations assertsToQueries typer e, wereDefines
         | Command c -> [OriginalCommand c], wereDefines
 
-    let private freshLemmaPredicate pred vars =
-        Operation.makeUserRelationFromVars (IdentGenerator.gensymp("Lemma_"+pred)) vars
-    let private collectLemma lemmas_map = function
-        | Lemma(pred, vars, lemma) ->
-            let lemmaEntry = freshLemmaPredicate pred vars, vars, lemma
-            match Map.tryFind pred lemmas_map with
-            | Some lemmas -> Map.add pred (lemmaEntry::lemmas) lemmas_map
-            | None -> Map.add pred [lemmaEntry] lemmas_map
-        | _ -> lemmas_map
-    let private collectLemmas commands = List.fold collectLemma Map.empty commands
-
     let definesToDeclarations assertsToQueries commands =
-        let lemmas_map = collectLemmas commands
-        let commands, wereDefines = Typer.typerMapFold (defineCommandToDeclarations lemmas_map assertsToQueries) Set.empty commands
+        let commands, wereDefines = Typer.typerMapFold (defineCommandToDeclarations assertsToQueries) Set.empty commands
         List.concat commands, wereDefines
 
 module private TIPFixes =
@@ -703,7 +599,7 @@ module private RelativizeSymbols =
             let decl = reldeclare name args ret
 //            let assertNonEmpty = TransformedCommand <| assertIsFunction name args ret
             [OriginalCommand decl]
-        | TransformedCommand(Rule(vars, c::cs, DefineOperation(call, bodyResult))) -> [rule vars (Equal(call, bodyResult)::cs) c |> TransformedCommand]
+        | TransformedCommand(Rule(vars, c::cs, DefineOperation(call, bodyResult))) -> [Rule(vars, Equal(call, bodyResult)::cs, c) |> TransformedCommand]
         | c -> [c]
 
     let relativizeSingleCommand wereDefines rels command =
@@ -738,7 +634,7 @@ module DatatypesToSorts =
 
 module private ArrayTransformations =
 
-    let private generateArraySortName s1 s2 = IdentGenerator.gensyms ("Array" + sortToFlatString s1 + sortToFlatString s2)
+    let private generateArraySortName s1 s2 = IdentGenerator.gensymp ("Array" + Sort.sortToFlatString s1 + Sort.sortToFlatString s2)
     let private generateSelectName newSort = IdentGenerator.gensymp (Symbols.addPrefix "select" newSort)
     let private generateStoreName newSort = IdentGenerator.gensymp (Symbols.addPrefix "store" newSort)
 
@@ -819,6 +715,86 @@ let private filterOutSMTCommands commands =
         | DeclareDatatypes _ -> true
         | _ -> false
     List.filter (function Command c -> filterOutSMTCommand c | _ -> true) commands
+
+module SubstituteLemmas =
+    let private freshLemmaPredicate pred vars =
+        Operation.makeUserRelationFromVars (IdentGenerator.gensymp("Lemma_"+pred)) vars
+
+    let rec private substInExpr varsToTerms = function
+        | TApply(op, ts) -> TApply(op, substInExprs varsToTerms ts)
+        | TIdent(v, s) as e ->
+            match Map.tryFind (v, s) varsToTerms with
+            | Some t -> t
+            | None -> e
+        | TConst _ as t -> t
+    and private substInExprs varsToTerms = List.map (substInExpr varsToTerms)
+    and private substInAtom varsToTerms = function
+        | Equal(t1, t2) -> Equal(substInExpr varsToTerms t1, substInExpr varsToTerms t2)
+        | Distinct(t1, t2) -> Distinct(substInExpr varsToTerms t1, substInExpr varsToTerms t2)
+        | AApply(op, ts) -> AApply(op, substInExprs varsToTerms ts)
+        | Top
+        | Bot as a -> a
+    and private substInFormula varsToTerms = function
+        | FOLAtom a -> a |> substInAtom varsToTerms |> FOLAtom
+        | FOLAnd fs -> fs |> substInFormulas varsToTerms |> folAnd
+        | FOLOr fs -> fs |> substInFormulas varsToTerms |> folOr
+        | FOLNot f -> f |> substInFormula varsToTerms |> folNot
+    and private substInFormulas varsToTerms = List.map (substInFormula varsToTerms)
+
+    let private callLemmaOn lemmaOp vars lemma conds qs ts =
+        let varsToTerms = Map.ofList <| List.zip vars ts
+        let qs, freshVarsMap = Quantifiers.withFreshVariables qs
+        let varsMap = Map.map (fun _ -> TIdent) freshVarsMap |> Map.union varsToTerms
+        let lemma = folOr [substInFormula varsMap lemma; FOLAtom <| AApply(lemmaOp, ts)]
+        let conds = List.map (substInAtom varsMap) conds
+        lemma, conds, qs
+
+    let private substitutePredicateCallWithLemmas pos lemmas ts =
+        let substitutePredicateCallWithLemma (lemmaOp, vars, bl, hl) =
+            let qs, (conds, lemma) = if pos then hl else bl
+            callLemmaOn lemmaOp vars lemma conds qs ts
+        let lemmaPieces, conds, qs = lemmas |> List.map substitutePredicateCallWithLemma |> List.unzip3
+        let q = Quantifiers.combineMany qs
+        folAnd lemmaPieces, List.concat conds, q
+
+    let private mapAtom pos lemmasMap = function
+        | AApply(op, ts) as a ->
+            match Map.tryFind (Operation.opName op) lemmasMap with
+            | Some lemmas -> substitutePredicateCallWithLemmas pos lemmas ts
+            | None -> FOLAtom a, [], Quantifiers.empty
+        | a -> FOLAtom a, [], Quantifiers.empty
+
+    let private mapRule lemmasMap qs body head =
+        let head, headConds, headQ = mapAtom true lemmasMap head
+        let body, bodyConds, bodyQs = List.map (mapAtom false lemmasMap) body |> List.unzip3
+        let body = List.map folNot (headConds::bodyConds |> List.concat |> List.map FOLAtom |> List.append body)
+        let f = folOr (head::body)
+        let q = Quantifiers.combineMany (qs :: headQ :: bodyQs)
+        q, f
+
+    let private mapCommand lemmasMap = function
+        | OriginalCommand(DeclareFun(pred, _, _) as c) ->
+            match Map.tryFind pred lemmasMap with
+            | None -> [c]
+            | Some lemmas -> lemmas |> List.map (fun (op, _, _, _) -> Operation.declareOp op)
+            |> List.map FOLOriginalCommand
+        | OriginalCommand c -> [FOLOriginalCommand c]
+        | TransformedCommand(Rule(qs, body, head)) -> mapRule lemmasMap qs body head |> folAssert |> Option.toList
+        | LemmaCommand _ -> []
+
+    let private collectAllLemmas commands =
+        let addLemma lemmasMap (pred, vars, bl, hl) =
+            match Map.tryFind pred lemmasMap with
+            | Some vbhs -> Map.add pred ((vars, bl, hl) :: vbhs) lemmasMap
+            | None -> Map.add pred [(vars, bl, hl)] lemmasMap
+        let lemmas, commands = List.choose2 (function LemmaCommand(pred, vars, bl, hl) -> Choice1Of2(pred, vars, bl, hl) | c -> Choice2Of2 c) commands
+        let lemmasMap = List.fold addLemma Map.empty lemmas
+        lemmasMap, commands
+
+    let substituteLemmas commands =
+        let lemmasMap, commands = collectAllLemmas commands
+        let lemmasMap = Map.map (fun pred -> List.map (fun (vars, bl, hl) -> freshLemmaPredicate pred vars, vars, bl, hl)) lemmasMap
+        List.collect (mapCommand lemmasMap) commands
 
 let toClauses (options : transformOptions) commands =
     let commands = filterOutSMTCommands commands

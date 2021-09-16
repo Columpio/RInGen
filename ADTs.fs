@@ -7,7 +7,7 @@ module SupplementaryADTAxioms =
         // car(x, r) <- x = cons(r, a)
         let generateSelectorForConstructor selectorsMap (constructorName, selectorsWithTypes) =
             let constructorOp = Operation.makeElementaryOperationFromVars constructorName selectorsWithTypes adtSort
-            let constrArgs = IdentGenerator.generateArguments constructorOp
+            let constrArgs = Operation.generateArguments constructorOp
             let adtArg = IdentGenerator.gensym (), adtSort
             let selectorVars = adtArg::constrArgs
             let selectorPremise = [Equal(TIdent adtArg, TApply(constructorOp, List.map TIdent constrArgs))]
@@ -38,7 +38,7 @@ module SupplementaryADTAxioms =
     let applyConstructor op xs = TApply(op, xs)
 
     let private generateTesterBody tester_op constructor_op sort =
-        let constructorVars = IdentGenerator.generateArguments constructor_op
+        let constructorVars = Operation.generateArguments constructor_op
         rule constructorVars [] (AApply(tester_op, [applyConstructor constructor_op (List.map TIdent constructorVars)]))
 
     let private generateTesters sort cs substs =
@@ -51,7 +51,7 @@ module SupplementaryADTAxioms =
         decls, defs, substs
 
     let private generateCongruenceHeader congrBaseName diseqs name =
-        let diseq_name = IdentGenerator.gensyms (congrBaseName + (sortToFlatString name))
+        let diseq_name = IdentGenerator.gensymp (congrBaseName + (Sort.sortToFlatString name))
         let op = Operation.makeElementaryRelationFromSorts diseq_name [name; name]
         let decl = DeclareFun(diseq_name, [name; name], boolSort)
         op, Map.add name op diseqs, decl
@@ -71,16 +71,16 @@ module SupplementaryADTAxioms =
         let apply = applyConstructor
         let facts = seq {
             for l, r in Seq.nondiag cs do
-                let lvars = IdentGenerator.generateArguments l
-                let rvars = IdentGenerator.generateArguments r
+                let lvars = Operation.generateArguments l
+                let rvars = Operation.generateArguments r
                 let lids = lvars |> List.map TIdent
                 let rids = rvars |> List.map TIdent
                 yield rule (lvars @ rvars) [] (diseq (apply l lids) (apply r rids))
         }
         let steps = seq {
             for constr in cs do
-                let lvars = IdentGenerator.generateArguments constr
-                let rvars = IdentGenerator.generateArguments constr
+                let lvars = Operation.generateArguments constr
+                let rvars = Operation.generateArguments constr
                 let lids = lvars |> List.map TIdent
                 let rids = rvars |> List.map TIdent
                 let app = diseq (apply constr lids) (apply constr rids)
@@ -135,7 +135,7 @@ module SupplementaryADTAxioms =
     let addSupplementaryAxioms commands = addSupplementaryAxiomsIncremental (Map.empty, Map.empty) commands
 
 let private generateBoolCongruenceHeader congrName =
-    let diseq_name = IdentGenerator.gensyms (congrName + "Bool")
+    let diseq_name = IdentGenerator.gensymp (congrName + "Bool")
     let op = Operation.makeElementaryRelationFromSorts diseq_name [boolSort; boolSort]
     let diseq = applyBinaryRelation op
     let decl = DeclareFun(diseq_name, [boolSort; boolSort], boolSort)

@@ -97,14 +97,6 @@ let constructor ts (c, t) = c, sorted_var_list ts t
 let constructor_list ts cs = List.map (constructor ts) cs
 let definition ts (name, args, ret, body) = name, sorted_var_list ts args, sort ts ret, body
 
-let notMapApply f z = function
-    | Top -> z Bot
-    | Bot -> z Top
-//    | ANot e -> e
-    | Equal(t1, t2) -> z <| Distinct(t1, t2)
-    | Distinct(t1, t2) -> z <| Equal(t1, t2)
-    | AApply(op, ts) -> f op ts
-
 let rec nota (typer : Typer) =
     let notOperation op ts =
         match op, ts with

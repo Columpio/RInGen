@@ -3,20 +3,20 @@ open RInGen.Operations
 open RInGen.IdentGenerator
 
 module private V =
-    let a = gensyms "a"
-    let b = gensyms "b"
-    let i = gensyms "i"
-    let j = gensyms "j"
-    let x = gensyms "x"
-    let y = gensyms "y"
+    let a = gensymp "a"
+    let b = gensymp "b"
+    let i = gensymp "i"
+    let j = gensymp "j"
+    let x = gensymp "x"
+    let y = gensymp "y"
 
 let private generateElementEqDeclarations newArraySort newIndexSort newElementSort select store eqElem eqIndex diseqIndex =
-    let xEl = gensyms "x", newElementSort
-    let yEl = gensyms "y", newElementSort
-    let zEl = gensyms "z", newElementSort
-    let arrEl = gensyms "arr", newArraySort
-    let iEl = gensyms "i", newIndexSort
-    let jEl = gensyms "j", newIndexSort
+    let xEl = gensymp "x", newElementSort
+    let yEl = gensymp "y", newElementSort
+    let zEl = gensymp "z", newElementSort
+    let arrEl = gensymp "arr", newArraySort
+    let iEl = gensymp "i", newIndexSort
+    let jEl = gensymp "j", newIndexSort
     let x, y, z, arr, i, j = TIdent xEl, TIdent yEl, TIdent zEl, TIdent arrEl, TIdent iEl, TIdent jEl
     let symmetry = rule [xEl; yEl] [eqElem x y] (eqElem y x)
     let transitivity = rule [xEl; yEl; zEl] [eqElem x y; eqElem y z] (eqElem x z)
@@ -25,12 +25,12 @@ let private generateElementEqDeclarations newArraySort newIndexSort newElementSo
     List.map TransformedCommand [symmetry; transitivity; selectSame; selectDiff]
 
 let private generateElementDiseqDeclarations newArraySort newIndexSort newElementSort select store eqElement eqIndex diseqIndex diseqElem =
-    let xEl = gensyms "x", newElementSort
-    let yEl = gensyms "y", newElementSort
-    let zEl = gensyms "z", newElementSort
-    let arrEl = gensyms "arr", newArraySort
-    let iEl = gensyms "i", newIndexSort
-    let jEl = gensyms "j", newIndexSort
+    let xEl = gensymp "x", newElementSort
+    let yEl = gensymp "y", newElementSort
+    let zEl = gensymp "z", newElementSort
+    let arrEl = gensymp "arr", newArraySort
+    let iEl = gensymp "i", newIndexSort
+    let jEl = gensymp "j", newIndexSort
     let x, y, z, arr, i, j = TIdent xEl, TIdent yEl, TIdent zEl, TIdent arrEl, TIdent iEl, TIdent jEl
     let symmetry = rule [xEl; yEl] [diseqElem x y] (diseqElem y x)
     let selectSame = rule [arrEl; iEl; jEl; xEl; yEl] [eqIndex i j; diseqElem x y] (diseqElem (select (store arr i x) j) y)
@@ -38,28 +38,28 @@ let private generateElementDiseqDeclarations newArraySort newIndexSort newElemen
     List.map TransformedCommand [symmetry; selectSame; selectDiff]
 
 let private generateArrayEqDeclarations newArraySort newIndexSort select eqElem =
-    let eq_name = gensyms ("eq" + sortToFlatString newArraySort)
+    let eq_name = gensymp ("eq" + Sort.sortToFlatString newArraySort)
     let op = Operation.makeElementaryRelationFromSorts eq_name [newArraySort; newArraySort]
     let eq = applyBinaryRelation op
     let decl = DeclareFun(eq_name, [newArraySort; newArraySort], boolSort)
-    let aEl = gensyms "a", newArraySort
-    let bEl = gensyms "b", newArraySort
-    let iEl = gensyms "i", newIndexSort
+    let aEl = gensymp "a", newArraySort
+    let bEl = gensymp "b", newArraySort
+    let iEl = gensymp "i", newIndexSort
     let a, b, i = TIdent aEl, TIdent bEl, TIdent iEl
     let refl = rule [aEl] [] (eq a a)
     let extensionality = aerule [aEl; bEl] [iEl] [eqElem (select a i) (select b i)] (eq a b)
     op, [OriginalCommand decl; TransformedCommand refl; TransformedCommand extensionality]
 
 let generateArrayDiseqDeclarations newArraySort newIndexSort newElementSort select diseqElem =
-    let diseq_name = gensyms ("diseq" + sortToFlatString newArraySort)
+    let diseq_name = gensymp ("diseq" + Sort.sortToFlatString newArraySort)
     let op = Operation.makeElementaryRelationFromSorts diseq_name [newArraySort; newArraySort]
     let diseq = applyBinaryRelation op
     let decl = DeclareFun(diseq_name, [newArraySort; newArraySort], boolSort)
-    let aEl = gensyms "a", newArraySort
-    let bEl = gensyms "b", newArraySort
-    let iEl = gensyms "i", newIndexSort
-    let xEl = gensyms "x", newElementSort
-    let yEl = gensyms "y", newElementSort
+    let aEl = gensymp "a", newArraySort
+    let bEl = gensymp "b", newArraySort
+    let iEl = gensymp "i", newIndexSort
+    let xEl = gensymp "x", newElementSort
+    let yEl = gensymp "y", newElementSort
     let x, y, a, b, i = TIdent xEl, TIdent yEl, TIdent aEl, TIdent bEl, TIdent iEl
     let extensionality = rule [aEl; bEl; iEl; xEl; yEl] [diseqElem (select a i) (select b i)] (diseq a b)
     op, [OriginalCommand decl; TransformedCommand extensionality]

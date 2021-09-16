@@ -46,7 +46,7 @@ type CVC4FiniteSolver () =
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
         | line::_ when line = "sat" -> SAT FiniteModel
-        | line::_ when line = "unsat" -> UNSAT
+        | line::_ when line = "unsat" -> UNSAT ""
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> SOLVER_TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
         | _ -> UNKNOWN raw_output
@@ -65,7 +65,7 @@ type EldaricaSolver () =
         | line::_ when line.StartsWith("(error") -> ERROR raw_output
         | line::_ when line = "unknown" -> UNKNOWN raw_output
         | line::_ when line = "sat" -> SAT SizeElemFormula
-        | line::_ when line = "unsat" -> UNSAT
+        | line::_ when line = "unsat" -> UNSAT ""
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
 type Z3Solver () =
@@ -80,7 +80,7 @@ type Z3Solver () =
         let output = Environment.split raw_output
         match output with
         | line::_ when line = "timeout" -> SOLVER_TIMELIMIT
-        | line::_ when line = "unsat" -> UNSAT
+        | line::_ when line = "unsat" -> UNSAT ""
         | line::_ when line = "sat" -> SAT ElemFormula
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | ["unknown"; ""] -> UNKNOWN ""
@@ -98,7 +98,7 @@ type MyZ3Solver () =
         let output = Environment.split raw_output
         match output with
         | line::_ when line = "timeout" -> SOLVER_TIMELIMIT
-        | line::_ when line = "unsat" -> UNSAT
+        | line::_ when line = "unsat" -> UNSAT ""
         | line::_ when line = "sat" -> SAT ElemFormula
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | "unknown"::_ ->
@@ -122,7 +122,7 @@ type CVC4IndSolver () =
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
         | line::_ when line = "sat" -> SAT NoModel
-        | line::_ when line = "unsat" -> UNSAT
+        | line::_ when line = "unsat" -> UNSAT ""
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> SOLVER_TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
         | _ -> UNKNOWN raw_output
@@ -142,7 +142,7 @@ type VeriMAPiddtSolver () =
         let output = Environment.split raw_output
         match output with
         | _::line::_ when line.Contains("Answer") && line.EndsWith("true") -> SAT ElemFormula
-        | _::line::_ when line.Contains("Answer") && line.EndsWith("false") -> UNSAT
+        | _::line::_ when line.Contains("Answer") && line.EndsWith("false") -> UNSAT ""
         | _ -> UNKNOWN raw_output
 
 type VampireSolver () =
@@ -170,7 +170,7 @@ type VampireSolver () =
             | s when s.StartsWith("FiniteModel") -> FiniteModel
             | _ -> __notImplemented__()
             |> SAT |> Some
-        | "Refutation" -> Some UNSAT
+        | "Refutation" -> Some (UNSAT <| join "\n" moduleOutput)
         | "Inappropriate"
         | "Memory limit"
         | "Time limit" -> None
@@ -186,7 +186,7 @@ type VampireSolver () =
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        $"""--input_syntax smtlib2 %s{if IN_QUIET_MODE () then "--output_mode smtcomp" else ""} --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
+        $"""--input_syntax smtlib2 --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
@@ -195,7 +195,7 @@ type VampireSolver () =
         | _ when raw_output = "" -> SOLVER_TIMELIMIT
         | "unknown"::_ -> UNKNOWN ""
         | "sat"::_ -> SAT Saturation
-        | "unsat"::_ -> UNSAT
+        | "unsat"::_ -> UNSAT ""
         | _ -> interpretResult output raw_output
 
 //type AllSolver () =

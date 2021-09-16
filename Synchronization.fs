@@ -4,7 +4,7 @@ open RInGen.IdentGenerator
 
 type private POB = term list list
 
-let private combineNames ns = join "" ns |> gensyms
+let private combineNames ns = join "" ns |> gensymp
 
 let private topFreeVarsOf (pob : POB) = List.collect (List.choose (function TIdent(v, s) -> Some(v, s) | _ -> None)) pob |> Set.ofList |> Set.toList
 
@@ -133,10 +133,10 @@ type private POBDB (adts) =
         let possibleTermsOfEach = sorts |> List.map possibleTermsOfSort
         product possibleTermsOfEach
 
-    member private x.TypeOfCombinedTerm ts = List.map typeOfTerm ts |> x.CombSort
+    member private x.TypeOfCombinedTerm ts = List.map Term.typeOf ts |> x.CombSort
 
     member private x.CombConstr(constrNames, args) =
-        let argSorts = List.map typeOfTerm args
+        let argSorts = List.map Term.typeOf args
         let op = x.CombConstrName constrNames argSorts
         TApply(op, args)
 
@@ -308,7 +308,7 @@ type private POBDB (adts) =
             let vs = gensym (), sort
             vs, (t, TIdent vs)
 
-        let argSorts = List.map typeOfTerm ts
+        let argSorts = List.map Term.typeOf ts
         let newVars, eqs = List.map2 makeVarForArgument ts argSorts |> List.unzip
         let vars = List.choose (function TIdent(v, s) -> Some(v, s) | _ -> None) ts
 //        if List.length vars = List.length ts // all terms are variables
@@ -336,9 +336,7 @@ type private POBDB (adts) =
     member private x.UnarifyAtoms = List.mapFold x.UnarifyAtom
 
     member private x.UnarifyRule = function
-        | ForallRule(_, r) -> x.UnarifyRule r
-        | ExistsRule _ -> __unreachable__()
-        | BaseRule(body, head) ->
+        | Rule(_, body, head) ->
             let bodyEqsAndAtoms, vars = x.UnarifyAtoms [] body
             let bodyEqs, bodyAtoms = List.unzip bodyEqsAndAtoms
             let bodyAtoms = List.choose id bodyAtoms
