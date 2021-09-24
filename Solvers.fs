@@ -23,7 +23,6 @@ type SolverProgramRunner () =
     override x.RunOnFile srcPath dstPath =
         if File.Exists(dstPath) then print_verbose $"%s{x.Name} skipping %s{srcPath} (answer exists)"; true else
         try
-            print_verbose $"Running %s{x.Name} on %s{srcPath}"
             let statisticsFile, hasFinished, error, output = x.RunProcessOn srcPath
             let result = if hasFinished then x.InterpretResult error output else SOLVER_TIMELIMIT
             let realResult = x.ReportStatistics srcPath dstPath statisticsFile result
@@ -170,7 +169,10 @@ type VampireSolver () =
             | s when s.StartsWith("FiniteModel") -> FiniteModel
             | _ -> __notImplemented__()
             |> SAT |> Some
-        | "Refutation" -> Some (UNSAT <| join "\n" moduleOutput)
+        | "Refutation" ->
+            let refutationAndGarbage = moduleOutput |> List.skipWhile (fun line -> not <| line.Contains("SZS output start")) |> List.tail
+            let refutation = refutationAndGarbage |> List.takeWhile (fun line -> not <| line.Contains("SZS output end"))
+            Some (UNSAT <| join "\n" refutation)
         | "Inappropriate"
         | "Memory limit"
         | "Time limit" -> None

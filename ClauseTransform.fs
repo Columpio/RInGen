@@ -510,8 +510,17 @@ module private DefinitionsToDeclarations =
                 }
         eat [] []
 
-    let private dropWeakLiterals lemma =
-        lemma //TODO
+    let private dropWeakLiterals =
+        let dropWeak = function
+            | Equal(t1, t2)
+            | Distinct(t1, t2) as a when not (ADTExtensions.isGround t1 || ADTExtensions.isGround t2) -> a |> FOLAtom |> Some
+            | _ -> None
+        let dropWeak = function
+            | FOLAtom a -> dropWeak a
+            | f -> Some f
+        function
+        | FOLOr fs -> fs |> List.choose dropWeak |> folOr
+        | f -> f
 
     let private doubleNegateLemma typer = FOL.bind (nota typer >> List.map (FOLAtom >> folNot) >> folAnd)
 
@@ -529,12 +538,15 @@ module private DefinitionsToDeclarations =
                 let! lemmaVars, lemmaConds, lemmaBody = exprToRule tes lemma
                 let lemma = exprToAtoms typer assertsToQueries lemmaBody
                 let lemmaFOL = lemma |> DNF.toFOL
-                let strongLemma = dropWeakLiterals lemmaFOL
+                let strongLemma = lemmaFOL // dropWeakLiterals lemmaFOL
+//                match strongLemma with
+//                | FOLAtom Top -> return None
+//                | _ ->
                 let bodyLemma : lemma = lemmaVars, (lemmaConds, strongLemma)
                 let doubleNegatedLemma = doubleNegateLemma typer strongLemma
                 let headCube = Lemma.withFreshVariables(lemmaVars, (lemmaConds, doubleNegatedLemma))
-                return LemmaCommand(pred, vars, bodyLemma, headCube)
-            }, wereDefines
+                return Some <| LemmaCommand(pred, vars, bodyLemma, headCube)
+            } |> List.choose id, wereDefines
         | Assert e -> expressionToDeclarations assertsToQueries typer e, wereDefines
         | Command c -> [OriginalCommand c], wereDefines
 

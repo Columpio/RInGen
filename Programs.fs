@@ -80,6 +80,7 @@ type ProgramRunner () =
         let statisticsFile = Path.GetTempFileName()
         psinfo.FileName <- "/usr/bin/time"
         psinfo.Arguments <- $"--quiet --output=%s{statisticsFile} --format %%M,%%e %s{executable} %s{arguments}"
+        print_verbose $"Run: %s{psinfo.FileName} %s{psinfo.Arguments}"
         psinfo.WorkingDirectory <- x.WorkingDirectory filename
         executable, statisticsFile
 
@@ -102,7 +103,11 @@ type ProgramRunner () =
                                                     // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
 
         let st = p.StartTime
-        let child_solver = Process.GetProcesses() |> List.ofArray |> List.filter (fun pr -> pr.StartTime >= st && pr.ProcessName = executable) |> List.tryExactlyOne
+        let isChildProcess (pr : Process) =
+            try
+                pr.StartTime >= st && pr.ProcessName = executable
+            with _ -> false
+        let child_solver = Process.GetProcesses() |> List.ofArray |> List.filter isChildProcess |> List.tryHead
 
         let hasFinished = p.WaitForExit(MSECONDS_TIMEOUT ())
         if hasFinished then p.WaitForExit() else

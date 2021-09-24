@@ -10,6 +10,10 @@ let getFreeVarsFromPattern (typer : Typer) =
         | _ -> __unreachable__()
     get_free_vars
 
+let rec isGround = function
+    | TApply(_, ts) -> List.forall isGround ts
+    | _ -> false
+
 let rec isUnifiableWith typer p1 p2 =
     match p1, p2 with
     | Apply(op1, ts1), Apply(op2, ts2) -> op1 = op2 && List.forall2 (isUnifiableWith typer) ts1 ts2
