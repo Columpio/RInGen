@@ -128,20 +128,21 @@ let private solve_interactive (solver : SolverProgramRunner) (transformer : Tran
         let srcPath = Path.ChangeExtension(dstPath, $".input%s{solver.FileExtension}")
         let lines = List.map toString commands
         Program.SaveFile srcPath lines
-        performer commands dstPath
-        dstPath
+        performer commands srcPath dstPath
     let runTransformation =
-        let performer =
+        let performer commands srcPath dstPath =
             match transformer with
-            | Some transformer -> transformer.PerformTransform InteractiveRun
-            | None -> fun _ _ -> ()
+            | Some transformer -> if transformer.PerformTransform InteractiveRun commands dstPath then Some dstPath else None
+            | None -> Some srcPath
         performTransformation performer
     let runOn commands =
-        let transformedPath = runTransformation commands
-        match solver.Run transformedPath outputPath with
-        | None -> print_verbose "unknown"
-        | Some path'' ->
+        opt {
+            let! transformedPath = runTransformation commands
+            let! path'' = solver.Run transformedPath outputPath
             print_verbose $"%s{solver.Name} run on %s{transformedPath} and the result is saved at %s{path''}"
+            return ()
+        } |> Option.defaultWith (fun () -> print_verbose "unknown")
+
     let parser = SMTExpr.Parser()
     let prompt = if IN_QUIET_MODE () then fun () -> () else fun () -> printf "smt2> "
     let foldInputStream commands = function
@@ -230,13 +231,12 @@ type SelfProgramRunner (parser : ArgumentParser<_>, generalArgs, transArgs : Par
     override x.BinaryOptions filename =
         let currentProcessVirtualMemKB = ThisProcess.thisProcess.VirtualMemorySize64 / (1L <<< 10)
         let desiredVirtualMemKB = MEMORY_LIMIT_MB * 1024L
-        let childRun = $"dotnet %s{ThisProcess.thisDLLPath} %s{x.RunSameConfiguration filename currentDSTPath}"
+        let childRun = $"dotnet %s{ThisProcess.thisDLLPath} %s{x.RunSameConfiguration filename currentDSTPath}".Replace("'", @"\'")
         let commands = [
             // set memory limit: see `man setrlimit`, `-v` for `RLIMIT_AS`, `-m` for `RLIMIT_RSS` (does not work)
             $"ulimit -v %d{currentProcessVirtualMemKB + desiredVirtualMemKB}"
             childRun
         ]
-        print_extra_verbose $"Run child process: %s{childRun}"
         $"""-c "%s{join "; " commands}" """
 
     override x.RunOnFile srcPath dstPath =
@@ -244,7 +244,7 @@ type SelfProgramRunner (parser : ArgumentParser<_>, generalArgs, transArgs : Par
         let statisticsFile, hasFinished, error, output = x.RunProcessOn srcPath
         if not <| IN_QUIET_MODE () then Printf.printfn_nonempty output
         Printf.eprintfn_nonempty error
-        hasFinished
+        hasFinished && File.Exists(dstPath)
 
     override x.TargetPath path = path
 

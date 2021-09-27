@@ -606,12 +606,22 @@ module private RelativizeSymbols =
         let ret = IdentGenerator.gensym (), ret
         aerule args [ret] [] (relapply op (List.map TIdent args) (TIdent ret))
 
+    let private splitHasResult cs call =
+        let rec iter cs k =
+            match cs with
+            | AApply(_, t::_) as c ::cs when t = call -> c, k cs
+            | c::cs -> iter cs (fun cs -> k <| c :: cs)
+            | [] -> __unreachable__()
+        iter cs id
+
     let private relativizeDeclarations wereDefines = function
         | OriginalCommand(DeclareFun(name, args, ret)) when Set.contains name wereDefines ->
             let decl = reldeclare name args ret
 //            let assertNonEmpty = TransformedCommand <| assertIsFunction name args ret
             [OriginalCommand decl]
-        | TransformedCommand(Rule(vars, c::cs, DefineOperation(call, bodyResult))) -> [Rule(vars, Equal(call, bodyResult)::cs, c) |> TransformedCommand]
+        | TransformedCommand(Rule(vars, cs, DefineOperation(call, bodyResult))) ->
+            let c, cs = splitHasResult cs call
+            [Rule(vars, Equal(call, bodyResult)::cs, c) |> TransformedCommand]
         | c -> [c]
 
     let relativizeSingleCommand wereDefines rels command =

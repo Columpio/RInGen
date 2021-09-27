@@ -49,6 +49,7 @@ type TransformerProgram (options : transformOptions) =
         let dstPath = Path.ChangeExtension(dstPath, TransformerProgram.FailInfoFileExtension)
         File.WriteAllText(dstPath, toString problem)
         print_warn_verbose message
+        false
 
     member private x.ReportTimelimit srcPath dstPath =
         x.ReportTransformationProblem dstPath TRANS_TIMELIMIT $"Transformation of %s{srcPath} halted due to a timelimit"
@@ -70,6 +71,7 @@ type TransformerProgram (options : transformOptions) =
             | None ->
             let transformedProgram = x.Transform commands
             Program.SaveFile dstPath transformedProgram
+            true
 //            total_generated <- total_generated + x.SaveClauses opts.path dst newTests
 //            successful <- successful + 1
         with
@@ -80,16 +82,14 @@ type TransformerProgram (options : transformOptions) =
 //        if IN_VERBOSE_MODE () then printfn $"Total generated: %d{total_generated}"
 
     override x.RunOnFile srcPath dstPath =
-        let hasFinished =
-            match options.child_transformer with
-            | None ->
-                print_verbose $"Transforming: %s{srcPath}"
-                let task = Async.AwaitTask(Async.StartAsTask(async { x.ParseAndTransform srcPath dstPath }), MSECONDS_TIMEOUT ()) //TODO transformation time should count in total run
-                Async.RunSynchronously task |> Option.isSome
-            | Some transformer -> transformer.RunOnFile srcPath dstPath
-        match hasFinished with
-        | true -> true
-        | false -> x.ReportTimelimit srcPath dstPath; false
+        match options.child_transformer with
+        | None ->
+            print_verbose $"Transforming: %s{srcPath}"
+            let task = Async.AwaitTask(Async.StartAsTask(async { return x.ParseAndTransform srcPath dstPath }), MSECONDS_TIMEOUT ()) //TODO transformation time should count in total run
+            match Async.RunSynchronously task with
+            | None -> x.ReportTimelimit srcPath dstPath
+            | Some result -> result
+        | Some transformer -> transformer.RunOnFile srcPath dstPath
 
 let private preambulizeCommands logic chcSystem =
     OriginalCommand(SetLogic logic) :: chcSystem @ [OriginalCommand CheckSat]
