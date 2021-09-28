@@ -24,8 +24,13 @@ type Typer(operations : Map<symbol, operation>, adts : Map<sort, (symbol * symbo
         let names = Map.toList nos |> List.map (fun (c, _) -> makeConstructorTesterPair c (testerNameOf c))
         Typer(Map.union operations nos, Map.add name names adts)
     member x.containsKey key = Map.containsKey key operations
-    member x.getConstructors adtName = Map.find adtName adts |> List.map takeConstructor
+    member x.tryGetConstructors adtName = Map.tryFind adtName adts |> Option.map (List.map takeConstructor)
+    member x.getConstructors adtName = x.tryGetConstructors adtName |> Option.get
     member x.tryGetTesters adtName = Map.tryFind adtName adts |> Option.map (List.map takeTester)
+    member x.isConstructor op =
+        match x.tryGetConstructors (Operation.returnType op) with
+        | Some symbs -> List.contains (Operation.opName op) symbs
+        | None -> false
 
     member x.m_addADTOperations adtname fname selectors =
         let constr_op = Operation.makeElementaryOperationFromVars fname selectors adtname

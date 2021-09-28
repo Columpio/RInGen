@@ -510,7 +510,7 @@ module private DefinitionsToDeclarations =
                 }
         eat [] []
 
-    let private dropWeakLiterals =
+    let private dropWeakLiterals (typer : Typer) vars lemmaQs lemmaConds lemmaFOL =
         let dropWeak = function
             | Equal(t1, t2)
             | Distinct(t1, t2) as a when not (ADTExtensions.isGround t1 || ADTExtensions.isGround t2) -> a |> FOLAtom |> Some
@@ -518,9 +518,20 @@ module private DefinitionsToDeclarations =
         let dropWeak = function
             | FOLAtom a -> dropWeak a
             | f -> Some f
-        function
-        | FOLOr fs -> fs |> List.choose dropWeak |> folOr
-        | f -> f
+        let lemmaConds, eqs = List.choose2 (function Equal(t1, t2) -> Choice2Of2(t1, t2) | a -> Choice1Of2 a) lemmaConds
+        let eqs, unifier = Unifier.fromList Set.empty (Set.ofList vars) typer.isConstructor eqs
+        match unifier with
+        | None -> []
+        | Some unifier ->
+        let lemmaConds = List.map (Atom.substituteWith unifier) (List.map Equal eqs @ lemmaConds)
+        let lemmaFOL = FOL.substituteWith unifier lemmaFOL
+        let lemmaQs = Quantifiers.remove (unifier |> Map.toList |> List.map fst |> Set.ofList) lemmaQs
+        let strongLemma =
+            match lemmaFOL with
+            | FOLOr fs -> fs |> List.choose dropWeak |> folOr
+            | FOLAtom _ as a -> dropWeak a |> Option.defaultValue (FOLAtom Bot)
+            | f -> f
+        [lemmaQs, (lemmaConds, strongLemma)]
 
     let private doubleNegateLemma typer = FOL.bind (nota typer >> List.map (FOLAtom >> folNot) >> folAnd)
 
@@ -535,16 +546,16 @@ module private DefinitionsToDeclarations =
         | Lemma(pred, vars, lemma) ->
             let tes = VarEnv.create typer vars, Map.empty
             collector {
-                let! lemmaVars, lemmaConds, lemmaBody = exprToRule tes lemma
+                let! lemmaQs, lemmaConds, lemmaBody = exprToRule tes lemma
                 let lemma = exprToAtoms typer assertsToQueries lemmaBody
                 let lemmaFOL = lemma |> DNF.toFOL
-                let strongLemma = lemmaFOL // dropWeakLiterals lemmaFOL
+                let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals typer vars lemmaQs lemmaConds lemmaFOL
 //                match strongLemma with
 //                | FOLAtom Top -> return None
 //                | _ ->
-                let bodyLemma : lemma = lemmaVars, (lemmaConds, strongLemma)
+                let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
                 let doubleNegatedLemma = doubleNegateLemma typer strongLemma
-                let headCube = Lemma.withFreshVariables(lemmaVars, (lemmaConds, doubleNegatedLemma))
+                let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
                 return Some <| LemmaCommand(pred, vars, bodyLemma, headCube)
             } |> List.choose id, wereDefines
         | Assert e -> expressionToDeclarations assertsToQueries typer e, wereDefines
@@ -742,33 +753,12 @@ module SubstituteLemmas =
     let private freshLemmaPredicate pred vars =
         Operation.makeUserRelationFromVars (IdentGenerator.gensymp("Lemma_"+pred)) vars
 
-    let rec private substInExpr varsToTerms = function
-        | TApply(op, ts) -> TApply(op, substInExprs varsToTerms ts)
-        | TIdent(v, s) as e ->
-            match Map.tryFind (v, s) varsToTerms with
-            | Some t -> t
-            | None -> e
-        | TConst _ as t -> t
-    and private substInExprs varsToTerms = List.map (substInExpr varsToTerms)
-    and private substInAtom varsToTerms = function
-        | Equal(t1, t2) -> Equal(substInExpr varsToTerms t1, substInExpr varsToTerms t2)
-        | Distinct(t1, t2) -> Distinct(substInExpr varsToTerms t1, substInExpr varsToTerms t2)
-        | AApply(op, ts) -> AApply(op, substInExprs varsToTerms ts)
-        | Top
-        | Bot as a -> a
-    and private substInFormula varsToTerms = function
-        | FOLAtom a -> a |> substInAtom varsToTerms |> FOLAtom
-        | FOLAnd fs -> fs |> substInFormulas varsToTerms |> folAnd
-        | FOLOr fs -> fs |> substInFormulas varsToTerms |> folOr
-        | FOLNot f -> f |> substInFormula varsToTerms |> folNot
-    and private substInFormulas varsToTerms = List.map (substInFormula varsToTerms)
-
     let private callLemmaOn lemmaOp vars lemma conds qs ts =
         let varsToTerms = Map.ofList <| List.zip vars ts
         let qs, freshVarsMap = Quantifiers.withFreshVariables qs
         let varsMap = Map.map (fun _ -> TIdent) freshVarsMap |> Map.union varsToTerms
-        let lemma = folOr [substInFormula varsMap lemma; FOLAtom <| AApply(lemmaOp, ts)]
-        let conds = List.map (substInAtom varsMap) conds
+        let lemma = folOr [FOL.substituteWith varsMap lemma; FOLAtom <| AApply(lemmaOp, ts)]
+        let conds = List.map (Atom.substituteWith varsMap) conds
         lemma, conds, qs
 
     let private substitutePredicateCallWithLemmas pos lemmas ts =

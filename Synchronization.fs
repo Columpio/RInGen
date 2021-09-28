@@ -25,21 +25,6 @@ let private uniformizeVars pob =
         | TApply(id, ts) -> TApply(id, List.map substInTerm ts)
     List.map (List.map substInTerm) pob
 
-let private substInTermWithPair v t u =
-    let rec substInTermWithPair = function
-        | TConst _ as c -> c
-        | TIdent(v1, s1) as vs1 -> if v = (v1, s1) then t else vs1
-        | TApply(op, ts) -> TApply(op, List.map substInTermWithPair ts)
-    substInTermWithPair u
-let rec private substInTerm substVarsMap = function
-    | TConst _ as c -> c
-    | TIdent(i, s) as v -> Map.tryFind (i, s) substVarsMap |> Option.defaultValue v
-    | TApply(id, ts) -> TApply(id, substInTermList substVarsMap ts)
-and private substInTermList substVarsMap = List.map (substInTerm substVarsMap)
-
-let private substVars substVarsMap pob =
-    List.map (substInTermList substVarsMap) pob
-
 let rec private product (xss : 'a list list) : 'a list seq =
     match xss with
     | [] -> seq [[]]
@@ -168,7 +153,7 @@ type private POBDB (adts) =
             for possibleTerms in x.PossibleTerms topFreeSorts do
             // seq[[Nil, Nil, Nil]; ...; [Cons(#n, #n+1), Cons(#n+2, #n+3), Cons(#n+4, #n+5]]
                 let substVarsMap = List.zip topFreeVars possibleTerms |> Map.ofList
-                let rawSubstPob = substVars substVarsMap pob // (Cons #4 Nil, Nil, Cons #4 Nil), (Nil, Nil, Nil)
+                let rawSubstPob = List.map (List.map (Term.substituteWith substVarsMap)) pob // (Cons #4 Nil, Nil, Cons #4 Nil), (Nil, Nil, Nil)
                 let argumentPob, argumentVars, predicateHeadArguments = x.CutHeadConstructors rawSubstPob
                 yield argumentPob, argumentVars, predicateHeadArguments
         }
@@ -238,46 +223,6 @@ type private POBDB (adts) =
         Seq.iter handleInstPob instPobs
         pobPredicate
 
-    member private x.UnifyTermsWith preferredForSubstitutionVars unifier t1 t2 : Map<sorted_var, term> option =
-        // invariant:   `unifier` maps x |-> t, such that domain(unifier) ∩ FV(range(unifier)) = ∅
-        //              so `substInTerm unifier` returns term `t` with FV(t) ∩ domain(unifier) = ∅
-        let rec occursIn v s = function
-            | TConst _ -> false
-            | TIdent(v2, s2) -> v = v2 && s = s2
-            | TApply(_, ts) -> List.exists (occursIn v s) ts
-        let addToUnifier unifier v t =
-            // invariant:   ({v} ∪ FV(t)) ∩ domain(unifier) = ∅ and {v} ∩ FV(t) = ∅
-            // unifier' = unifier ∪ [v |-> t]
-            // domain(unifier') ∩ FV(range(unifier')) = (domain(unifier) ∪ {v}) ∩ (FV(range(unifier)) ∪ FV(t)) = {v} ∩ FV(range(unifier))
-            unifier
-            |> Map.map (fun _ -> substInTermWithPair v t)
-            |> Map.add v t
-        let rec unifyTermsWith unifier (t1, t2) =
-            if t1 = t2 then Some unifier else
-            let t1 = substInTerm unifier t1
-            let t2 = substInTerm unifier t2
-            if t1 = t2 then Some unifier else
-            match t1, t2 with
-            | TIdent(v1, s1), TIdent(v2, s2) ->
-                let vs1 = v1, s1
-                let vs2 = v2, s2
-                let v, t =
-                    match Set.contains vs1 preferredForSubstitutionVars, Set.contains vs2 preferredForSubstitutionVars with
-                    | true, false -> vs1, t2
-                    | false, true -> vs2, t1
-                    | _ -> if v1 < v2 then vs2, t1 else vs1, t2
-                Some <| addToUnifier unifier v t
-            | TIdent(v, s), (TApply _ as a)
-            | (TApply _ as a), TIdent(v, s) ->
-                if occursIn v s a then None else Some <| addToUnifier unifier (v, s) a
-            | TIdent(v, s), (TConst _ as a)
-            | (TConst _ as a), TIdent(v, s) -> Some <| addToUnifier unifier (v, s) a
-            | TApply(op1, ts1), TApply(op2, ts2) ->
-                if op1 <> op2 then None
-                else List.foldChoose unifyTermsWith unifier (List.zip ts1 ts2)
-            | _ -> None
-        unifyTermsWith unifier (t1, t2)
-
     member private x.CollectFreeVarsInTerm = function
         | TIdent(i, s) -> [i, s]
         | TConst _ -> []
@@ -294,7 +239,7 @@ type private POBDB (adts) =
         let substVar unifier v = Option.defaultValue (TIdent v) <| Map.tryFind v unifier
         let componentVars = vars |> List.collect fst |> Set.ofList
         opt {
-            let! unifier = List.foldChoose (fun unifier (t1, t2) -> x.UnifyTermsWith componentVars unifier t1 t2) Map.empty eqs
+            let! unifier = Unifier.fromList componentVars Set.empty (fun _ -> true) eqs |> snd
             let pob = vars |> List.map (fun (vars, v) -> List.map (substVar unifier) vars, v)
             return pob
         }

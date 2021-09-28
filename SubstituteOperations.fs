@@ -113,10 +113,10 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         a', (newVars @ oldVars, newConds @ oldConds)
 
     let substituteOperationsWithRelationsInAtom = substituteOperationsWithRelationsInAtomWithPositivity (fun _ -> id) id
-    let substituteOperationsWithRelationsInAtoms = List.mapFold substituteOperationsWithRelationsInAtom
+    let substituteOperationsWithRelationsInAtoms = List.mapFold substituteOperationsWithRelationsInAtom ([], [])
 
     let rec substInRule qs premises consequence =
-        let ps, vcs = substituteOperationsWithRelationsInAtoms ([], []) premises
+        let ps, vcs = substituteOperationsWithRelationsInAtoms premises
         let c, (vars, conds) = substituteOperationsWithRelationsInAtom vcs consequence
         Rule(Quantifiers.combine qs (Quantifiers.forall vars), ps @ conds, c)
 
@@ -125,7 +125,7 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         FOL.mapFoldPositivity (fun pos -> substituteOperationsWithRelationsInAtomWithPositivity (posK pos) FOLAtom)
 
     let substInLemma pos (qs, (premises, lemma)) =
-        let ps, vcs = substituteOperationsWithRelationsInAtoms ([], []) premises
+        let ps, vcs = substituteOperationsWithRelationsInAtoms premises
         let c, (newVars, newConds) = substituteOperationsWithRelationsInFOL pos vcs lemma
         Quantifiers.combine qs (Quantifiers.forall newVars), (ps @ newConds, c)
 

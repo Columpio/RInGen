@@ -344,7 +344,21 @@ module Term =
             let ts = Terms.map (map f) ts
             TApply(op, ts)
 
-    let withFreshVariables freshVarsMap = map (fun vs -> Option.defaultValue vs <| Map.tryFind vs freshVarsMap)
+    let rec bind f = function
+        | TIdent(name, typ)
+        | TConst(name, typ) as t -> f t (name, typ)
+        | TApply(op, ts) ->
+            let ts = Terms.map (bind f) ts
+            TApply(op, ts)
+
+    let substituteWith substMap = bind (fun t vs -> Option.defaultValue t <| Map.tryFind vs substMap)
+
+    let substituteWithPair v t u =
+        let rec substInTermWithPair = function
+            | TConst _ as c -> c
+            | TIdent(v1, s1) as vs1 -> if v = (v1, s1) then t else vs1
+            | TApply(op, ts) -> TApply(op, List.map substInTermWithPair ts)
+        substInTermWithPair u
 
 module Atom =
     let mapFold f z = function
@@ -377,7 +391,7 @@ module Atom =
             let ts = Terms.map f ts
             AApply(op, ts)
 
-    let withFreshVariables freshVarsMap = map (Term.withFreshVariables freshVarsMap)
+    let substituteWith freshVarsMap = map (Term.substituteWith freshVarsMap)
 
 module Atoms =
     let map = List.map
@@ -419,7 +433,7 @@ module Conditional =
         let a, z = mapFoldChild z a
         (conds, a), z
 
-    let withFreshVariables freshVarsMap = map (Atom.withFreshVariables freshVarsMap)
+    let substituteWith freshVarsMap = map (Atom.substituteWith freshVarsMap)
 
 type quantifier =
     | ForallQuantifier of sorted_var list
@@ -438,6 +452,12 @@ module Quantifier =
         | ForallQuantifier vars -> ForallQuantifier, vars
         | ExistsQuantifier vars -> ExistsQuantifier, vars
         | StableForallQuantifier vars -> StableForallQuantifier, vars
+
+    let remove toRemove q =
+        let qc, vars = unquantify q
+        match List.filter (fun v -> Set.contains v toRemove) vars with
+        | [] -> None
+        | vars -> Some <| qc vars
 
     let mapFold f z q =
         let qConstr, vars = unquantify q
@@ -502,6 +522,9 @@ module Quantifiers =
 
     let private squashStableIntoForall (qs : quantifiers) =
         List.foldBack add (List.map (function StableForallQuantifier vars -> ForallQuantifier vars | q -> q) qs) empty
+
+    let remove toRemove (qs : quantifiers) =
+        List.foldBack (fun q qs -> match Quantifier.remove toRemove q with Some q -> add q qs | None -> qs) qs empty
 
     let toString (qs : quantifiers) o = List.foldBack Quantifier.toString (squashStableIntoForall qs) (o.ToString())
 
@@ -645,14 +668,15 @@ module FOL =
                 FOLOr fs', z'
         iter pos z
 
-    let withFreshVariables freshVarsMap = map (Atom.withFreshVariables freshVarsMap)
+    let substituteWith freshVarsMap = map (Atom.substituteWith freshVarsMap)
 
 type lemma = quantifiers * folFormula conditional
 
 module Lemma =
     let withFreshVariables ((qs, cond) : lemma) =
         let qs, freshVarsMap = Quantifiers.withFreshVariables qs
-        let cond = Conditional.withFreshVariables freshVarsMap (FOL.withFreshVariables freshVarsMap) cond
+        let freshVarsMap = Map.map (fun _ -> TIdent) freshVarsMap
+        let cond = Conditional.substituteWith freshVarsMap (FOL.substituteWith freshVarsMap) cond
         qs, cond
 
     let toString ((qs, cond) : lemma) =
