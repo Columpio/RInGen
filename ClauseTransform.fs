@@ -535,6 +535,15 @@ module private DefinitionsToDeclarations =
 
     let private doubleNegateLemma typer = FOL.bind (nota typer >> List.map (FOLAtom >> folNot) >> folAnd)
 
+    let private replaceDisequalWithDistinctInLemma (qs, (conds, lemma)) =
+        let diseq = Map.find "distinct" Operations.elementaryOperations |> Operation.flipOperationKind
+        let replaceAtom = function
+            | Distinct(t1, t2) -> AApply(diseq, [t1; t2])
+            | a -> a
+        let conds = List.map replaceAtom conds
+        let lemma = FOL.map replaceAtom lemma
+        qs, (conds, lemma)
+
     let rec private defineCommandToDeclarations assertsToQueries typer wereDefines = function
         | Definition(DefineFun df)
         | Definition(DefineFunRec df) ->
@@ -556,6 +565,8 @@ module private DefinitionsToDeclarations =
                 let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
                 let doubleNegatedLemma = doubleNegateLemma typer strongLemma
                 let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
+                let bodyLemma = replaceDisequalWithDistinctInLemma bodyLemma
+                let headCube = replaceDisequalWithDistinctInLemma headCube
                 return Some <| LemmaCommand(pred, vars, bodyLemma, headCube)
             } |> List.choose id, wereDefines
         | Assert e -> expressionToDeclarations assertsToQueries typer e, wereDefines

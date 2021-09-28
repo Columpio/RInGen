@@ -16,6 +16,10 @@ module Operation =
         | ElementaryOperation(_, s1, s2) -> ElementaryOperation(symbol name, s1, s2)
         | UserDefinedOperation(_, s1, s2) -> UserDefinedOperation(symbol name, s1, s2)
 
+    let flipOperationKind = function
+        | UserDefinedOperation(n, s1, s2) -> ElementaryOperation(n, s1, s2)
+        | ElementaryOperation(n, s1, s2) -> UserDefinedOperation(n, s1, s2)
+
     let makeUserOperationFromVars name vars retSort = UserDefinedOperation(name, List.map snd vars, retSort)
     let makeUserOperationFromSorts name argSorts retSort = UserDefinedOperation(name, argSorts, retSort)
     let makeUserRelationFromVars name vars = makeUserOperationFromVars name vars boolSort
