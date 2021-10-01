@@ -11,6 +11,7 @@ type TransformMode =
     | Original
     | FreeSorts
     | Prolog
+    | [<Hidden>] RCHCTransform
 
 type LocalTransformArguments =
     | [<Unique; Hidden>] No_Isolation
@@ -33,9 +34,13 @@ let private newTransformerProgram program mode transformOptions runSame =
              child_transformer=if options.Contains(No_Isolation) then None else Some(runSame transformOptions mode)}
         | None -> {tip=false; sync_terms=false; child_transformer=None}
     program(transformOptions) :> TransformerProgram, transformOptions
-let private newOriginalTransformerProgram = newTransformerProgram OriginalTransformerProgram Original
-let private newPrologTransformerProgram = newTransformerProgram PrologTransformerProgram Prolog
-let private newFreeSortsTransformerProgram = newTransformerProgram FreeSortsTransformerProgram FreeSorts
+let private modeToTransformerProgram mode =
+    match mode with
+    | Original -> newTransformerProgram OriginalTransformerProgram
+    | FreeSorts -> newTransformerProgram FreeSortsTransformerProgram
+    | Prolog -> newTransformerProgram PrologTransformerProgram
+    | RCHCTransform -> newTransformerProgram RCHCTransformerProgram
+    <| mode
 
 type TransformArguments =
     | [<Unique; AltCommandLine("-m")>] Mode of TransformMode
@@ -56,11 +61,8 @@ let private print_transformation_success (path : RunConfig) = function
 let private transform outputPath runSame (options : ParseResults<TransformArguments>) =
     let transformOptions = options.TryGetResult(Transform_options)
     let path = options.GetResult(Path)
-    let program, transformOptions =
-        match options.GetResult(Mode, defaultValue = Original) with
-        | Original -> newOriginalTransformerProgram transformOptions runSame
-        | FreeSorts -> newFreeSortsTransformerProgram transformOptions runSame
-        | Prolog -> newPrologTransformerProgram transformOptions runSame
+    let newTransformerProgram = modeToTransformerProgram <| options.GetResult(Mode, defaultValue = Original)
+    let program, transformOptions = newTransformerProgram transformOptions runSame
     let path' = program.Run path outputPath
     if transformOptions.child_transformer.IsNone then
         if IN_VERBOSE_MODE () then print_transformation_success (PathRun path) path'
@@ -74,6 +76,7 @@ type SolverName =
     | VeriMAP
     | Vampire
     | MyZ3
+    | RCHC
 //    | All
 
 type SolveArguments =
@@ -102,16 +105,18 @@ let private solverByName = function
     | VeriMAP -> VeriMAPiddtSolver() :> SolverProgramRunner
     | Vampire -> VampireSolver() :> SolverProgramRunner
     | CVC_FMF -> CVC4FiniteSolver() :> SolverProgramRunner
+    | RCHC -> RCHCSolver() :> SolverProgramRunner
 //    | All -> AllSolver() :> SolverProgramRunner
 
-let private transformerForSolver transformOptions runSame = function
+let private solverNameToTransformMode = function
     | MyZ3
     | Z3
     | Eldarica
-    | CVC_Ind -> newOriginalTransformerProgram transformOptions runSame
-    | VeriMAP -> newPrologTransformerProgram transformOptions runSame
+    | CVC_Ind -> Original
+    | VeriMAP -> Prolog
     | Vampire
-    | CVC_FMF -> newFreeSortsTransformerProgram transformOptions runSame
+    | CVC_FMF -> FreeSorts
+    | RCHC -> RCHCTransform
 
 let private solve_interactive (solver : SolverProgramRunner) (transformer : TransformerProgram option) (outputPath : path option) =
     let tmpFileCounter = IdentGenerator.Counter()
@@ -181,7 +186,9 @@ let private solve outputPath runSame (options : ParseResults<SolveArguments>) =
     let solver = solverByName solver_name
     let transformer =
         match options.TryGetResult(Transform) with
-        | Some _ as transformOptions -> transformerForSolver transformOptions runSame solver_name |> fst |> Some
+        | Some _ as transformOptions ->
+            let mode = solverNameToTransformMode solver_name
+            modeToTransformerProgram mode transformOptions runSame |> fst |> Some
         | None -> None
     match options.TryGetResult(Path) with
     | None ->

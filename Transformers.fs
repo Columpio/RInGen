@@ -103,6 +103,25 @@ type OriginalTransformerProgram (options) =
         let commands' = preambulizeCommands "HORN" commands
         List.map toString commands'
 
+type RCHCTransformerProgram (options) =
+    inherit TransformerProgram(options)
+
+    let toString = function
+        | TransformedCommand(Rule(qs, body, Bot)) ->
+            match body with
+            | [] -> $"{Bot}"
+            | [y] -> $"(not {y})"
+            | _ -> $"""(not (and {body |> List.filter ((<>) Top) |> List.map toString |> join "\n\t\t\t"}))"""
+            |> Quantifiers.toString qs
+            |> sprintf "(assert %s)"
+        | c -> toString c
+
+    override x.TargetPath path = $"%s{path}.RCHC_Transform"
+
+    override x.Transform commands =
+        let commands' = preambulizeCommands "HORN" commands
+        List.map toString commands'
+
 type FreeSortsTransformerProgram (options) =
     inherit TransformerProgram(options)
 

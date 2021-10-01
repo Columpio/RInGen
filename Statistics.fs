@@ -1,5 +1,6 @@
 module RInGen.Statistics
 open System.IO
+open System.Text.RegularExpressions
 open RInGen.SolverResult
 open RInGen.Transformers
 
@@ -11,10 +12,12 @@ let private readFileWhenNonEmpty (filename : path) =
     file.OpenRead()
 
 let private readTMPStatFile (timeStatisticsFile : path) =
+    let regex = Regex("^(\d+),(\d+.\d+)$")
     use statStream = new StreamReader(readFileWhenNonEmpty timeStatisticsFile)
-    let res = statStream.ReadLine().Trim().Split(',', 2)
-    let memory = int res.[0]                    // kilobytes
-    let time = int (1000.0 * (float res.[1]))   // milliseconds
+    let lines = statStream.ReadToEnd() |> Environment.split
+    let memory, time = lines |> List.pick (fun line -> let m = regex.Match(line) in if m.Success then Some(m.Groups.[1].Value, m.Groups.[2].Value) else None)
+    let memory = int memory                  // kilobytes
+    let time = int (1000.0 * (float time))   // milliseconds
     memory, time
 
 type statistics = {

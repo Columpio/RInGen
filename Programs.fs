@@ -111,9 +111,10 @@ type ProgramRunner () =
 
         let hasFinished = p.WaitForExit(MSECONDS_TIMEOUT ())
         if hasFinished then p.WaitForExit() else
-            match child_solver with
-            | Some child_solver -> child_solver.Kill(true)
-            | None -> p.Kill(true)
+            try match child_solver with
+                | Some child_solver -> child_solver.Kill(true)
+                | _ -> p.Kill(true)
+            with _ -> ()
         p.Close()
         let error = x.ErrorReceived().Trim()
         let output = x.OutputReceived().Trim()

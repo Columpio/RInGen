@@ -67,6 +67,21 @@ type EldaricaSolver () =
         | line::_ when line = "unsat" -> UNSAT ""
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
+type RCHCSolver () =
+    inherit SolverProgramRunner ()
+
+    override x.ShouldSearchForBinaryInEnvironment = false
+    override x.Name = "RCHC"
+    override x.BinaryName = "rchc"
+    override x.BinaryOptions filename = filename
+
+    override x.InterpretResult error raw_output =
+        let output = Environment.split raw_output
+        match output with
+        | line::_ when line = "sat" -> SAT FiniteModel
+        | line::_ when line = "unsat" -> UNSAT ""
+        | _ -> UNKNOWN (error + " &&& " + raw_output)
+
 type Z3Solver () =
     inherit SolverProgramRunner ()
 
