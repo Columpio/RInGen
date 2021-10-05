@@ -17,15 +17,12 @@ type SolverProgramRunner () =
         if File.Exists(tablePath) then ResultTable.AddResultsToTable tablePath x.Name transDirectory resultsDirectory
         else ResultTable.GenerateReadableResultTable originalDirectory [x.Name] [x.FileExtension] [transDirectory, resultsDirectory]
 
-    member private x.ReportStatistics srcPath dstPath statisticsFile result =
-        Statistics.report dstPath srcPath statisticsFile result
-
     override x.RunOnFile srcPath dstPath =
         if File.Exists(dstPath) then print_verbose $"%s{x.Name} skipping %s{srcPath} (answer exists)"; true else
         try
             let statisticsFile, hasFinished, error, output = x.RunProcessOn srcPath
             let result = if hasFinished then x.InterpretResult error output else SOLVER_TIMELIMIT
-            let realResult = x.ReportStatistics srcPath dstPath statisticsFile result
+            let realResult = Statistics.report dstPath srcPath statisticsFile result
             if IN_EXTRA_VERBOSE_MODE () then printfn $"Solver obtained result: %O{compactStatus realResult}"
             elif IN_QUIET_MODE () then printfn $"%s{quietModeToString realResult}"
             true
@@ -116,9 +113,10 @@ type MyZ3Solver () =
         | line::_ when line = "sat" -> SAT ElemFormula
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | "unknown"::_ ->
-            match Environment.split error with
-            | es when List.contains "off-the-shelf solver ended with sat" es -> SAT FiniteModel
-            | _ -> UNKNOWN (error + " &&& " + raw_output)
+            let lines = Environment.split error
+            match lines |> List.tryPick (fun s -> let a = s.Split("off-the-shelf solver ended with sat on level: ") in if a.Length > 1 then Int32.TryParse a.[1] else None) with
+            | Some level -> SAT FiniteModel //todo: add level
+            | None -> UNKNOWN (error + " &&& " + raw_output)
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
 type CVC4IndSolver () =
@@ -159,6 +157,8 @@ type VeriMAPiddtSolver () =
         | _::line::_ when line.Contains("Answer") && line.EndsWith("false") -> UNSAT ""
         | _ -> UNKNOWN raw_output
 
+type private refutationSource = Axiom | Inference of string * string list
+
 type VampireSolver () =
     inherit SolverProgramRunner ()
 
@@ -174,6 +174,56 @@ type VampireSolver () =
         let len = String.length line
         text |> List.pick (fun (s : string) -> let index = s.IndexOf(line) in if index = -1 then None else Some <| s.Substring(index + len))
 
+    let tffRegex = Regex("([a-zA-Z0-9]+),([^,]+),\((.*)\),(.*)")
+    let tffInferenceRegex = Regex("inference\(([a-zA-Z0-9_]+),\[(.*)\],\[(.*)\]\)")
+
+    let regexGroups (m : Match) = m.Groups |> List.ofSeq |> List.map (fun g -> g.Value.Trim()) |> List.tail
+
+    let parseTFF (line : string) =
+        let m = tffRegex.Match(line)
+        if not m.Success then None else
+        let name::kind::clause::source::_ = regexGroups m
+        let source =
+            if kind = "axiom" || source.StartsWith("introduced") then Some Axiom
+            elif kind = "plain" then
+                let m = tffInferenceRegex.Match(source)
+                if m.Success then
+                    let inferenceName::inferenceArgs::inferenceFrom::_ = regexGroups m
+                    Some <| Inference(inferenceName, split "," inferenceFrom)
+                else None
+            else __notImplemented__()
+        match source with
+        | Some source -> Some(name, (clause, source))
+        | None -> None
+
+    let treeHeight refutationTree =
+        let rec iter node =
+            match snd <| Map.find node refutationTree with
+            | Axiom -> 0
+            | Inference(kind, children) ->
+                let childHeight = List.fold (fun mx child -> max mx (iter child)) 0 children
+                let inferenceHeight =
+                    match kind with
+                    | _ when kind.StartsWith("avatar_") -> 0        // meta variables stuff
+                    | _ when kind.EndsWith("_transformation") -> 0  // cnf, ennf and stuff
+                    | "rectify"                                     // just reorders quantifiers
+                    | "equality_resolution"                         // x = t /\ p(x) -> q(x) ~> p(t) -> q(t)
+                    | "flattening" -> 0                             // propagates negation
+                    | "resolution"
+                    | "subsumption_resolution" -> 1
+                    | _ -> __notImplemented__()
+                inferenceHeight + childHeight
+        let start = Map.pick (fun node (clause, _) -> if clause = "$false" then Some node else None) refutationTree
+        iter start
+
+    let rebuildRefutation refutation0 =
+        let refutation1 = join "" refutation0
+        let refutation2 = refutation1.Split(").tff(") |> List.ofArray
+        let refutation3 = List.choose parseTFF refutation2
+        let refutationTree = Map.ofList refutation3
+        let height = treeHeight refutationTree
+        join "\n" refutation0
+
     let proofOrRefutation moduleOutput =
         let termString = "% Termination reason: "
         let reason = pickTextAfter termString moduleOutput
@@ -187,7 +237,7 @@ type VampireSolver () =
         | "Refutation" ->
             let refutationAndGarbage = moduleOutput |> List.skipWhile (fun line -> not <| line.Contains("SZS output start")) |> List.tail
             let refutation = refutationAndGarbage |> List.takeWhile (fun line -> not <| line.Contains("SZS output end"))
-            Some (UNSAT <| join "\n" refutation)
+            Some (UNSAT <| rebuildRefutation refutation)
         | "Inappropriate"
         | "Memory limit"
         | "Time limit" -> None

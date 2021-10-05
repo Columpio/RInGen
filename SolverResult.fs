@@ -6,6 +6,7 @@ type SolverResult =
     override x.ToString() =
         match x with
         | SAT m -> $"SAT %O{m}"
+        | UNSAT "" -> "UNSAT"
         | UNSAT refutation -> $"UNSAT\n{refutation}"
         | SOLVER_TIMELIMIT -> "SOLVER_TIMELIMIT"
         | OUTOFMEMORY -> "OUTOFMEMORY"
@@ -15,6 +16,7 @@ type SolverResult =
 let compactStatus = function
     | ERROR _ -> ERROR ""
     | UNKNOWN _ -> UNKNOWN ""
+    | UNSAT _ -> UNSAT ""
     | r -> r
 
 let quietModeToString = function

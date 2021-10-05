@@ -6,9 +6,10 @@ open RInGen.Transformers
 
 let private readFileWhenNonEmpty (filename : path) =
     let file = FileInfo(filename)
-    while file.Length = 0L do
-        System.Threading.Thread.Sleep(1)
-        file.Refresh()
+    if file.Length = 0L then exit 0
+//    while file.Length = 0L do
+//        System.Threading.Thread.Sleep(1)
+//        file.Refresh()
     file.OpenRead()
 
 let private readTMPStatFile (timeStatisticsFile : path) =

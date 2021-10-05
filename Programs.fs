@@ -78,6 +78,7 @@ type ProgramRunner () =
         let executable = Option.defaultValue x.BinaryName <| Dictionary.tryGetValue x.BinaryName psinfo.Environment
         let arguments = x.BinaryOptions filename
         let statisticsFile = Path.GetTempFileName()
+        File.Delete(statisticsFile)
         psinfo.FileName <- "/usr/bin/time"
         psinfo.Arguments <- $"--quiet --output=%s{statisticsFile} --format %%M,%%e %s{executable} %s{arguments}"
         print_verbose $"Run: %s{psinfo.FileName} %s{psinfo.Arguments}"

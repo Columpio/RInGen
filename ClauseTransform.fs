@@ -559,16 +559,11 @@ module private DefinitionsToDeclarations =
                 let lemma = exprToAtoms typer assertsToQueries lemmaBody
                 let lemmaFOL = lemma |> DNF.toFOL
                 let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals typer vars lemmaQs lemmaConds lemmaFOL
-//                match strongLemma with
-//                | FOLAtom Top -> return None
-//                | _ ->
                 let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
                 let doubleNegatedLemma = doubleNegateLemma typer strongLemma
                 let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
-                let bodyLemma = replaceDisequalWithDistinctInLemma bodyLemma
-                let headCube = replaceDisequalWithDistinctInLemma headCube
-                return Some <| LemmaCommand(pred, vars, bodyLemma, headCube)
-            } |> List.choose id, wereDefines
+                return LemmaCommand(pred, vars, bodyLemma, headCube)
+            }, wereDefines
         | Assert e -> expressionToDeclarations assertsToQueries typer e, wereDefines
         | Command c -> [OriginalCommand c], wereDefines
 

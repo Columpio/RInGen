@@ -12,15 +12,30 @@ let private substituteRelations exts filenames =
 let private collectAllResults (exts : string list) originalDirectory transAndResultDirs=
     let results = Dictionary<_, _>()
     let generateResultLine (testName : path) transAndResultFileNames =
-        if Path.GetExtension(testName) <> ".smt2" then () else
-        let transFileNames, resultFileNames = List.unzip transAndResultDirs
         let transAndResultFileNames = substituteRelations exts transAndResultFileNames
         let line = transAndResultFileNames |> List.map Statistics.tryReadStatistics
         results.Add(testName, line)
     walk_through_simultaneously originalDirectory transAndResultDirs generateResultLine
     results |> Dictionary.toList
 
-let private BuildResultTable writeHeader writeResult writeStatistics (filename : string) header results =
+type private consistency = HasNo | HasSAT | HasUNSAT | HasBoth
+
+let private checkConsistency testName line =
+    let isConsistent c = function
+        | Some (Statistics.SolvingStatus x) ->
+            let x =
+                match x.solverResult with
+                | SAT _ -> 0b01
+                | UNSAT _ -> 0b10
+                | _ -> 0b0
+            let c = c ||| x
+            if c = 0b11 then None else Some c
+        | _ -> Some c
+    match List.foldChoose isConsistent 0b0 line with
+    | None -> print_err_verbose $"test {testName} has inconsistent answers"
+    | _ -> ()
+
+let private BuildResultTable writeHeader (writeResult : CsvWriter -> Statistics.status option -> unit) writeStatistics (filename : string) header results =
     use writer = new StreamWriter(filename)
     use csv = new CsvWriter(writer, CultureInfo.InvariantCulture)
     csv.WriteField("Filename")
@@ -30,6 +45,7 @@ let private BuildResultTable writeHeader writeResult writeStatistics (filename :
     writeStatistics csv results
     for testName, line in results do
         csv.WriteField(testName)
+        checkConsistency testName line
         for result in line do
             writeResult csv result
         csv.NextRecord()
