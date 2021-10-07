@@ -6,15 +6,17 @@ open RInGen.Transformers
 
 let private readFileWhenNonEmpty (filename : path) =
     let file = FileInfo(filename)
-    if file.Length = 0L then exit 0
-//    while file.Length = 0L do
-//        System.Threading.Thread.Sleep(1)
-//        file.Refresh()
-    file.OpenRead()
+    if file.Length = 0L then
+        System.Threading.Thread.Sleep(10) // result may be unavailible
+        file.Refresh()
+    if file.Length = 0L then Some <| file.OpenRead() else None
 
 let private readTMPStatFile (timeStatisticsFile : path) =
     let regex = Regex("^(\d+),(\d+.\d+)$")
-    use statStream = new StreamReader(readFileWhenNonEmpty timeStatisticsFile)
+    match readFileWhenNonEmpty timeStatisticsFile with
+    | None -> -1, -1
+    | Some file ->
+    use statStream = new StreamReader(file)
     let lines = statStream.ReadToEnd() |> Environment.split
     let memory, time = lines |> List.pick (fun line -> let m = regex.Match(line) in if m.Success then Some(m.Groups.[1].Value, m.Groups.[2].Value) else None)
     let memory = int memory                  // kilobytes
