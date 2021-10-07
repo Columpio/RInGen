@@ -111,7 +111,7 @@ type ProgramRunner () =
         let child_solver = Process.GetProcesses() |> List.ofArray |> List.filter isChildProcess |> List.tryHead
 
         let hasFinished = p.WaitForExit(MSECONDS_TIMEOUT ())
-        if hasFinished then p.WaitForExit() else
+        if hasFinished then () else // p.WaitForExit() else
             try match child_solver with
                 | Some child_solver -> child_solver.Kill(true)
                 | _ -> p.Kill(true)

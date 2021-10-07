@@ -9,7 +9,7 @@ let private readFileWhenNonEmpty (filename : path) =
     if file.Length = 0L then
         System.Threading.Thread.Sleep(10) // result may be unavailible
         file.Refresh()
-    if file.Length = 0L then Some <| file.OpenRead() else None
+    if file.Length = 0L then None else Some <| file.OpenRead()
 
 let private readTMPStatFile (timeStatisticsFile : path) =
     let regex = Regex("^(\d+),(\d+.\d+)$")
