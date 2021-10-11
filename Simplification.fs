@@ -6,10 +6,10 @@ let simplifyConditional isConstructor unpreferredSet qs conds substituteWithInHe
     match unifier with
     | None -> None
     | Some unifier ->
-        let conds = List.map (Atom.substituteWith unifier) (List.map Equal eqs @ conds)
-        let head = substituteWithInHead unifier
-        let qs = Quantifiers.remove (unifier |> Map.toList |> List.map fst |> Set.ofList) qs
-        Some (qs, conds, head)
+    let conds = List.map (Atom.substituteWith unifier) (List.map Equal eqs @ conds)
+    let head = substituteWithInHead unifier
+    let qs = Quantifiers.remove (unifier |> Map.toList |> List.map fst |> Set.ofList) qs
+    Some (qs, conds, head)
 
 let rec private simplifyBinary zero one constr t1 t2 =
     let rec iter = function
@@ -36,10 +36,35 @@ let private simplifyAtom diseqs = function
     | Distinct(t1, t2) -> simplifyBinary Top Bot Distinct t1 t2 |> List.map FOLAtom |> folOr
     | a -> FOLAtom a
 
-let private simplifyFormula diseqs f = FOL.bind (simplifyAtom diseqs) f
+let private collectConditions = function
+    | FOLOr xs ->
+        let conds, heads = List.choose2 (function FOLNot(FOLAtom a) -> Choice1Of2 a | f -> Choice2Of2 f) xs
+        conds, heads
+    | f -> [], [f]
+
+let private simplifyFormula diseqs qs f =
+    let conds, heads = collectConditions f
+    match simplifyConditional (fun _ -> true) Set.empty qs conds (fun unifier -> List.map (FOL.substituteWith unifier) heads) with
+    | Some (qs, conds, heads) ->
+        let f' = FOLOr (List.map (FOLAtom >> FOLNot) conds @ heads)
+        Some (qs, FOL.bind (simplifyAtom diseqs) f')
+    | None -> None
+
+let private isDiseqAtom diseqs = function
+    | AApply(op, _) -> isDiseqOp diseqs op
+    | _ -> false
+
+let private isDiseqDeclaration diseqs f =
+    let conds, head = collectConditions f
+    match head with
+    | [FOLAtom a] -> isDiseqAtom diseqs a && List.forall (isDiseqAtom diseqs) conds
+    | _ -> false
 
 let private simplifyCommand diseqs = function
-    | FOLOriginalCommand _ as c -> c
-    | FOLAssertion(qs, f) -> FOLAssertion(qs, simplifyFormula diseqs f)
+    | FOLAssertion(qs, f) when not <| isDiseqDeclaration diseqs f ->
+        match simplifyFormula diseqs qs f with
+        | Some f -> f |> FOLAssertion |> Some
+        | None -> None
+    | c -> Some c
 
-let simplify diseqs commands = List.map (simplifyCommand diseqs) commands
+let simplify diseqs commands = List.choose (simplifyCommand diseqs) commands

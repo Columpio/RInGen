@@ -328,7 +328,7 @@ let private simplBinary zero one deconstr constr =
                 match deconstr x with
                 | Some ys -> iter (fun ys -> iter (fun xs -> k (ys @ xs)) xs) ys
                 | None -> iter (fun res -> k (x :: res)) xs
-    iter (function [] -> zero | [t] -> t | ts -> ts |> List.rev |> constr)
+    iter (function [] -> zero | [t] -> t | ts -> ts |> constr)
 
 module Terms =
     let mapFold = List.mapFold
@@ -658,8 +658,8 @@ module FOL =
         let rec iter = function
             | FOLAtom a -> f a
             | FOLNot f -> f |> iter |> FOLNot
-            | FOLAnd fs -> fs |> List.map iter |> FOLAnd
-            | FOLOr fs -> fs |> List.map iter |> FOLOr
+            | FOLAnd fs -> fs |> List.map iter |> folAnd
+            | FOLOr fs -> fs |> List.map iter |> folOr
         iter
 
     let mapFold f z =
