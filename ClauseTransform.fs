@@ -182,7 +182,7 @@ module private RemoveVariableOverlapping =
 
     let private renameIdentsInCommand (typer : Typer.Typer) (nameMap, sortMap) c =
         let nameMap, sortMap, c = prepareCommand nameMap sortMap c
-        typer.m_interpretCommand c
+        typer.m_interpretOriginalCommand c
         cleanCommand (typer, nameMap, sortMap) c, (nameMap, sortMap)
 
     let removeVariableOverlapping =
@@ -518,14 +518,9 @@ module private DefinitionsToDeclarations =
         let dropWeak = function
             | FOLAtom a -> dropWeak a
             | f -> Some f
-        let lemmaConds, eqs = List.choose2 (function Equal(t1, t2) -> Choice2Of2(t1, t2) | a -> Choice1Of2 a) lemmaConds
-        let eqs, unifier = Unifier.fromList Set.empty (Set.ofList vars) typer.isConstructor eqs
-        match unifier with
+        match Simplification.simplifyConditional typer.isConstructor (Set.ofList vars) lemmaQs lemmaConds (fun unifier -> FOL.substituteWith unifier lemmaFOL) with
         | None -> []
-        | Some unifier ->
-        let lemmaConds = List.map (Atom.substituteWith unifier) (List.map Equal eqs @ lemmaConds)
-        let lemmaFOL = FOL.substituteWith unifier lemmaFOL
-        let lemmaQs = Quantifiers.remove (unifier |> Map.toList |> List.map fst |> Set.ofList) lemmaQs
+        | Some (lemmaQs, lemmaConds, lemmaFOL) ->
         let strongLemma =
             match lemmaFOL with
             | FOLOr fs -> fs |> List.choose dropWeak |> folOr
@@ -814,6 +809,16 @@ module SubstituteLemmas =
         let lemmasMap = Map.map (fun pred -> List.map (fun (vars, bl, hl) -> freshLemmaPredicate pred vars, vars, bl, hl)) lemmasMap
         List.collect (mapCommand lemmasMap) commands
 
+module private Simplify =
+    let private simplifyCommand (typer : Typer) = function
+        | TransformedCommand(Rule(qs, body, head)) ->
+            match Simplification.simplifyConditional typer.isConstructor Set.empty qs body (fun unifier -> Atom.substituteWith unifier head) with
+            | None -> None
+            | Some (qs, body, head) -> Some (TransformedCommand(Rule(qs, body, head)))
+        | c -> Some c
+
+    let simplify commands = Typer.typerMap simplifyCommand commands |> List.choose id
+
 let toClauses (options : transformOptions) commands =
     let commands = filterOutSMTCommands commands
     let commands = if options.tip then TIPFixes.applyTIPfix commands else commands
@@ -828,6 +833,8 @@ let toClauses (options : transformOptions) commands =
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
     let shouldAddNatPreamble, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
     let clausesWithPreamble = if not alreadyAddedNatPreamble && shouldAddNatPreamble then natPreamble @ substFreeSortClauses else substFreeSortClauses
-    if not options.sync_terms then clausesWithPreamble else
+    let simplified = Simplify.simplify clausesWithPreamble
+    let trCtx = {commands=simplified; diseqs=snd adtEqs}
+    if not options.sync_terms then trCtx else
     let syncClauses = Synchronization.synchronize clausesWithPreamble
-    syncClauses
+    {trCtx with commands = syncClauses}

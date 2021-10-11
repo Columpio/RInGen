@@ -311,6 +311,25 @@ type atom =
         | AApply(op, []) -> op.ToString()
         | AApply(op, ts) -> sprintf "(%O %s)" op (ts |> List.map toString |> join " ")
 
+let notMapApply f z = function
+    | Top -> z Bot
+    | Bot -> z Top
+    | Equal(t1, t2) -> z <| Distinct(t1, t2)
+    | Distinct(t1, t2) -> z <| Equal(t1, t2)
+    | AApply(op, ts) -> f op ts
+
+let private simplBinary zero one deconstr constr =
+    let rec iter k = function
+        | [] -> k []
+        | x :: xs ->
+            if x = one then x
+            elif x = zero then iter k xs
+            else
+                match deconstr x with
+                | Some ys -> iter (fun ys -> iter (fun xs -> k (ys @ xs)) xs) ys
+                | None -> iter (fun res -> k (x :: res)) xs
+    iter (function [] -> zero | [t] -> t | ts -> ts |> List.rev |> constr)
+
 module Terms =
     let mapFold = List.mapFold
     let map = List.map
@@ -455,7 +474,7 @@ module Quantifier =
 
     let remove toRemove q =
         let qc, vars = unquantify q
-        match List.filter (fun v -> Set.contains v toRemove) vars with
+        match List.filter (fun v -> not <| Set.contains v toRemove) vars with
         | [] -> None
         | vars -> Some <| qc vars
 
@@ -607,6 +626,7 @@ type originalCommand =
         | Command cmnd -> cmnd.ToString()
         | Assert f -> $"(assert {f})"
         | Lemma(pred, vars, lemma) -> lemmaToString pred vars lemma
+
 type folFormula =
     | FOLAtom of atom
     | FOLNot of folFormula
@@ -618,6 +638,12 @@ type folFormula =
         | FOLNot a -> $"(not %O{a})"
         | FOLOr ats -> $"""(or {ats |> List.map toString |> join " "})"""
         | FOLAnd ats -> $"""(and {ats |> List.map toString |> join " "})"""
+let rec folNot = function
+    | FOLNot f -> f
+    | FOLAtom a -> notMapApply (fun op ts -> AApply(op, ts) |> FOLAtom |> FOLNot) FOLAtom a
+    | f -> FOLNot f
+let folOr = simplBinary (FOLAtom Bot) (FOLAtom Top) (function FOLOr xs -> Some xs | _ -> None) FOLOr
+let folAnd = simplBinary (FOLAtom Top) (FOLAtom Bot) (function FOLAnd xs -> Some xs | _ -> None) FOLAnd
 
 module FOL =
     let map f =
@@ -685,25 +711,12 @@ module Lemma =
 let private simplQuant constr zero one e = function
     | [] -> e
     | vars -> if e = zero then zero elif e = one then one else constr(vars, e)
-let private simplBinary zero one deconstr constr =
-    let rec iter k = function
-        | [] -> k []
-        | x :: xs ->
-            if x = one then x
-            elif x = zero then iter k xs
-            else
-                match deconstr x with
-                | Some ys -> iter (fun ys -> iter (fun xs -> k (ys @ xs)) xs) ys
-                | None -> iter (fun res -> k (x :: res)) xs
-    iter (function [] -> zero | [t] -> t | ts -> ts |> List.rev |> constr)
 let truee = BoolConst true
 let falsee = BoolConst false
 let ore = simplBinary falsee truee (function Or xs -> Some xs | _ -> None) Or
 let ande = simplBinary truee falsee (function And xs -> Some xs | _ -> None) And
 let forall vars e = simplQuant Forall falsee truee e vars
 let exists vars e = simplQuant Exists falsee truee e vars
-let folOr = simplBinary (FOLAtom Bot) (FOLAtom Top) (function FOLOr xs -> Some xs | _ -> None) FOLOr
-let folAnd = simplBinary (FOLAtom Top) (FOLAtom Bot) (function FOLAnd xs -> Some xs | _ -> None) FOLAnd
 //let folForall, folExists =
 //    let zero = FOLBase (FOLAtom Bot)
 //    let one = FOLBase (FOLAtom Top)
@@ -740,16 +753,6 @@ let distinct t1 t2 =
     | t, TConst("true", _)
     | TConst("true", _), t -> Equal(t, falset)
     | _ -> Distinct(t1, t2)
-let notMapApply f z = function
-    | Top -> z Bot
-    | Bot -> z Top
-    | Equal(t1, t2) -> z <| Distinct(t1, t2)
-    | Distinct(t1, t2) -> z <| Equal(t1, t2)
-    | AApply(op, ts) -> f op ts
-let rec folNot = function
-    | FOLNot f -> f
-    | FOLAtom a -> notMapApply (fun op ts -> AApply(op, ts) |> FOLAtom |> FOLNot) FOLAtom a
-    | f -> FOLNot f
 let folAssert (qs, e) =
     match e with
     | FOLAtom Top -> None

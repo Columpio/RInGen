@@ -29,6 +29,7 @@
         <Compile Include="ADTs.fs" />
         <Compile Include="Arrays.fs" />
         <Compile Include="Unifier.fs" />
+        <Compile Include="Simplification.fs" />
         <Compile Include="Synchronization.fs" />
         <Compile Include="SolverResult.fs" />
         <Compile Include="ClauseTransform.fs" />

@@ -1,0 +1,45 @@
+module RInGen.Simplification
+
+let simplifyConditional isConstructor unpreferredSet qs conds substituteWithInHead =
+    let conds, eqs = List.choose2 (function Equal(t1, t2) -> Choice2Of2(t1, t2) | a -> Choice1Of2 a) conds
+    let eqs, unifier = Unifier.fromList Set.empty unpreferredSet isConstructor eqs
+    match unifier with
+    | None -> None
+    | Some unifier ->
+        let conds = List.map (Atom.substituteWith unifier) (List.map Equal eqs @ conds)
+        let head = substituteWithInHead unifier
+        let qs = Quantifiers.remove (unifier |> Map.toList |> List.map fst |> Set.ofList) qs
+        Some (qs, conds, head)
+
+let rec private simplifyBinary zero one constr t1 t2 =
+    let rec iter = function
+        | t1, t2 when t1 = t2 -> [one]
+        | TApply(op1, ts1), TApply(op2, ts2) ->
+            if op1 = op2 then List.zip ts1 ts2 |> List.collect iter else [zero]
+        | t1t2 -> [constr t1t2]
+    iter (t1, t2)
+
+let private isDiseqOp diseqs op =
+    opt {
+        let! retType = Operation.argumentTypes op |> List.tryHead
+        let! op' = Map.tryFind retType diseqs
+        return op = op'
+    } |> function Some true -> true | _ -> false
+
+let private distinct diseqs (t1, t2) =
+    let op = Map.find (Term.typeOf t1) diseqs
+    AApply(op, [t1; t2])
+
+let private simplifyAtom diseqs = function
+    | Equal(t1, t2) -> simplifyBinary Bot Top Equal t1 t2 |> List.map FOLAtom |> folAnd
+    | AApply(op, [t1; t2]) when isDiseqOp diseqs op -> simplifyBinary Top Bot (distinct diseqs) t1 t2 |> List.map FOLAtom |> folOr
+    | Distinct(t1, t2) -> simplifyBinary Top Bot Distinct t1 t2 |> List.map FOLAtom |> folOr
+    | a -> FOLAtom a
+
+let private simplifyFormula diseqs f = FOL.bind (simplifyAtom diseqs) f
+
+let private simplifyCommand diseqs = function
+    | FOLOriginalCommand _ as c -> c
+    | FOLAssertion(qs, f) -> FOLAssertion(qs, simplifyFormula diseqs f)
+
+let simplify diseqs commands = List.map (simplifyCommand diseqs) commands

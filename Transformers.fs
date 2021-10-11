@@ -41,7 +41,7 @@ type TransformerProgram (options : transformOptions) =
             | _ -> None
         List.tryPick tryFindExistentialClauses
 
-    abstract Transform : transformedCommand list -> string list
+    abstract Transform : transformContext -> string list
 
     static member FailInfoFileExtension = ".transformation_info"
 
@@ -65,11 +65,11 @@ type TransformerProgram (options : transformOptions) =
 //                files <- files + 1
         if isHighOrderBenchmark exprs then x.ReportTransformationProblem dstPath TRANS_HIGH_ORDER_PROBLEM $"%O{srcPath} will not be transformed as it has a mix of define-fun and declare-fun commands" else
         try
-            let commands = ClauseTransform.toClauses options exprs
-            match tryFindExistentialClauses commands with
+            let trCtx = ClauseTransform.toClauses options exprs
+            match tryFindExistentialClauses trCtx.commands with
             | Some r -> x.ReportTransformationProblem dstPath TRANS_CONTAINS_EXISTENTIALS $"Transformed %s{dstPath} contains existential subclause: %O{r}"
             | None ->
-            let transformedProgram = x.Transform commands
+            let transformedProgram = x.Transform trCtx
             Program.SaveFile dstPath transformedProgram
             true
 //            total_generated <- total_generated + x.SaveClauses opts.path dst newTests
@@ -99,8 +99,8 @@ type OriginalTransformerProgram (options) =
 
     override x.TargetPath path = $"%s{path}.Original"
 
-    override x.Transform commands =
-        let commands' = preambulizeCommands "HORN" commands
+    override x.Transform trCtx =
+        let commands' = preambulizeCommands "HORN" trCtx.commands
         List.map toString commands'
 
 type RCHCTransformerProgram (options) =
@@ -118,8 +118,8 @@ type RCHCTransformerProgram (options) =
 
     override x.TargetPath path = $"%s{path}.RCHC_Transform"
 
-    override x.Transform commands =
-        let commands' = preambulizeCommands "HORN" commands
+    override x.Transform trCtx =
+        let commands' = preambulizeCommands "HORN" trCtx.commands
         List.map toString commands'
 
 type FreeSortsTransformerProgram (options) =
@@ -127,10 +127,11 @@ type FreeSortsTransformerProgram (options) =
 
     override x.TargetPath path = $"%s{path}.FreeSorts"
 
-    override x.Transform commands =
-        let noADTSystem = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
+    override x.Transform trCtx =
+        let noADTSystem = ClauseTransform.DatatypesToSorts.datatypesToSorts trCtx.commands
         let commands = preambulizeCommands "UF" noADTSystem
         let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
+        let commands = Simplification.simplify trCtx.diseqs commands
         List.map toString commands
 
 type PrologTransformerProgram (options) =
@@ -140,8 +141,8 @@ type PrologTransformerProgram (options) =
 
     override x.FileExtension = ".pl"
 
-    override x.Transform commands =
-        let commands = preambulizeCommands "HORN" commands
+    override x.Transform trCtx =
+        let commands = preambulizeCommands "HORN" trCtx.commands
         if PrintToProlog.isFirstOrderPrologProgram commands
             then PrintToProlog.toPrologFile commands
             else failwith_verbose "not a first order Prolog program"

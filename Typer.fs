@@ -41,7 +41,6 @@ type Typer(operations : Map<symbol, operation>, adts : Map<sort, (symbol * symbo
         constr_op
 
     member x.m_interpretCommand c =
-        let extendDef (name, vars, sort, _) = x.m_addOperation name (Operation.makeUserOperationFromVars name vars sort)
         let extendDecl (adtname, cs) =
             let handle_constr constrs (fname, vars) =
                 let constr_op = x.m_addADTOperations adtname fname vars
@@ -49,14 +48,24 @@ type Typer(operations : Map<symbol, operation>, adts : Map<sort, (symbol * symbo
             let constrs = List.fold handle_constr Map.empty cs
             x.m_addADTConstructors adtname constrs
         match c with
+        | DeclareDatatype(name, cs) -> extendDecl (name, cs)
+        | DeclareDatatypes dts -> dts |> List.iter extendDecl
+        | DeclareConst(name, sort) -> x.m_addOperation name (Operation.makeUserOperationFromSorts name [] sort)
+        | DeclareFun(name, argTypes, sort) ->
+            x.m_addOperation name (Operation.makeUserOperationFromSorts name argTypes sort)
+        | _ -> ()
+
+    member x.m_interpretOriginalCommand c =
+        let extendDef (name, vars, sort, _) = x.m_addOperation name (Operation.makeUserOperationFromVars name vars sort)
+        match c with
         | Definition(DefineFunRec df)
         | Definition(DefineFun df) -> extendDef df
         | Definition(DefineFunsRec dfs) -> dfs |> List.iter extendDef
-        | Command(DeclareDatatype(name, cs)) -> extendDecl (name, cs)
-        | Command(DeclareDatatypes dts) -> dts |> List.iter extendDecl
-        | Command(DeclareConst(name, sort)) -> x.m_addOperation name (Operation.makeUserOperationFromSorts name [] sort)
-        | Command(DeclareFun(name, argTypes, sort)) ->
-            x.m_addOperation name (Operation.makeUserOperationFromSorts name argTypes sort)
+        | Command c -> x.m_interpretCommand c
+        | _ -> ()
+
+    member x.m_interpretTransformedCommand = function
+        | OriginalCommand c -> x.m_interpretCommand c
         | _ -> ()
 
     new (operations) = Typer(operations, Map.empty)
@@ -120,9 +129,9 @@ let rec nota (typer : Typer) =
 
 let typerMapFold f z cs =
     let typer = empty ()
-    let rs, z = List.mapFold (fun z c -> typer.m_interpretCommand c; f typer z c) z cs
+    let rs, z = List.mapFold (fun z c -> typer.m_interpretOriginalCommand c; f typer z c) z cs
     rs, z
 
-let typerFold f cs =
+let typerMap f cs =
     let typer = empty ()
-    List.map (fun c -> typer.m_interpretCommand c; f typer c) cs
+    List.map (fun c -> typer.m_interpretTransformedCommand c; f typer c) cs

@@ -171,10 +171,10 @@ let private solve_from_path (solver : SolverProgramRunner) (transformer : Transf
         | Some transformer -> transformer.Run path outputPath
         | None -> Some path
     match path' with
-    | None -> () // no transformation, no solving
+    | None -> printfn "unknown" // no transformation, no solving
     | Some path' ->
     match solver.Run path' outputPath with
-    | None -> ()
+    | None -> printfn "unknown"
     | Some path'' ->
     print_verbose $"%s{solver.Name} run on %s{path'} and the result is saved at %s{path''}"
     if not <| options.Contains(Table) then () else

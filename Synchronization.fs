@@ -278,11 +278,11 @@ type private POBDB (adts) =
         let freeVars = head::body |> List.collect x.CollectFreeVarsInAtom |> Set.ofList |> Set.toList
         rule freeVars body head
 
-    member private x.UnarifyAtoms = List.mapFold x.UnarifyAtom
+    member private x.UnarifyAtoms = List.mapFold x.UnarifyAtom []
 
     member private x.UnarifyRule = function
         | Rule(_, body, head) ->
-            let bodyEqsAndAtoms, vars = x.UnarifyAtoms [] body
+            let bodyEqsAndAtoms, vars = x.UnarifyAtoms body
             let bodyEqs, bodyAtoms = List.unzip bodyEqsAndAtoms
             let bodyAtoms = List.choose id bodyAtoms
             let (headEqs, headAtom), vars = x.UnarifyAtom vars head
