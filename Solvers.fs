@@ -114,8 +114,14 @@ type MyZ3Solver () =
         | _ when error = "" && raw_output = "" -> OUTOFMEMORY
         | "unknown"::_ ->
             let lines = Environment.split error
-            match lines |> List.tryPick (fun s -> let a = s.Split("off-the-shelf solver ended with sat on level: ") in if a.Length > 1 then Int32.TryParse a.[1] else None) with
-            | Some level -> SAT FiniteModel //todo: add level
+            let otsResult = lines |> List.tryPick (fun s -> let a = s.Split("off-the-shelf solver ended with ") in if a.Length > 1 then Some a.[1] else None)
+            match otsResult with
+            | Some message ->
+                if message.StartsWith("sat")
+                    then SAT FiniteModel
+                elif message.StartsWith("unsat")
+                    then UNSAT ""
+                else UNKNOWN (error + " &&& " + raw_output)
             | None -> UNKNOWN (error + " &&& " + raw_output)
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
