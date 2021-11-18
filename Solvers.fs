@@ -243,7 +243,7 @@ type VampireSolver () =
         | "Refutation" ->
             let refutationAndGarbage = moduleOutput |> List.skipWhile (fun line -> not <| line.Contains("SZS output start")) |> List.tail
             let refutation = refutationAndGarbage |> List.takeWhile (fun line -> not <| line.Contains("SZS output end"))
-            Some (UNSAT <| rebuildRefutation refutation)
+            Some (UNSAT <| join "\n" refutation) //TODO: rebuildRefutation refutation
         | "Inappropriate"
         | "Memory limit"
         | "Time limit" -> None
