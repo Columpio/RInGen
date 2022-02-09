@@ -835,6 +835,11 @@ let toClauses (options : transformOptions) commands =
     let clausesWithPreamble = if not alreadyAddedNatPreamble && shouldAddNatPreamble then natPreamble @ substFreeSortClauses else substFreeSortClauses
     let simplified = Simplify.simplify clausesWithPreamble
     let trCtx = {commands=simplified; diseqs=snd adtEqs}
-    if not options.sync_terms then trCtx else
-    let syncClauses = Synchronization.synchronize clausesWithPreamble
-    {trCtx with commands = syncClauses}
+    if options.sync_terms then
+        let syncClauses = Synchronization.synchronize clausesWithPreamble
+        {trCtx with commands = syncClauses}
+    else if options.tta_transform then
+        let ttaClauses = TtaTransform.transform clausesWithPreamble
+        {trCtx with commands = ttaClauses}
+    else
+        trCtx

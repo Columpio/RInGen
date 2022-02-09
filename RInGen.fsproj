@@ -32,6 +32,7 @@
         <Compile Include="Simplification.fs" />
         <Compile Include="Synchronization.fs" />
         <Compile Include="SolverResult.fs" />
+        <Compile Include="TtaTransform.fs" />
         <Compile Include="ClauseTransform.fs" />
         <Compile Include="PrintToProlog.fs" />
         <Compile Include="Transformers.fs" />

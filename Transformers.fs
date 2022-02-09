@@ -130,8 +130,8 @@ type FreeSortsTransformerProgram (options) =
     override x.Transform trCtx =
         let noADTSystem = ClauseTransform.DatatypesToSorts.datatypesToSorts trCtx.commands
         let commands = preambulizeCommands "UF" noADTSystem
-        let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
-        let commands = Simplification.simplify trCtx.diseqs commands
+        //let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
+        //let commands = Simplification.simplify trCtx.diseqs commands
         List.map toString commands
 
 type PrologTransformerProgram (options) =

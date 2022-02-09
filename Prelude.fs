@@ -199,6 +199,13 @@ type ident = symbol
 type sort =
     | PrimitiveSort of ident
     | CompoundSort of ident * sort list
+
+    member x.getBotSymbol() =
+        match x with
+        | PrimitiveSort name
+        | CompoundSort(name, _) ->
+            sprintf "%s_bot" name
+
     override x.ToString() =
         match x with
         | PrimitiveSort i -> i.ToString()
@@ -210,6 +217,7 @@ let ArraySort(s1, s2) = CompoundSort("Array", [s1; s2])
 let boolSort = PrimitiveSort(symbol("Bool"))
 let integerSort = PrimitiveSort(symbol("Int"))
 let dummySort = PrimitiveSort(symbol("*dummy-sort*"))
+let emptySort = PrimitiveSort(symbol(" "))
 
 module Sort =
     let gensym = function
@@ -242,6 +250,12 @@ module SortedVars =
 type operation =
     | ElementaryOperation of ident * sort list * sort
     | UserDefinedOperation of ident * sort list * sort
+
+    member x.getSort() =
+        match x with
+        | ElementaryOperation(_, _, s)
+        | UserDefinedOperation(_, _, s) ->
+            s
     override x.ToString() =
         match x with
         | ElementaryOperation(s, _, _)
@@ -289,6 +303,14 @@ type term =
     | TConst of ident * sort
     | TIdent of ident * sort
     | TApply of operation * term list
+
+    member x.getSort() =
+        match x with
+        | TConst(_, s)
+        | TIdent(_, s) ->
+            s
+        | TApply(op, _) -> op.getSort()
+
     override x.ToString() =
         match x with
         | TConst(name, _) -> name.ToString()
@@ -549,6 +571,7 @@ module Quantifiers =
 
 type rule =
     | Rule of quantifiers * atom list * atom
+    | Equivalence of quantifiers * atom list * atom
     override x.ToString() =
         match x with
         | Rule(qs, xs, x) ->
@@ -557,11 +580,19 @@ type rule =
             | [y] -> $"(=> {y}\n\t    {x})"
             | _ -> sprintf "(=>\t(and %s)\n\t\t%O)" (xs |> List.map toString |> join "\n\t\t\t") x
             |> Quantifiers.toString qs
+        | Equivalence(qs, xs, x) ->
+            match xs with
+            | [] -> $"{x}"
+            | [y] -> $"(= {y}\n\t    {x})"
+            | _ -> sprintf "(=\t(and %s)\n\t\t%O)" (xs |> List.map toString |> join "\n\t\t\t") x
+            |> Quantifiers.toString qs
 let private baseRule q fromAtoms toAtom =
     let fromAtoms = List.filter ((<>) Top) fromAtoms
     Rule(q, fromAtoms, toAtom)
 let aerule forallVars existsVars fromAtoms toAtom = baseRule (Quantifiers.add (ExistsQuantifier existsVars) <| Quantifiers.forall forallVars) fromAtoms toAtom
 let rule vars fromAtoms toAtom = baseRule (Quantifiers.forall vars) fromAtoms toAtom
+let eqRule vars fromAtoms toAtom = Equivalence((Quantifiers.forall vars), fromAtoms, toAtom)
+
 type definition =
     | DefineFun of function_def
     | DefineFunRec of function_def
