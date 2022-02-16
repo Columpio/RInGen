@@ -311,12 +311,21 @@ type term =
             s
         | TApply(op, _) -> op.getSort()
 
+    member x.CollectFreeVarsInTerm() =
+        match x with
+        | TIdent(i, s) -> [i, s]
+        | TConst _ -> []
+        | TApply(_, ts) ->
+            List.collect (fun (t : term) -> t.CollectFreeVarsInTerm()) ts
+
     override x.ToString() =
         match x with
         | TConst(name, _) -> name.ToString()
         | TIdent(name, _) -> name.ToString()
         | TApply(op, []) -> op.ToString()
         | TApply(f, xs) -> sprintf "(%O %s)" f (xs |> List.map toString |> join " ")
+
+let collectFreeVarsInTerms = List.collect (fun (t : term) -> t.CollectFreeVarsInTerm())
 
 type atom =
     | Top
