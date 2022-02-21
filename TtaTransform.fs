@@ -184,11 +184,14 @@ type Processer(adts) =
         let clauseDecls, cRecord = x.generateAutomataDeclarations clauseName clauseSorts
 
         let clauseLen = List.length patAutomata
-        let prodName = "prod" + clauseLen.ToString()
+        let prodName = "prod_" + clauseName
 
-        let prodOp =
+        let prodDecl, prodOp =
             let ss = List.init clauseLen (fun _ -> stateSort)
-            Operation.makeElementaryOperationFromSorts prodName ss stateSort
+            let op = Operation.makeElementaryOperationFromSorts prodName ss stateSort
+            let decl = OriginalCommand (DeclareFun(prodName, ss, stateSort))
+            decl, op
+        let clauseDecls = prodDecl::clauseDecls
 
         let initAxiom =
             let l = cRecord.initConst
@@ -311,20 +314,10 @@ type Processer(adts) =
 
         decls @ patternAxioms @ (List.mapi2 x.procRule rules automataRules |> List.concat)
 
-    member private x.declareProds maxArity =
-        seq {
-            for i in [1..maxArity] do
-                let name = "prod" + i.ToString()
-                let states = List.init i (fun _ -> stateSort)
-                OriginalCommand (DeclareFun(name, states, stateSort))
-        }
-
     member x.traverseCommands oCommands (rules : rule list)  =
         seq {
             yield OriginalCommand(DeclareSort(stateSort))
             yield! (x.parseDatatypes adts)
-            // TODO: remove constant
-            yield! (x.declareProds 2)
             yield! (x.processDeclarations oCommands)
             // TODO: remove ltlt debug
             // How to handle patterns with no variables?
