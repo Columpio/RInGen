@@ -793,6 +793,11 @@ module SubstituteLemmas =
             |> List.map FOLOriginalCommand
         | OriginalCommand c -> [FOLOriginalCommand c]
         | TransformedCommand(Rule(qs, body, head)) -> mapRule lemmasMap qs body head |> folAssert |> Option.toList
+        | TransformedCommand(Equivalence(qs,body,head)) ->
+            let body = List.map FOLAtom body |> FOLAnd
+            let head = FOLAtom head
+            let e = FOLEq(body, head)
+            folAssert(qs, e) |> Option.toList
         | LemmaCommand _ -> []
 
     let private collectAllLemmas commands =

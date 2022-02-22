@@ -214,12 +214,18 @@ type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool
 
     let mapQuantifiers = Quantifiers.mapFold (Quantifier.mapFold mapSortedVars)
 
-    let rec mapRule sorts = function
-        | Rule(qs, premises, conclusion) ->
-            let qs, sorts = mapQuantifiers sorts qs
-            let premises, sorts = mapAtoms sorts premises
-            let conclusion, sorts = mapAtom sorts conclusion
-            Rule(qs, premises, conclusion), sorts
+    let rec mapRule sorts r =
+        let rArgs, sorts =
+            match r with
+            | Rule(qs, premises, conclusion)
+            | Equivalence(qs, premises, conclusion) ->
+                let qs, sorts = mapQuantifiers sorts qs
+                let premises, sorts = mapAtoms sorts premises
+                let conclusion, sorts = mapAtom sorts conclusion
+                (qs, premises, conclusion), sorts
+        match r with
+        | Rule _ -> Rule rArgs, sorts
+        | Equivalence _ -> Equivalence rArgs, sorts
 
     let mapFOLFormula = FOL.mapFold mapAtom
 

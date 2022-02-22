@@ -200,12 +200,6 @@ type sort =
     | PrimitiveSort of ident
     | CompoundSort of ident * sort list
 
-    member x.getBotSymbol() =
-        match x with
-        | PrimitiveSort name
-        | CompoundSort(name, _) ->
-            sprintf "%s_bot" name
-
     override x.ToString() =
         match x with
         | PrimitiveSort i -> i.ToString()
@@ -217,7 +211,6 @@ let ArraySort(s1, s2) = CompoundSort("Array", [s1; s2])
 let boolSort = PrimitiveSort(symbol("Bool"))
 let integerSort = PrimitiveSort(symbol("Int"))
 let dummySort = PrimitiveSort(symbol("*dummy-sort*"))
-let emptySort = PrimitiveSort(symbol(" "))
 
 module Sort =
     let gensym = function
@@ -233,6 +226,11 @@ module Sort =
             | PrimitiveSort s -> [s.ToString()]
             | CompoundSort(name, sorts) -> name :: List.collect sortToFlatString sorts
         sortToFlatString s |> join ""
+
+    let getBotSymbol = function
+        | PrimitiveSort name
+        | CompoundSort(name, _) ->
+            sprintf "%s_bot" name
 
 type pattern = symbol list
 type sorted_var = symbol * sort
@@ -665,12 +663,14 @@ type folFormula =
     | FOLNot of folFormula
     | FOLOr of folFormula list
     | FOLAnd of folFormula list
+    | FOLEq of folFormula * folFormula
     override x.ToString() =
         match x with
         | FOLAtom a -> a.ToString()
         | FOLNot a -> $"(not %O{a})"
         | FOLOr ats -> $"""(or {ats |> List.map toString |> join " "})"""
         | FOLAnd ats -> $"""(and {ats |> List.map toString |> join " "})"""
+        | FOLEq(a, b) -> $"(= %O{a} %O{b})"
 let rec folNot = function
     | FOLNot f -> f
     | FOLAtom a -> notMapApply (fun op ts -> AApply(op, ts) |> FOLAtom |> FOLNot) FOLAtom a
@@ -685,6 +685,7 @@ module FOL =
             | FOLNot f -> f |> iter |> FOLNot
             | FOLAnd fs -> fs |> List.map iter |> FOLAnd
             | FOLOr fs -> fs |> List.map iter |> FOLOr
+            | FOLEq(a, b) -> FOLEq(iter a, iter b)
         iter
 
     let bind f =
@@ -693,6 +694,7 @@ module FOL =
             | FOLNot f -> f |> iter |> FOLNot
             | FOLAnd fs -> fs |> List.map iter |> folAnd
             | FOLOr fs -> fs |> List.map iter |> folOr
+            | FOLEq(a, b) -> FOLEq(iter a, iter b)
         iter
 
     let mapFold f z =
@@ -709,6 +711,11 @@ module FOL =
             | FOLOr fs ->
                 let fs', z' = List.mapFold iter z fs
                 FOLOr fs', z'
+            | FOLEq(a, b) ->
+                let a', z' = iter z a
+                let b', z'' = iter z' b
+                FOLEq(a', b'), z''
+
         iter z
 
     let mapFoldPositivity f pos z =
@@ -725,6 +732,10 @@ module FOL =
             | FOLOr fs ->
                 let fs', z' = List.mapFold (iter pos) z fs
                 FOLOr fs', z'
+            | FOLEq(a, b) ->
+                let a', z' = iter pos z a
+                let b', z'' = iter pos z' b
+                FOLEq(a', b'), z''
         iter pos z
 
     let substituteWith freshVarsMap = map (Atom.substituteWith freshVarsMap)

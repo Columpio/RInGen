@@ -1,6 +1,5 @@
 module RInGen.TtaTransform
 
-open System.Collections.Generic
 open Microsoft.FSharp.Collections
 open RInGen
 open RInGen.IdentGenerator
@@ -54,14 +53,13 @@ let rec renameVars fromToMap term =
         TApply(op, renamedTerms)
 
 type Processer(adts) =
-    // TODO: optimization
-    let m = adts |> List.map snd |> List.concat |> List.map snd |> List.map (List.length) |> List.max
+    let m = adts |> List.collect snd |> List.map (snd >> List.length) |> List.max
     member private x.getEqRelName s =
         "eq" + s.ToString()
     member private x.getDiseqRelName s =
         "diseq" + s.ToString()
 
-    member x.extractPattern atom =
+    member private x.extractPattern atom =
         let name, terms =
             match atom with
             | Top | Bot -> None, []
@@ -83,7 +81,7 @@ type Processer(adts) =
             return {baseAutomata = baseAutomata; terms=renamedTerms}
         }
 
-    member x.generateAutomataDeclarations name sortList =
+    member private x.generateAutomataDeclarations name sortList =
         let initStateName = "init_" + name
         let isFinalName = "isFinal_" + name
         let deltaName = "delta_" + name
@@ -108,16 +106,16 @@ type Processer(adts) =
 
         List.map OriginalCommand decls, aRec
 
-    member x.processDeclarations oCommands =
+    member private x.processDeclarations oCommands =
         let getDecls = function
             | DeclareFun(fname, args, _) -> x.generateAutomataDeclarations fname args |> fst
             | _ -> []
         List.collect getDecls oCommands
 
-    member x.parseDatatypes adts =
+    member private x.parseDatatypes adts =
         let processDt(s, xs) =
             let constructors = List.map (fun x -> DeclareConst (fst x, s)) xs
-            let bot = DeclareConst(s.getBotSymbol(), s)
+            let bot = DeclareConst(Sort.getBotSymbol s, s)
             let baseDecls =
                  List.map OriginalCommand ([DeclareSort(s); bot] @ constructors)
             // eq axioms
@@ -146,12 +144,9 @@ type Processer(adts) =
             // Note : diseq decls are generated twice, see parseDeclarations
             baseDecls @ automataDecls @ [initAxiom; deltaAxiom]
 
-        seq {
-            for c in adts do
-                yield! (processDt c)
-        }
+        List.collect processDt adts
 
-    member x.procRule clauseNum r patAutomata =
+    member private x.procRule clauseNum r patAutomata =
         let body, head =
             match r with
             | Rule(_,body, head) -> body, head
@@ -263,18 +258,19 @@ type Processer(adts) =
 
         clauseDecls @ List.map TransformedCommand tCommands
 
-    member x.ruleToPatterns = function
-        | Rule(_, body, head) ->
+    member private x.ruleToPatterns = function
+        | Rule(_, body, head)
+        | Equivalence(_, body, head) ->
             List.map x.extractPattern (body @ [head]) |>
                 List.filter (Option.isSome) |> List.map (Option.get)
 
-    member x.generatePatternAxioms (p:namedPattern) (patRec:AutomataRecord) (baseRec:AutomataRecord) =
+    member private x.generatePatternAxioms (p:namedPattern) (patRec:AutomataRecord) (baseRec:AutomataRecord) =
         // not implemented
         // will return list of rules
         // TODO: have to pass m as param
         []
 
-    member x.procRules rules =
+    member private x.procRules rules =
 //        let querries, rules = List.choose2 (function | Rule(_,_,head) as r -> match head with | Bot -> Choice1Of2 r | _ -> Choice2Of2 r) rules
         let patternedRules = List.map x.ruleToPatterns rules
 
