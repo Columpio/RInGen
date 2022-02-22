@@ -184,7 +184,7 @@ type private POBDB (adts) =
         List.map unarifyDeclaration commands
 
     member private x.SplitIndependentInPob argumentPobAndVars =
-        let argPobAndVarsAndFreeVars = List.mapi (fun i (pob, _) -> i, x.CollectFreeVarsInTerms pob |> Set.ofList) argumentPobAndVars
+        let argPobAndVarsAndFreeVars = List.mapi (fun i (pob, _) -> i, Terms.collectFreeVars pob |> Set.ofList) argumentPobAndVars
         let rec splitIntoClasses freeVars pvs done_pvss rest =
             let rec iter fvs pvs done_pvss queue = function
                 | [] ->
@@ -222,17 +222,6 @@ type private POBDB (adts) =
         let instPobs = x.InstantiateAndSyncConstructors pob
         Seq.iter handleInstPob instPobs
         pobPredicate
-
-    member private x.CollectFreeVarsInTerm = function
-        | TIdent(i, s) -> [i, s]
-        | TConst _ -> []
-        | TApply(_, ts) -> x.CollectFreeVarsInTerms ts
-    member private x.CollectFreeVarsInTerms = List.collect x.CollectFreeVarsInTerm
-
-    member private x.CollectFreeVarsInAtom = function
-        | AApply(_, ts) -> x.CollectFreeVarsInTerms ts
-        | Equal _ | Distinct _ -> __unreachable__()
-        | _ -> []
 
     member private x.EquationsToPob vars eqs : (term list * term) list option =
         // for `vars` mapping x |-> (v, [..,x,..]) unify all `eqs` and make one single POB with `v` variables near each query tuple
@@ -275,7 +264,7 @@ type private POBDB (adts) =
 
     member private x.MakeClosedRule(body, head) : rule =
         // forall quantifiers around all vars
-        let freeVars = head::body |> List.collect x.CollectFreeVarsInAtom |> Set.ofList |> Set.toList
+        let freeVars = head::body |> List.collect Atom.collectFreeVars |> Set.ofList |> Set.toList
         rule freeVars body head
 
     member private x.UnarifyAtoms = List.mapFold x.UnarifyAtom []

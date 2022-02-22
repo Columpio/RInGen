@@ -41,14 +41,14 @@ type pattern =
       terms : term list }
 
     member x.getVars() =
-        collectFreeVarsInTerms x.terms |> Set.ofList
+        Terms.collectFreeVars x.terms |> Set.ofList
 
 let rec renameVars fromToMap term =
     match term with
     | TIdent(name, sort) ->
         let newName = Map.find name fromToMap
         TIdent(newName, sort)
-    | TConst(_) -> term
+    | TConst _ -> term
     | TApply(op, ts) ->
         let renamedTerms = List.map (renameVars fromToMap) ts
         TApply(op, renamedTerms)
@@ -66,21 +66,22 @@ type Processer(adts) =
             match atom with
             | Top | Bot -> None, []
             | Distinct(t1, t2) ->
-                let sort = t1.getSort()
+                let sort = Term.typeOf t1
                 Some (x.getDiseqRelName sort), [t1; t2]
             | Equal(t1, t2) ->
-                let sort = t1.getSort()
+                let sort = Term.typeOf t1
                 Some (x.getEqRelName sort), [t1; t2]
             | AApply(op, ts) -> Some (op.ToString()), ts
-        if Option.isNone name then None
-        else
-        let vars = collectFreeVarsInTerms terms |> Set.ofList
-        let renameMap = Seq.mapi (fun i v -> (fst v, "x_" + i.ToString())) vars |> Map.ofSeq
-        let renamedTerms = List.map (renameVars renameMap) terms
-        let _, baseAutomata =
-            let sorts = terms |> List.map (fun (t : term) -> t.getSort())
-            x.generateAutomataDeclarations (Option.get name) sorts
-        Some ({baseAutomata = baseAutomata; terms=renamedTerms})
+        opt {
+            let! name = name
+            let vars = Terms.collectFreeVars terms |> Set.ofList
+            let renameMap = Seq.mapi (fun i v -> (v, TIdent ("x_" + i.ToString(), snd v))) vars |> Map.ofSeq
+            let renamedTerms = List.map (Term.substituteWith renameMap) terms
+            let _, baseAutomata =
+                let sorts = terms |> List.map Term.typeOf
+                x.generateAutomataDeclarations name sorts
+            return {baseAutomata = baseAutomata; terms=renamedTerms}
+        }
 
     member x.generateAutomataDeclarations name sortList =
         let initStateName = "init_" + name
@@ -92,7 +93,7 @@ type Processer(adts) =
             List.init (pown m n) (fun _ -> stateSort)
 
         let decls =
-            let initStateDecl = DeclareConst (initStateName, stateSort)
+            let initStateDecl = DeclareConst(initStateName, stateSort)
             let isFinalDecl = DeclareFun(isFinalName, [stateSort], boolSort)
             let deltaDecl = DeclareFun(deltaName, sortList @ statesVec, stateSort)
             let reachDecl = DeclareFun(reachName, [stateSort], boolSort)
@@ -108,21 +109,10 @@ type Processer(adts) =
         List.map OriginalCommand decls, aRec
 
     member x.processDeclarations oCommands =
-        let getDecls el =
-            match el with
-            | DeclareFun(fname, args, _) ->
-                let decls, _ = x.generateAutomataDeclarations fname args
-                Some decls
-            | _ -> None
-
-        let xs = oCommands |> List.map getDecls |> List.filter (fun el -> el.IsSome)
-
-        seq {
-            for el in xs do
-                match el with
-                | Some c -> yield! c
-                | None -> ()
-        }
+        let getDecls = function
+            | DeclareFun(fname, args, _) -> x.generateAutomataDeclarations fname args |> fst
+            | _ -> []
+        List.collect getDecls oCommands
 
     member x.parseDatatypes adts =
         let processDt(s, xs) =
@@ -161,12 +151,6 @@ type Processer(adts) =
                 yield! (processDt c)
         }
 
-    member private x.CollectFreeVarsInAtom = function
-       | AApply(_, ts) -> collectFreeVarsInTerms ts
-       | Equal(t1, t2) | Distinct(t1, t2) -> collectFreeVarsInTerms [t1; t2]
-       | Bot | Top -> []
-    member private x.CollectFreeVarsInAtoms = List.collect x.CollectFreeVarsInAtom
-
     member x.procRule clauseNum r patAutomata =
         let body, head =
             match r with
@@ -177,8 +161,8 @@ type Processer(adts) =
 
         // process rule
         let clauseName = "clause" + clauseNum.ToString()
-        let atomsVars = atoms |> List.map x.CollectFreeVarsInAtom |> List.map (List.sortWith ordSortedVar)
-        let clauseVars = x.CollectFreeVarsInAtoms atoms |> Set.ofList |> Set.toList |> List.sortWith ordSortedVar
+        let atomsVars = atoms |> List.map Atom.collectFreeVars |> List.map (List.sortWith ordSortedVar)
+        let clauseVars = Atoms.collectFreeVars atoms |> Set.ofList |> Set.toList |> List.sortWith ordSortedVar
         let clauseVarsTerms = clauseVars |> List.map TIdent
         let clauseSorts = clauseVars |> List.map snd
         let clauseDecls, cRecord = x.generateAutomataDeclarations clauseName clauseSorts

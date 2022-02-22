@@ -251,11 +251,6 @@ type operation =
     | ElementaryOperation of ident * sort list * sort
     | UserDefinedOperation of ident * sort list * sort
 
-    member x.getSort() =
-        match x with
-        | ElementaryOperation(_, _, s)
-        | UserDefinedOperation(_, _, s) ->
-            s
     override x.ToString() =
         match x with
         | ElementaryOperation(s, _, _)
@@ -304,28 +299,12 @@ type term =
     | TIdent of ident * sort
     | TApply of operation * term list
 
-    member x.getSort() =
-        match x with
-        | TConst(_, s)
-        | TIdent(_, s) ->
-            s
-        | TApply(op, _) -> op.getSort()
-
-    member x.CollectFreeVarsInTerm() =
-        match x with
-        | TIdent(i, s) -> [i, s]
-        | TConst _ -> []
-        | TApply(_, ts) ->
-            List.collect (fun (t : term) -> t.CollectFreeVarsInTerm()) ts
-
     override x.ToString() =
         match x with
         | TConst(name, _) -> name.ToString()
         | TIdent(name, _) -> name.ToString()
         | TApply(op, []) -> op.ToString()
         | TApply(f, xs) -> sprintf "(%O %s)" f (xs |> List.map toString |> join " ")
-
-let collectFreeVarsInTerms = List.collect (fun (t : term) -> t.CollectFreeVarsInTerm())
 
 type atom =
     | Top
@@ -361,10 +340,6 @@ let private simplBinary zero one deconstr constr =
                 | None -> iter (fun res -> k (x :: res)) xs
     iter (function [] -> zero | [t] -> t | ts -> ts |> constr)
 
-module Terms =
-    let mapFold = List.mapFold
-    let map = List.map
-
 module Term =
     let typeOf = function
         | TConst(_, typ)
@@ -380,7 +355,7 @@ module Term =
             let (name, typ), z = f z (name, typ)
             TIdent(name, typ), z
         | TApply(op, ts) ->
-            let ts, z = Terms.mapFold (mapFold f) z ts
+            let ts, z = List.mapFold (mapFold f) z ts
             TApply(op, ts), z
 
     let rec map f = function
@@ -391,14 +366,14 @@ module Term =
             let name, typ = f (name, typ)
             TIdent(name, typ)
         | TApply(op, ts) ->
-            let ts = Terms.map (map f) ts
+            let ts = List.map (map f) ts
             TApply(op, ts)
 
     let rec bind f = function
         | TIdent(name, typ)
         | TConst(name, typ) as t -> f t (name, typ)
         | TApply(op, ts) ->
-            let ts = Terms.map (bind f) ts
+            let ts = List.map (bind f) ts
             TApply(op, ts)
 
     let substituteWith substMap = bind (fun t vs -> Option.defaultValue t <| Map.tryFind vs substMap)
@@ -409,6 +384,17 @@ module Term =
             | TIdent(v1, s1) as vs1 -> if v = (v1, s1) then t else vs1
             | TApply(op, ts) -> TApply(op, List.map substInTermWithPair ts)
         substInTermWithPair u
+
+    let rec collectFreeVars = function
+        | TIdent(i, s) -> [i, s]
+        | TConst _ -> []
+        | TApply(_, ts) -> List.collect collectFreeVars ts
+
+module Terms =
+    let mapFold = List.mapFold
+    let map = List.map
+
+    let collectFreeVars = List.collect Term.collectFreeVars
 
 module Atom =
     let mapFold f z = function
@@ -443,9 +429,16 @@ module Atom =
 
     let substituteWith freshVarsMap = map (Term.substituteWith freshVarsMap)
 
+    let collectFreeVars = function
+       | AApply(_, ts) -> Terms.collectFreeVars ts
+       | Equal(t1, t2) | Distinct(t1, t2) -> Terms.collectFreeVars [t1; t2]
+       | Bot | Top -> []
+
 module Atoms =
     let map = List.map
     let mapFold = List.mapFold
+
+    let collectFreeVars = List.collect Atom.collectFreeVars
 
 type 'a conjunction = Conjunction of 'a list
 type 'a disjunction = Disjunction of 'a list
