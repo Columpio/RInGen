@@ -277,7 +277,6 @@ type private POBDB (adts) =
                 let phis = x.AnswerMarkedPOB pobWithArgs
                 Some <| Rule.clARule (phis @ bodyAtoms) head
             | None -> None
-        | Equivalence _ -> __unreachable__()
 
     member x.UnarifyRules rules = List.choose x.UnarifyRule rules
 

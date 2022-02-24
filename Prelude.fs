@@ -183,9 +183,9 @@ module Terms =
 
     let collectFreeVars = List.collect Term.collectFreeVars >> List.unique
 
-    let generateVariablesFromVars = List.map Term.generateVariableWithPrefix
-    let generateVariablesFromOperation = Operation.argumentTypes >> generateVariablesFromVars
-    
+    let generateVariablesFromVars vars = List.map ((<||) Term.generateVariableWithPrefix) vars
+    let generateVariablesFromOperation = Operation.argumentTypes >> List.map Term.generateVariable
+
     let generateNVariablesOfSort n sort = List.init n (fun _ -> Term.generateVariable sort)
 
 type atom =

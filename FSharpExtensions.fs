@@ -111,7 +111,7 @@ module List =
 
     let butLast xs =
         let first, last = List.splitAt (List.length xs - 1) xs
-        first, List.head last
+        first, List.exactlyOne last
 
     let mapReduce f xs =
         match xs with

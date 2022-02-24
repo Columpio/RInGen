@@ -55,7 +55,7 @@ type Processer(adts : datatype_def list) =
         | None -> None
         | Some name ->
             let vars = Terms.collectFreeVars terms
-            let renameMap = Terms.generateVariablesFromVars vars |> Map.ofList
+            let renameMap = Terms.generateVariablesFromVars vars |> List.zip vars |> Map.ofList
             let renamedTerms = List.map (Term.substituteWith renameMap) terms
             let _, baseAutomata =
                 let sorts = terms |> List.map Term.typeOf
@@ -193,11 +193,10 @@ type Processer(adts : datatype_def list) =
             let stateTerms = Terms.generateNVariablesOfSort clauseLen stateSort
             let li = TApply(prodOp, stateTerms)
             let l = AApply(cRecord.isFinal, [li])
-            let rs,lastR = patAutomata |> List.splitAt (clauseLen - 1)
+            let rs, lastR = List.butLast patAutomata
             let states, lastStates = stateTerms |> List.splitAt (clauseLen - 1)
             let rs = List.map2 (fun r q -> AApply(r.isFinal, [q]) ) rs states
             // head isFinal is negated
-            let lastR = List.exactlyOne lastR
             let lastR =
                 match head with
                 | Bot ->

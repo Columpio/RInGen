@@ -95,8 +95,7 @@ let private preambulizeCommands logic chcSystem =
     OriginalCommand(SetLogic logic) :: chcSystem @ [OriginalCommand CheckSat]
 
 let private preambulizeCommandsHornOrAll commands =
-    let logic = if List.exists (function (TransformedCommand(Equivalence _)) -> true | _ -> false) commands then "ALL" else "HORN"
-    preambulizeCommands logic commands
+    preambulizeCommands "HORN" commands
 
 type OriginalTransformerProgram (options) =
     inherit TransformerProgram(options)
@@ -134,8 +133,11 @@ type FreeSortsTransformerProgram (options) =
     override x.Transform trCtx =
         let noADTSystem = ClauseTransform.DatatypesToSorts.datatypesToSorts trCtx.commands
         let commands = preambulizeCommands "UF" noADTSystem
-        let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
-        let commands = Simplification.simplify trCtx.diseqs commands
+        let commands =
+            if options.tta_transform then TtaTransform.transform commands
+            else
+                let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
+                Simplification.simplify trCtx.diseqs commands
         List.map toString commands
 
 type PrologTransformerProgram (options) =

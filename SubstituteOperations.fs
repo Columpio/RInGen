@@ -85,18 +85,11 @@ type FormulaTraverser () =
 
     member x.TraverseQuantifiers = Quantifiers.map (Quantifier.map x.TraverseSortedVars)
 
-    member x.TraverseRule r =
-        let rArgs =
-            match r with
-            | Rule(qs, premises, conclusion)
-            | Equivalence(qs, premises, conclusion) ->
-                let qs = x.TraverseQuantifiers qs
-                let premises = x.TraverseAtoms premises
-                let conclusion = x.TraverseAtom conclusion
-                (qs, premises, conclusion)
-        match r with
-        | Rule _ -> Rule rArgs
-        | Equivalence _ -> Equivalence rArgs
+    member x.TraverseRule (Rule(qs, premises, conclusion)) =
+        let qs = x.TraverseQuantifiers qs
+        let premises = x.TraverseAtoms premises
+        let conclusion = x.TraverseAtom conclusion
+        Rule(qs, premises, conclusion)
 
     member x.TraverseFOLFormula = FOL.map x.TraverseAtom
 
@@ -124,12 +117,8 @@ type FormulaTraverser () =
 
     member x.TraverseTransformedCommand command =
         match command with
-        | OriginalCommand c ->
-            let c = x.TraverseCommand c
-            OriginalCommand c
-        | TransformedCommand r ->
-            let r = x.TraverseRule r
-            TransformedCommand r
+        | OriginalCommand c -> OriginalCommand(x.TraverseCommand c)
+        | TransformedCommand r -> TransformedCommand(x.TraverseRule r)
         | LemmaCommand(pred, vars, bodyLemma, headCube) ->
             let vars = x.TraverseSortedVars vars
             let bodyLemma = x.TraverseLemma bodyLemma
