@@ -1,27 +1,18 @@
 module RInGen.TtaTransform
 
 open Microsoft.FSharp.Collections
-open RInGen
 open RInGen.IdentGenerator
+open FOLCommand
+open Operations
 
-let stateSort = gensymp "State" |> PrimitiveSort
-let notop = Operation.makeElementaryRelationFromSorts "not" [boolSort]
-
-let ordSort (s1 : sort) (s2 : sort) =
-    let getSortName sv =
-        match sv with
-        | PrimitiveSort(name)
-        | CompoundSort(name, _) -> name
-    let s1 = getSortName s1
-    let s2 = getSortName s2
-    if s1 < s2 then -1 else
-    if s1 > s2 then 1 else
-    0
+let stateSortName = gensymp "State"
+let stateSort = FreeSort stateSortName
+let notop = Operation.makeElementaryRelationFromSorts "not" [BoolSort]
 
 let ordSortedVar (sv1 : sorted_var) (sv2 : sorted_var) =
     let sort1 = snd sv1
     let sort2 = snd sv2
-    let cmpSorts = ordSort sort1 sort2
+    let cmpSorts = Sort.compare sort1 sort2
     // prioritize sort name in comparison
     if cmpSorts <> 0 then cmpSorts else
     if fst sv1 < fst sv2 then -1 else
@@ -39,21 +30,11 @@ type pattern =
     { baseAutomata : AutomataRecord
       terms : term list }
 
-    member x.getVars() =
-        Terms.collectFreeVars x.terms |> Set.ofList
+let getBotSymbol sort =
+    Sort.sortToFlatString sort + "_bot"
 
-let rec renameVars fromToMap term =
-    match term with
-    | TIdent(name, sort) ->
-        let newName = Map.find name fromToMap
-        TIdent(newName, sort)
-    | TConst _ -> term
-    | TApply(op, ts) ->
-        let renamedTerms = List.map (renameVars fromToMap) ts
-        TApply(op, renamedTerms)
-
-type Processer(adts) =
-    let m = adts |> List.collect snd |> List.map (snd >> List.length) |> List.max
+type Processer(adts : datatype_def list) =
+    let m = adts |> List.collect snd |> List.map (thd3 >> List.length) |> List.max
     member private x.getEqRelName s =
         "eq" + s.ToString()
     member private x.getDiseqRelName s =
@@ -69,17 +50,17 @@ type Processer(adts) =
             | Equal(t1, t2) ->
                 let sort = Term.typeOf t1
                 Some (x.getEqRelName sort), [t1; t2]
-            | AApply(op, ts) -> Some (op.ToString()), ts
-        opt {
-            let! name = name
-            let vars = Terms.collectFreeVars terms |> Set.ofList
-            let renameMap = Seq.mapi (fun i v -> (v, TIdent ("x_" + i.ToString(), snd v))) vars |> Map.ofSeq
+            | AApply(op, ts) -> Some (Operation.opName op), ts
+        match name with
+        | None -> None
+        | Some name ->
+            let vars = Terms.collectFreeVars terms
+            let renameMap = Terms.generateVariablesFromVars vars |> Map.ofList
             let renamedTerms = List.map (Term.substituteWith renameMap) terms
             let _, baseAutomata =
                 let sorts = terms |> List.map Term.typeOf
                 x.generateAutomataDeclarations name sorts
-            return {baseAutomata = baseAutomata; terms=renamedTerms}
-        }
+            Some {baseAutomata = baseAutomata; terms=renamedTerms}
 
     member private x.generateAutomataDeclarations name sortList =
         let initStateName = "init_" + name
@@ -92,9 +73,9 @@ type Processer(adts) =
 
         let decls =
             let initStateDecl = DeclareConst(initStateName, stateSort)
-            let isFinalDecl = DeclareFun(isFinalName, [stateSort], boolSort)
+            let isFinalDecl = DeclareFun(isFinalName, [stateSort], BoolSort)
             let deltaDecl = DeclareFun(deltaName, sortList @ statesVec, stateSort)
-            let reachDecl = DeclareFun(reachName, [stateSort], boolSort)
+            let reachDecl = DeclareFun(reachName, [stateSort], BoolSort)
             [initStateDecl; isFinalDecl; deltaDecl; reachDecl]
 
         let aRec =
@@ -104,7 +85,7 @@ type Processer(adts) =
             let reach = Operation.makeElementaryRelationFromSorts reachName [stateSort]
             {name=name; initConst = initState; isFinal = isFinal; delta = delta; reach=reach}
 
-        List.map OriginalCommand decls, aRec
+        List.map FOLOriginalCommand decls, aRec
 
     member private x.processDeclarations oCommands =
         let getDecls = function
@@ -113,22 +94,22 @@ type Processer(adts) =
         List.collect getDecls oCommands
 
     member private x.parseDatatypes adts =
-        let processDt(s, xs) =
-            let constructors = List.map (fun x -> DeclareConst (fst x, s)) xs
-            let bot = DeclareConst(Sort.getBotSymbol s, s)
+        let processDt(sName, xs) =
+            let s = ADTSort sName
+            let constructors = List.map (fun (c, _, _) -> DeclareConst (Operation.opName c, s)) xs
+            let bot = DeclareConst(getBotSymbol s, s)
             let baseDecls =
-                 List.map OriginalCommand ([DeclareSort(s); bot] @ constructors)
+                 List.map FOLOriginalCommand ([DeclareSort(sName); bot] @ constructors)
             // eq axioms
             let automataDecls, eqRec =
                 let eqRelName = x.getEqRelName s
                 x.generateAutomataDeclarations eqRelName [s; s]
 
             let initAxiom =
-                let r = AApply(eqRec.isFinal, [eqRec.initConst])
-                TransformedCommand (rule [] [] r)
+                let r = Atom.apply1 eqRec.isFinal eqRec.initConst
+                clAFact r
             let deltaAxiom =
-                let qVars = List.init (pown m 2) (fun _ -> (gensym(), stateSort))
-                let qTerms = List.map TIdent qVars
+                let qTerms = Terms.generateNVariablesOfSort (pown m 2) stateSort
                 let fVar, gVar = ("f", s), ("g", s)
                 let fTerm, gTerm = TIdent fVar, TIdent gVar
                 let l = AApply(eqRec.isFinal, [TApply(eqRec.delta, [fTerm; gTerm] @ qTerms)])
@@ -136,9 +117,8 @@ type Processer(adts) =
                     let rl = AApply(equal_op s, [fTerm; gTerm])
                     let qDiag = List.init m (fun i -> qTerms.[i*(m+1)])
                     let rr = List.map (fun v -> AApply(eqRec.isFinal, [v])) qDiag
-                    [rl] @ rr
-                let rule = eqRule ([fVar; gVar] @ qVars) r l
-                TransformedCommand rule
+                    rl :: rr
+                clAEquivalence r l
 
             // TODO: diseq + diseqAxioms ??
             // Note : diseq decls are generated twice, see parseDeclarations
@@ -146,18 +126,13 @@ type Processer(adts) =
 
         List.collect processDt adts
 
-    member private x.procRule clauseNum r patAutomata =
-        let body, head =
-            match r with
-            | Rule(_,body, head) -> body, head
-            | _ -> __unreachable__()
-
-        let atoms = body @ [head] |> List.filter (function |Top | Bot -> false |_ -> true)
+    member private x.procRule clauseNum (Rule(_, body, head)) patAutomata =
+        let atoms = head :: body
 
         // process rule
         let clauseName = "clause" + clauseNum.ToString()
         let atomsVars = atoms |> List.map Atom.collectFreeVars |> List.map (List.sortWith ordSortedVar)
-        let clauseVars = Atoms.collectFreeVars atoms |> Set.ofList |> Set.toList |> List.sortWith ordSortedVar
+        let clauseVars = Atoms.collectFreeVars atoms |> List.unique |> List.sortWith ordSortedVar
         let clauseVarsTerms = clauseVars |> List.map TIdent
         let clauseSorts = clauseVars |> List.map snd
         let clauseDecls, cRecord = x.generateAutomataDeclarations clauseName clauseSorts
@@ -168,7 +143,7 @@ type Processer(adts) =
         let prodDecl, prodOp =
             let ss = List.init clauseLen (fun _ -> stateSort)
             let op = Operation.makeElementaryOperationFromSorts prodName ss stateSort
-            let decl = OriginalCommand (DeclareFun(prodName, ss, stateSort))
+            let decl = FOLOriginalCommand (DeclareFun(prodName, ss, stateSort))
             decl, op
         let clauseDecls = prodDecl::clauseDecls
 
@@ -176,22 +151,15 @@ type Processer(adts) =
             let l = cRecord.initConst
             let inits = List.map (fun r -> r.initConst) patAutomata
             let r = TApply(prodOp, inits)
-            rule [] [] (AApply(equal_op stateSort, [l; r]))
+            clAFact (Atom.apply2 (equal_op stateSort) l r)
         let deltaAxiom =
-            let stateVars = List.map (fun vars -> (List.init (pown m (List.length vars)) (fun _ -> (gensym(), stateSort)))) atomsVars
-            let stateTerms = stateVars |> List.map (List.map TIdent)
+            let stateTerms = List.map (fun vars -> (Terms.generateNVariablesOfSort (pown m (List.length vars)) stateSort)) atomsVars
             let atomsTerms = List.map (List.map TIdent) atomsVars
-            let rs = List.map3 (fun r vs s -> TApply(r.delta, vs @ s) ) patAutomata atomsTerms stateTerms
+            let rs = List.map3 (fun r vs s -> TApply(r.delta, vs @ s)) patAutomata atomsTerms stateTerms
             let r = TApply(prodOp, rs)
             let l =
                 // helper functions
-                let genQMask aVars = [
-                        for v in clauseVars do
-                            if (List.contains v aVars) then
-                                yield true
-                            else
-                                yield false
-                    ]
+                let genQMask aVars = List.map (fun v -> List.contains v aVars) clauseVars
                 let applyMask combination mask =
                     List.zip combination mask |> List.filter snd |> List.rev
                     |> List.mapi (fun i (el,_) -> el * (pown m i)) |> List.sum
@@ -217,13 +185,12 @@ type Processer(adts) =
                     with [q00; q01; q10; q11] (n=2)
                 *)
                 let statePositions = List.map (fun c -> List.map (applyMask c) posMasks) combinations
-                let stateTerms = statePositions |> List.map (fun positions -> List.map2 (List.item) positions stateTerms)
+                let stateTerms = statePositions |> List.map (fun positions -> List.map2 List.item positions stateTerms)
                 let lStates = List.map (fun qs -> TApply(prodOp, qs)) stateTerms
                 TApply(cRecord.delta, clauseVarsTerms @ lStates)
-            rule (List.concat stateVars @ clauseVars) [] (AApply(equal_op stateSort, [l; r]))
+            clAFact (AApply(equal_op stateSort, [l; r]))
         let finalAxiom =
-            let stateVars = List.init clauseLen (fun _ -> (gensym(), stateSort))
-            let stateTerms = stateVars |> List.map TIdent
+            let stateTerms = Terms.generateNVariablesOfSort clauseLen stateSort
             let li = TApply(prodOp, stateTerms)
             let l = AApply(cRecord.isFinal, [li])
             let rs,lastR = patAutomata |> List.splitAt (clauseLen - 1)
@@ -237,32 +204,25 @@ type Processer(adts) =
                     AApply(lastR.isFinal, lastStates)
                 | _ ->
                     AApply(notop, [TApply(lastR.isFinal, lastStates)])
-            eqRule stateVars (rs @ [lastR]) l
+            clAEquivalence (lastR :: rs) l
         let reachInit =
-            rule [] [] (AApply(cRecord.reach, [cRecord.initConst]))
+            clAFact (AApply(cRecord.reach, [cRecord.initConst]))
         let reachDelta =
-            let qVars = List.init (pown m (List.length clauseVarsTerms)) (fun _ -> (gensym(), stateSort))
-            let qTerms = List.map TIdent qVars
+            let qTerms = Terms.generateNVariablesOfSort (pown m (List.length clauseVarsTerms)) stateSort
             let l = List.map (fun q -> AApply(cRecord.reach, [q])) qTerms
             let r =
                 let ri = TApply(cRecord.delta, clauseVarsTerms @ qTerms)
                 AApply(cRecord.reach, [ri])
-            rule (clauseVars @ qVars) l r
+            clARule l r
         let condition =
             let qVar = ("q", stateSort)
             let qTerm = TIdent qVar
             let l = AApply(cRecord.reach, [qTerm])
             let r = AApply(notop, [TApply(cRecord.isFinal, [qTerm])])
-            rule [qVar] [l] r
+            clARule [l] r
         let tCommands = [initAxiom; deltaAxiom; finalAxiom; reachInit; reachDelta; condition]
 
-        clauseDecls @ List.map TransformedCommand tCommands
-
-    member private x.ruleToPatterns = function
-        | Rule(_, body, head)
-        | Equivalence(_, body, head) ->
-            List.map x.extractPattern (body @ [head]) |>
-                List.filter (Option.isSome) |> List.map (Option.get)
+        clauseDecls @ tCommands
 
     member private x.generatePatternAxioms (p:namedPattern) (patRec:AutomataRecord) (baseRec:AutomataRecord) =
         // not implemented
@@ -272,14 +232,14 @@ type Processer(adts) =
 
     member private x.procRules rules =
 //        let querries, rules = List.choose2 (function | Rule(_,_,head) as r -> match head with | Bot -> Choice1Of2 r | _ -> Choice2Of2 r) rules
-        let patternedRules = List.map x.ruleToPatterns rules
+        let patternedRules = List.map (function Rule(_, body, head) -> List.choose x.extractPattern (head :: body)) rules
 
-        let patternSet = patternedRules |> List.concat |> Set.ofList
-        let patternVars = patternSet |> Seq.map (fun p -> p.getVars())
+        let patternSet = patternedRules |> List.concat |> List.unique
+        let patternVars = patternSet |> List.map (fun p -> Terms.collectFreeVars p.terms)
         let decls, patternToRecordMap =
             let f i pat vars =
                 let name = "P" + i.ToString()
-                let sorts = vars |> Seq.map snd |> List.ofSeq |> List.sortWith ordSort
+                let sorts = vars |> Seq.map snd |> List.ofSeq |> List.sortWith Sort.compare
                 let decls, record = x.generateAutomataDeclarations name sorts
                 (decls, (pat, record))
             let decls, patternToRecordMap = Seq.mapi2 f patternSet patternVars |> List.ofSeq |> List.unzip
@@ -296,7 +256,7 @@ type Processer(adts) =
 
     member x.traverseCommands oCommands (rules : rule list)  =
         seq {
-            yield OriginalCommand(DeclareSort(stateSort))
+            yield FOLOriginalCommand(DeclareSort(stateSortName))
             yield! (x.parseDatatypes adts)
             yield! (x.processDeclarations oCommands)
             // TODO: remove ltlt debug

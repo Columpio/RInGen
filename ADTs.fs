@@ -1,22 +1,22 @@
 module RInGen.ADTs
 open Relativization
 open SubstituteOperations
+open Rule
 
 module SupplementaryADTAxioms =
     let private generateSelectors adtSort constructors selectorsMap =
         // car(x, r) <- x = cons(r, a)
         let generateSelectorForConstructor selectorsMap (constructorName, selectorsWithTypes) =
             let constructorOp = Operation.makeElementaryOperationFromVars constructorName selectorsWithTypes adtSort
-            let constrArgs = Operation.generateArguments constructorOp
-            let adtArg = IdentGenerator.gensym (), adtSort
-            let selectorVars = adtArg::constrArgs
-            let selectorPremise = [Equal(TIdent adtArg, TApply(constructorOp, List.map TIdent constrArgs))]
+            let constrArgs = Terms.generateVariablesFromOperation constructorOp
+            let adtArg = Term.generateVariable adtSort
+            let selectorPremise = [Equal(adtArg, TApply(constructorOp, constrArgs))]
             let generateSelector selectorsMap (retArg, (selectorName, selectorType)) =
                 let relselectorName = IdentGenerator.gensymp selectorName
                 let op = Operation.makeElementaryOperationFromSorts selectorName [adtSort] selectorType
                 let relselectorOp = Operation.makeElementaryOperationFromSorts relselectorName [adtSort] selectorType |> Relativization.relativizeOperation
                 let decl = Relativization.reldeclare relselectorName [adtSort] selectorType
-                let body = rule selectorVars selectorPremise (AApply(relselectorOp, [TIdent retArg; TIdent adtArg]))
+                let body = clARule selectorPremise (relapply relselectorOp [adtArg] retArg)
                 (OriginalCommand decl, TransformedCommand body), addShouldRelativize op relselectorOp selectorsMap
             let comms, selectorsMap =
                 selectorsWithTypes
@@ -28,18 +28,16 @@ module SupplementaryADTAxioms =
         List.concat decls, List.concat defs, selectorsMap
 
     let private generateTesterHeader substs sort constructorName =
-        let testerName = Typer.testerNameOf constructorName
+        let testerName = ADTExtensions.getTesterNameFromConstructor constructorName
         let relTesterName = IdentGenerator.gensymp testerName
         let op = Operation.makeElementaryRelationFromSorts testerName [sort]
         let relOp = Operation.makeElementaryRelationFromSorts relTesterName [sort]
-        let decl = DeclareFun(relTesterName, [sort], boolSort)
+        let decl = DeclareFun(relTesterName, [sort], BoolSort)
         relOp, decl, addShouldNotRelativize op relOp substs
 
-    let applyConstructor op xs = TApply(op, xs)
-
     let private generateTesterBody tester_op constructor_op sort =
-        let constructorVars = Operation.generateArguments constructor_op
-        rule constructorVars [] (AApply(tester_op, [applyConstructor constructor_op (List.map TIdent constructorVars)]))
+        let constructorVars = Terms.generateVariablesFromOperation constructor_op
+        clARule [] (AApply(tester_op, [Term.apply constructor_op constructorVars]))
 
     let private generateTesters sort cs substs =
         let generateTester substs (constructorName : symbol, selectorsWithTypes) =
@@ -53,7 +51,7 @@ module SupplementaryADTAxioms =
     let private generateCongruenceHeader congrBaseName diseqs name =
         let diseq_name = IdentGenerator.gensymp (congrBaseName + (Sort.sortToFlatString name))
         let op = Operation.makeElementaryRelationFromSorts diseq_name [name; name]
-        let decl = DeclareFun(diseq_name, [name; name], boolSort)
+        let decl = DeclareFun(diseq_name, [name; name], BoolSort)
         op, Map.add name op diseqs, decl
 
     let private generateDiseqBody diseq_op diseqs cs adtSort =
@@ -67,27 +65,22 @@ module SupplementaryADTAxioms =
         // diseqNat(x, y) -> diseqList(Cons(x, l1), Cons(y, l2))
         // diseqList(l1, l2) -> diseqList(Cons(x, l1), Cons(y, l2))
         let cs = cs |> List.map (fun (name, selectorsWithTypes) -> Operation.makeElementaryOperationFromVars name selectorsWithTypes adtSort)
-        let diseq x y = AApply(diseq_op, [x; y])
-        let apply = applyConstructor
+        let diseq = Atom.apply2 diseq_op
         let facts = seq {
             for l, r in Seq.nondiag cs do
-                let lvars = Operation.generateArguments l
-                let rvars = Operation.generateArguments r
-                let lids = lvars |> List.map TIdent
-                let rids = rvars |> List.map TIdent
-                yield rule (lvars @ rvars) [] (diseq (apply l lids) (apply r rids))
+                let lids = Terms.generateVariablesFromOperation l
+                let rids = Terms.generateVariablesFromOperation r
+                yield clAFact (diseq (Term.apply l lids) (Term.apply r rids))
         }
         let steps = seq {
             for constr in cs do
-                let lvars = Operation.generateArguments constr
-                let rvars = Operation.generateArguments constr
-                let lids = lvars |> List.map TIdent
-                let rids = rvars |> List.map TIdent
-                let app = diseq (apply constr lids) (apply constr rids)
+                let lids = Terms.generateVariablesFromOperation constr
+                let rids = Terms.generateVariablesFromOperation constr
+                let app = diseq (Term.apply constr lids) (Term.apply constr rids)
                 for sort, l, r in List.zip3 (Operation.argumentTypes constr) lids rids do
                     match Map.tryFind sort diseqs with
-                    | Some op -> yield rule (lvars @ rvars) [AApply(op, [l; r])] app
-                    | None -> yield rule (lvars @ rvars) [Distinct(l, r)] app
+                    | Some op -> yield clARule [AApply(op, [l; r])] app
+                    | None -> yield clARule [Distinct(l, r)] app
         }
         Seq.append facts steps |> List.ofSeq
 
@@ -96,9 +89,8 @@ module SupplementaryADTAxioms =
         // eqNat(x, x)
         // List = Nil | Cons(Nat, List)
         // eqList(x, x)
-        let x = IdentGenerator.gensym (), adtSort
-        let xid = TIdent x
-        [rule [x] [] (AApply(eq_op, [xid; xid]))]
+        let xid = Term.generateVariable adtSort
+        [clAFact (AApply(eq_op, [xid; xid]))]
 
     let private generateCongruence congrBaseName generateCongruenceBody name constrs diseqs =
         let op, diseqs, decl = generateCongruenceHeader congrBaseName diseqs name
@@ -117,11 +109,11 @@ module SupplementaryADTAxioms =
         (decls, defs), (substs, eqs, diseqs)
 
     let private substituteSymbols acc = function
-        | OriginalCommand(DeclareDatatype(name, constrs)) ->
-            let (decls, defs), acc = generateDefinitionsFromDatatype acc (name, constrs)
+        | OriginalCommand(DeclareDatatype dt) ->
+            let (decls, defs), acc = generateDefinitionsFromDatatype acc (ADTExtensions.adtDefinitionToRaw dt)
             decls @ defs, acc
         | OriginalCommand(DeclareDatatypes dts) ->
-            let cs, acc = List.mapFold generateDefinitionsFromDatatype acc dts
+            let cs, acc = List.mapFold generateDefinitionsFromDatatype acc (ADTExtensions.adtDefinitionsToRaw dts)
             let decls, defs = List.unzip cs
             List.concat (decls @ defs), acc
         | _ -> [], acc
@@ -136,23 +128,22 @@ module SupplementaryADTAxioms =
 
 let private generateBoolCongruenceHeader congrName =
     let diseq_name = IdentGenerator.gensymp (congrName + "Bool")
-    let op = Operation.makeElementaryRelationFromSorts diseq_name [boolSort; boolSort]
-    let diseq = applyBinaryRelation op
-    let decl = DeclareFun(diseq_name, [boolSort; boolSort], boolSort)
+    let op = Operation.makeElementaryRelationFromSorts diseq_name [BoolSort; BoolSort]
+    let diseq = Atom.apply2 op
+    let decl = DeclareFun(diseq_name, [BoolSort; BoolSort], BoolSort)
     decl, diseq, op
 
 let generateBoolCongruences eqs diseqs =
-    match Map.tryFind boolSort eqs, Map.tryFind boolSort diseqs with
-    | Some eq, Some diseq -> applyBinaryRelation eq, applyBinaryRelation diseq, eqs, diseqs, []
+    match Map.tryFind BoolSort eqs, Map.tryFind BoolSort diseqs with
+    | Some eq, Some diseq -> Atom.apply2 eq, Atom.apply2 diseq, eqs, diseqs, []
     | _ ->
         let eqDecl, eq, eqOp = generateBoolCongruenceHeader "eq"
         let diseqDecl, diseq, diseqOp = generateBoolCongruenceHeader "diseq"
-        let x = IdentGenerator.gensym (), boolSort
-        let xid = TIdent x
-        let eqRules = [OriginalCommand eqDecl; TransformedCommand <| rule [x] [] (eq xid xid)]
+        let xid = Term.generateVariable BoolSort
+        let eqRules = [OriginalCommand eqDecl; TransformedCommand <| clAFact (eq xid xid)]
         let diseqBody = [
-            rule [] [] (diseq truet falset)
-            rule [] [] (diseq falset truet)
+            clAFact (diseq Term.truth Term.falsehood)
+            clAFact (diseq Term.falsehood Term.truth)
         ]
         let diseqRules = OriginalCommand diseqDecl :: List.map TransformedCommand diseqBody
-        eq, diseq, Map.add boolSort eqOp eqs, Map.add boolSort diseqOp diseqs, eqRules @ diseqRules
+        eq, diseq, Map.add BoolSort eqOp eqs, Map.add BoolSort diseqOp diseqs, eqRules @ diseqRules

@@ -188,19 +188,22 @@ type VampireSolver () =
     let parseTFF (line : string) =
         let m = tffRegex.Match(line)
         if not m.Success then None else
-        let name::kind::clause::source::_ = regexGroups m
-        let source =
-            if kind = "axiom" || source.StartsWith("introduced") then Some Axiom
-            elif kind = "plain" then
-                let m = tffInferenceRegex.Match(source)
-                if m.Success then
-                    let inferenceName::inferenceArgs::inferenceFrom::_ = regexGroups m
-                    Some <| Inference(inferenceName, split "," inferenceFrom)
-                else None
-            else __notImplemented__()
-        match source with
-        | Some source -> Some(name, (clause, source))
-        | None -> None
+        match regexGroups m with
+        | name::kind::clause::source::_ ->
+            let source =
+                if kind = "axiom" || source.StartsWith("introduced") then Some Axiom
+                elif kind = "plain" then
+                    let m = tffInferenceRegex.Match(source)
+                    if m.Success then
+                        match regexGroups m with
+                        | inferenceName::inferenceArgs::inferenceFrom::_ -> Some <| Inference(inferenceName, split "," inferenceFrom)
+                        | _ -> __notImplemented__()
+                    else None
+                else __notImplemented__()
+            match source with
+            | Some source -> Some(name, (clause, source))
+            | None -> None
+        | _ -> __notImplemented__()
 
     let treeHeight refutationTree =
         let rec iter node =

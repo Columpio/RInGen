@@ -1,6 +1,7 @@
 module RInGen.SubstituteOperations
 
 open System.Runtime.CompilerServices
+open Operations
 
 type private termArgumentFolding = LeftAssoc | RightAssoc
 type private atomArgumentFolding = Chainable | Pairwise
@@ -16,13 +17,124 @@ let private termOperations =
     ] |> List.map (fun (name, assoc) -> Map.find name elementaryOperations, assoc) |> Map.ofList
 let private atomOperations =
     [
-        "=", Chainable
         "<=", Chainable
         "<", Chainable
         ">=", Chainable
         ">", Chainable
-        "distinct", Pairwise
     ] |> List.map (fun (name, assoc) -> Map.find name elementaryOperations, assoc) |> Map.ofList
+
+type FormulaTraverser () =
+    abstract TraverseSort : sort -> sort
+    default x.TraverseSort (sort : sort) = sort
+
+    abstract TraverseReturnSort : sort -> sort
+    default x.TraverseReturnSort (sort : sort) = sort
+
+    member x.TraverseSorts sorts = List.map x.TraverseSort sorts
+
+    member x.TraverseSortedVar (name, sort) =
+        let sort = x.TraverseSort sort
+        (name, sort)
+
+    member x.TraverseSortedVars vars = List.map x.TraverseSortedVar vars
+
+    member x.TraverseOp op =
+        let mapOp constr name args ret =
+            let args = x.TraverseSorts args
+            let ret = x.TraverseReturnSort ret
+            constr(name, args, ret)
+        match op with
+        | UserDefinedOperation(name, args, ret) -> mapOp UserDefinedOperation name args ret
+        | ElementaryOperation(name, args, ret) -> mapOp ElementaryOperation name args ret
+
+    member x.TraverseTerm = function
+        | TConst _ as c -> c
+        | TIdent(name, sort) ->
+            let sort = x.TraverseSort sort
+            TIdent(name, sort)
+        | TApply(op, ts) ->
+            let op = x.TraverseOp op
+            let ts = x.TraverseTerms ts
+            TApply(op, ts)
+    member x.TraverseTerms terms = List.map x.TraverseTerm terms
+
+    member x.TraverseAtom = function
+        | Bot | Top as a -> a
+        | Equal(t1, t2) ->
+            let t1 = x.TraverseTerm t1
+            let t2 = x.TraverseTerm t2
+            Equal(t1, t2)
+        | Distinct(t1, t2) ->
+            let t1 = x.TraverseTerm t1
+            let t2 = x.TraverseTerm t2
+            Distinct(t1, t2)
+        | AApply(op, ts) ->
+            let op = x.TraverseOp op
+            let ts = x.TraverseTerms ts
+            AApply(op, ts)
+    member x.TraverseAtoms atoms = List.map x.TraverseAtom atoms
+
+    member x.TraverseDatatype (name, constrs) =
+        let mapConstrEntry (c, t, ss) =
+            let c' = x.TraverseOp c
+            let t' = x.TraverseOp c
+            let ss' = List.map x.TraverseOp ss
+            (c', t', ss')
+        let constrs = List.map mapConstrEntry constrs
+        (name, constrs)
+
+    member x.TraverseQuantifiers = Quantifiers.map (Quantifier.map x.TraverseSortedVars)
+
+    member x.TraverseRule r =
+        let rArgs =
+            match r with
+            | Rule(qs, premises, conclusion)
+            | Equivalence(qs, premises, conclusion) ->
+                let qs = x.TraverseQuantifiers qs
+                let premises = x.TraverseAtoms premises
+                let conclusion = x.TraverseAtom conclusion
+                (qs, premises, conclusion)
+        match r with
+        | Rule _ -> Rule rArgs
+        | Equivalence _ -> Equivalence rArgs
+
+    member x.TraverseFOLFormula = FOL.map x.TraverseAtom
+
+    member x.TraverseLemma (qs, (premises, lemma)) =
+        let qs = x.TraverseQuantifiers qs
+        let premises = x.TraverseAtoms premises
+        let lemma = x.TraverseFOLFormula lemma
+        (qs, (premises, lemma))
+
+    member x.TraverseCommand = function
+        | DeclareFun(name, argSorts, retSort) ->
+            let argSorts = x.TraverseSorts argSorts
+            let retSort = x.TraverseReturnSort retSort
+            DeclareFun(name, argSorts, retSort)
+        | DeclareDatatype(name, constrs) ->
+            let (name, constrs) = x.TraverseDatatype (name, constrs)
+            command.DeclareDatatype(name, constrs)
+        | DeclareDatatypes dts ->
+            let dts = List.map x.TraverseDatatype dts
+            command.DeclareDatatypes dts
+        | DeclareConst(name, sort) ->
+            let retSort = x.TraverseSort sort
+            DeclareConst(name, retSort)
+        | c -> c
+
+    member x.TraverseTransformedCommand command =
+        match command with
+        | OriginalCommand c ->
+            let c = x.TraverseCommand c
+            OriginalCommand c
+        | TransformedCommand r ->
+            let r = x.TraverseRule r
+            TransformedCommand r
+        | LemmaCommand(pred, vars, bodyLemma, headCube) ->
+            let vars = x.TraverseSortedVars vars
+            let bodyLemma = x.TraverseLemma bodyLemma
+            let headCube = x.TraverseLemma headCube
+            LemmaCommand(pred, vars, bodyLemma, headCube)
 
 type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, constantMap) =
     let mutable wasSubstituted = false
@@ -33,41 +145,41 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         | None -> None
 
     let relativizationsSubstitutor op ts justSubstOp defaultResult =
+        let generateReturnArgument op =
+            let retType = Operation.returnType op
+            let retArg = IdentGenerator.gensym (), retType
+            let retVar = TIdent retArg
+            retArg, retVar
         match searchInRelativizations op with
         | Some (op', true) ->
-            let newVar, newVarIdent = Operation.generateReturnArgument op
-            [newVar], [Relativization.relapply op' ts newVarIdent], newVarIdent
-        | Some (op', false) -> [], [], justSubstOp op'
-        | None -> [], [], defaultResult
+            let newVar, newVarIdent = generateReturnArgument op
+            ([newVar], [Relativization.relapply op' ts newVarIdent]), newVarIdent
+        | Some (op', false) -> ([], []), justSubstOp op'
+        | None -> ([], []), defaultResult
 
     let substituteOperationsWithRelationsInTermApplication op ts =
         relativizationsSubstitutor op ts (fun op' -> TApply(op', ts)) (TApply(op, ts))
 
-    let applyBinary op x y =
-        let ts = [x; y]
-        let vars, conds, result = substituteOperationsWithRelationsInTermApplication op ts
-        (vars, conds), result
-
     let rec substituteOperationsWithRelationsInTerm = function
+        | TIdent _ as t -> [], [], t
         | TConst(c, _) as t ->
             match constantMap c with
             | Some c' -> wasSubstituted <- true; [], [], c'
             | None -> [], [], t
-        | TIdent(name, sort) as t ->
-            relativizationsSubstitutor (identToUserOp name sort) [] userOpToIdent t
         | TApply(op, ts) ->
             let vars, conds, ts = substituteOperationsWithRelationsInTermList ts
+            let top = termOperations
             match Map.tryFind op termOperations with
             | Some assoc when List.length ts >= 2 ->
                 let folder =
                     match assoc with
                     | LeftAssoc -> List.mapReduce
                     | RightAssoc -> List.mapReduceBack
-                let vcs, t = folder (applyBinary op) ts
+                let vcs, t = folder (fun x y -> substituteOperationsWithRelationsInTermApplication op [x; y]) ts
                 let vss, css = List.unzip vcs
                 vars @ List.concat vss, conds @ List.concat css, t
             | _ ->
-                let appVars, appConds, app = substituteOperationsWithRelationsInTermApplication op ts
+                let (appVars, appConds), app = substituteOperationsWithRelationsInTermApplication op ts
                 vars @ appVars, conds @ appConds, app
 
     and substituteOperationsWithRelationsInTermList ts =
@@ -95,21 +207,22 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
                 d, (avars @ bvars, aconds @ bconds)
             | AApply(op, ts) ->
                 let vars, conds, ts = substituteOperationsWithRelationsInTermList ts
-                match Map.tryFind op atomOperations with
-                | Some assoc when List.length ts >= 2 ->
-                    let makeApp =
-                        match op with
-                        | ElementaryOperation("=", _, _) -> (<||) eqSubstitutor
-                        | ElementaryOperation("distinct", _, _) -> (<||) diseqSubstitutor
-                        | _ -> fun (x, y) -> substituteOperationsWithRelationsInAtomApplication op [x; y]
+                opt {
+                    if List.length ts <= 1 then return! None else
+                    let! assoc, makeApp =
+                        match Map.tryFind op atomOperations, op with
+                        | Some assoc, _ -> Some (assoc, fun (x, y) -> substituteOperationsWithRelationsInAtomApplication op [x; y])
+                        | _, Equality -> Some(Chainable, (<||) eqSubstitutor)
+                        | _, Disequality -> Some(Pairwise, (<||) diseqSubstitutor)
+                        | _ -> None
                     let pairs =
                         match assoc with
                         | Chainable -> List.pairwise
                         | Pairwise -> List.triangle
                     match ts |> pairs |> List.map makeApp with
-                    | at::ats -> k at, (vars, ats @ conds)
+                    | at::ats -> return k at, (vars, ats @ conds)
                     | _ -> __unreachable__()
-                | _ -> k <| substituteOperationsWithRelationsInAtomApplication op ts, (vars, conds)
+                } |> Option.defaultWith (fun () -> k <| substituteOperationsWithRelationsInAtomApplication op ts, (vars, conds))
         a', (newVars @ oldVars, newConds @ oldConds)
 
     let substituteOperationsWithRelationsInAtom = substituteOperationsWithRelationsInAtomWithPositivity (fun _ -> id) id
@@ -145,127 +258,44 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         | c -> c
 
 type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool) =
-    let mapReturnSort sorts retSort = if mapReturnSorts then mapSort sorts retSort else retSort, sorts
+    inherit FormulaTraverser ()
+    let mutable acc = Unchecked.defaultof<'acc>
 
-    let mapSorts = List.mapFold mapSort
+    override x.TraverseSort sort =
+        let sort', acc' = mapSort acc sort
+        acc <- acc'
+        sort'
 
-    let mapSortedVar sorts (name, sort) =
-        let sort, sorts = mapSort sorts sort
-        (name, sort), sorts
+    override x.TraverseReturnSort sort = if mapReturnSorts then x.TraverseSort sort else sort
 
-    let mapSortedVars = List.mapFold mapSortedVar
-
-    let mapOp sorts =
-        let mapOp constr name args ret =
-            let args, sorts = mapSorts sorts args
-            let ret, sorts = mapReturnSort sorts ret
-            constr(name, args, ret), sorts
-        function
-        | UserDefinedOperation(name, args, ret) -> mapOp UserDefinedOperation name args ret
-        | ElementaryOperation(name, args, ret) -> mapOp ElementaryOperation name args ret
-
-    let rec mapTerm sorts = function
-        | TConst _ as c -> c, sorts
-        | TIdent(name, sort) ->
-            let sort, sorts = mapSort sorts sort
-            TIdent(name, sort), sorts
-        | TApply(op, ts) ->
-            let op, sorts = mapOp sorts op
-            let ts, sorts = mapTerms sorts ts
-            TApply(op, ts), sorts
-    and mapTerms = List.mapFold mapTerm
-
-    let rec mapAtom sorts = function
-        | Top | Bot as a -> a, sorts
-        | Equal(t1, t2) ->
-            let t1, sorts = mapTerm sorts t1
-            let t2, sorts = mapTerm sorts t2
-            Equal(t1, t2), sorts
-        | Distinct(t1, t2) ->
-            let t1, sorts = mapTerm sorts t1
-            let t2, sorts = mapTerm sorts t2
-            Distinct(t1, t2), sorts
-        | AApply(op, ts) ->
-            let op, sorts = mapOp sorts op
-            let ts, sorts = mapTerms sorts ts
-            AApply(op, ts), sorts
-    and mapAtoms = List.mapFold mapAtom
-
-    let mapDatatype sorts (name, constrs) =
-        let constrs, sorts =
-            List.mapFold (fun sorts (name, vars) -> let vars, sorts = mapSortedVars sorts vars in (name, vars), sorts) sorts constrs
-        (name, constrs), sorts
-
-    let mapSortsInOrigCommand sorts = function
-        | DeclareFun(name, argSorts, retSort) ->
-            let argSorts, sorts = mapSorts sorts argSorts
-            let retSort, sorts = mapReturnSort sorts retSort
-            DeclareFun(name, argSorts, retSort), sorts
-        | DeclareDatatype(name, constrs) ->
-            let (name, constrs), sorts = mapDatatype sorts (name, constrs)
-            DeclareDatatype(name, constrs), sorts
-        | DeclareDatatypes dts ->
-            let dts, sorts = List.mapFold mapDatatype sorts dts
-            DeclareDatatypes dts, sorts
-        | DeclareConst(name, sort) ->
-            let retSort, sorts = mapSort sorts sort
-            DeclareConst(name, retSort), sorts
-        | c -> c, sorts
-
-    let mapQuantifiers = Quantifiers.mapFold (Quantifier.mapFold mapSortedVars)
-
-    let rec mapRule sorts r =
-        let rArgs, sorts =
-            match r with
-            | Rule(qs, premises, conclusion)
-            | Equivalence(qs, premises, conclusion) ->
-                let qs, sorts = mapQuantifiers sorts qs
-                let premises, sorts = mapAtoms sorts premises
-                let conclusion, sorts = mapAtom sorts conclusion
-                (qs, premises, conclusion), sorts
-        match r with
-        | Rule _ -> Rule rArgs, sorts
-        | Equivalence _ -> Equivalence rArgs, sorts
-
-    let mapFOLFormula = FOL.mapFold mapAtom
-
-    let mapLemma sorts (qs, (premises, lemma)) =
-        let qs, sorts = mapQuantifiers sorts qs
-        let premises, sorts = mapAtoms sorts premises
-        let lemma, sorts = mapFOLFormula sorts lemma
-        (qs, (premises, lemma)), sorts
-
+    member x.FoldCommand acc' command =
+        acc <- acc'
+        let command' = x.TraverseTransformedCommand command
+        command', acc
+    
     new (mapSort) = MapSorts(mapSort, true)
-
-    member x.FoldOperation(sorts, op) = mapOp sorts op
-
-    member x.FoldCommand sorts command =
-        match command with
-        | OriginalCommand c ->
-            let c, sorts = mapSortsInOrigCommand sorts c
-            OriginalCommand c, sorts
-        | TransformedCommand r ->
-            let r, sorts = mapRule sorts r
-            TransformedCommand r, sorts
-        | LemmaCommand(pred, vars, bodyLemma, headCube) ->
-            let vars, sorts = mapSortedVars sorts vars
-            let bodyLemma, sorts = mapLemma sorts bodyLemma
-            let headCube, sorts = mapLemma sorts headCube
-            LemmaCommand(pred, vars, bodyLemma, headCube), sorts
-
-[<Extension>]
-type Utils () =
-    [<Extension>]
-    static member inline MapCommand(x: MapSorts<unit>, command) = x.FoldCommand () command |> fst
-    [<Extension>]
-    static member inline MapOperation(x: MapSorts<unit>, op) = x.FoldOperation((), op) |> fst
 
 [<AbstractClass>]
 type TheorySubstitutor () =
-    let substInCommand (mapper : MapSorts<unit>) (relativizer : SubstituteOperations) command =
+    inherit FormulaTraverser ()
+    let mutable wasMapped = false
+
+    member x.SubstInCommand (relativizer : SubstituteOperations) command =
         let command = relativizer.SubstituteOperationsWithRelations(command)
-        let command = mapper.MapCommand(command)
+        let command = x.TraverseTransformedCommand(command)
         command
+
+    override x.TraverseSort s =
+        let rec mapSort s =
+            match x.TryMapSort s with
+            | Some s' -> wasMapped <- true; s'
+            | None ->
+            match s with
+            | ArraySort(s1, s2) -> ArraySort(mapSort s1, mapSort s2)
+            | s -> s
+        mapSort s
+
+    override x.TraverseReturnSort sort = if x.MapReturnSortsFlag then x.TraverseSort sort else sort
 
     abstract member MapReturnSortsFlag : bool
     default x.MapReturnSortsFlag = true
@@ -273,21 +303,9 @@ type TheorySubstitutor () =
     abstract member GenerateDeclarations : unit -> transformedCommand list * sort * Map<operation,operation * bool> * (symbol -> term option)
 
     member x.SubstituteTheoryDelayed commands =
-        let mutable wasMapped = false
-        let mapSort () s =
-            let rec mapSort s =
-                match x.TryMapSort s with
-                | Some s' -> wasMapped <- true; s'
-                | None ->
-                match s with
-                | CompoundSort(name, sorts) -> CompoundSort(name, List.map mapSort sorts)
-                | s -> s
-            mapSort s, ()
         let preamble, newSort, newOps, newConstMap = x.GenerateDeclarations ()
-        let mapper = MapSorts(mapSort, x.MapReturnSortsFlag)
-        wasMapped <- false
         let relativizer = SubstituteOperations(newOps, newConstMap)
-        let commands = List.map (substInCommand mapper relativizer) commands
+        let commands = List.map (x.SubstInCommand relativizer) commands
         let wasSubstituted = relativizer.WasSubstituted ()
         let shouldAddPreamble = wasMapped || wasSubstituted
         let returnedCommands = if shouldAddPreamble then preamble @ commands else commands

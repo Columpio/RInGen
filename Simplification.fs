@@ -31,9 +31,9 @@ let private distinct diseqs (t1, t2) =
     AApply(op, [t1; t2])
 
 let private simplifyAtom diseqs = function
-    | Equal(t1, t2) -> simplifyBinary Bot Top Equal t1 t2 |> List.map FOLAtom |> folAnd
-    | AApply(op, [t1; t2]) when isDiseqOp diseqs op -> simplifyBinary Top Bot (distinct diseqs) t1 t2 |> List.map FOLAtom |> folOr
-    | Distinct(t1, t2) -> simplifyBinary Top Bot Distinct t1 t2 |> List.map FOLAtom |> folOr
+    | Equal(t1, t2) -> simplifyBinary Bot Top Equal t1 t2 |> List.map FOLAtom |> FOL.folAnd
+    | AApply(op, [t1; t2]) when isDiseqOp diseqs op -> simplifyBinary Top Bot (distinct diseqs) t1 t2 |> List.map FOLAtom |> FOL.folOr
+    | Distinct(t1, t2) -> simplifyBinary Top Bot Distinct t1 t2 |> List.map FOLAtom |> FOL.folOr
     | a -> FOLAtom a
 
 let private collectConditions = function

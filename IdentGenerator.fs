@@ -20,10 +20,10 @@ type IdentGenerator() =
         let prefixStrLow = prefixStr.ToLower()
         let counter = ref 0
         if symbols.TryGetValue(prefixStrLow, counter) then
-            symbols.[prefixStrLow] <- !counter + 1
+            symbols.[prefixStrLow] <- counter.Value + 1
         else
             symbols.Add(prefixStrLow, 1)
-        $"%s{prefixStr}_%d{!counter}"
+        $"%s{prefixStr}_%d{counter.Value}"
 
 let private idgen = IdentGenerator()
 

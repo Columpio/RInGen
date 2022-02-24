@@ -6,7 +6,7 @@ type private POB = term list list
 
 let private combineNames ns = join "" ns |> gensymp
 
-let private topFreeVarsOf (pob : POB) = List.collect (List.choose (function TIdent(v, s) -> Some(v, s) | _ -> None)) pob |> Set.ofList |> Set.toList
+let private topFreeVarsOf (pob : POB) = List.collect (List.choose (function TIdent(v, s) -> Some(v, s) | _ -> None)) pob |> List.unique
 
 let private uniformizeVars pob =
     let mutable n = 0
@@ -71,7 +71,7 @@ type private POBDB (adts) =
         match Dictionary.tryGetValue sorts comb_sorts with
         | Some comb_sort -> comb_sort
         | None ->
-        let new_sort = sorts |> List.map (function PrimitiveSort i -> i | _ -> __notImplemented__()) |> combineNames |> PrimitiveSort
+        let new_sort = sorts |> List.map (function ADTSort i -> i | _ -> __notImplemented__()) |> combineNames |> ADTSort
         x.RegisterCombinedSort sorts new_sort
         new_sort
 
@@ -163,8 +163,8 @@ type private POBDB (adts) =
         // generate declarations
         // return
         let ops, rules = rules |> Dictionary.toList |> List.unzip
-        let rules = rules |> List.map List.rev |> List.concat |> List.map x.MakeClosedRule
-        let decls = List.map Operation.declareOp ops
+        let rules = rules |> List.map List.rev |> List.concat |> List.map ((<||) Rule.clARule)
+        let decls = List.map Command.declareOp ops
         List.map OriginalCommand decls @ List.map TransformedCommand rules
 
     member x.DumpADTRules () =
@@ -260,12 +260,7 @@ type private POBDB (adts) =
             (eqs, Some(AApply(op, [comb_var]))), vars
         | Equal(t1, t2) -> ([t1, t2], None), vars
         | Distinct _ -> __unreachable__() // because diseq transformation has been performed before
-        | Top | Bot as a -> ([], Some a), vars
-
-    member private x.MakeClosedRule(body, head) : rule =
-        // forall quantifiers around all vars
-        let freeVars = head::body |> List.collect Atom.collectFreeVars |> Set.ofList |> Set.toList
-        rule freeVars body head
+        | Bot | Top as a -> ([], Some a), vars
 
     member private x.UnarifyAtoms = List.mapFold x.UnarifyAtom []
 
@@ -280,17 +275,17 @@ type private POBDB (adts) =
             match x.EquationsToPob vars eqs with
             | Some pobWithArgs ->
                 let phis = x.AnswerMarkedPOB pobWithArgs
-                Some <| x.MakeClosedRule(phis @ bodyAtoms, head)
+                Some <| Rule.clARule (phis @ bodyAtoms) head
             | None -> None
         | Equivalence _ -> __unreachable__()
 
     member x.UnarifyRules rules = List.choose x.UnarifyRule rules
 
 let synchronize commands =
-    let commands, rules = List.choose2 (function OriginalCommand o -> Choice1Of2 o | TransformedCommand t -> Choice2Of2 t) commands
+    let commands, rules = List.choose2 (function OriginalCommand o -> Choice1Of2 o | TransformedCommand t -> Choice2Of2 t | LemmaCommand _ -> __unreachable__()) commands
     let adt_decls, commands = commands |> List.choose2 (function DeclareDatatype(a, b) -> Choice1Of2 [a, b] | DeclareDatatypes dts -> Choice1Of2 dts | c -> Choice2Of2 c)
     let adt_decls = List.concat adt_decls
-    let adt_decls = adt_decls |> List.map (fun (s, cs) -> s, List.map (fun (c, ss) -> Operation.makeElementaryOperationFromVars c ss s) cs)
+    let adt_decls = adt_decls |> ADTExtensions.adtDefinitionsToRaw |> List.map (fun (s, cs) -> s, List.map (fun (c, ss) -> Operation.makeElementaryOperationFromVars c ss s) cs)
     let pobdb = POBDB(adt_decls)
 
     let commands = pobdb.UnarifyDeclarations commands

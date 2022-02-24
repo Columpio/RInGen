@@ -22,9 +22,9 @@ let private mapName (s : string) = s.ToLowerFirstChar()
 let private mapNames = List.map mapName
 let private mapVariable (s : string) = s.ToUpperFirstChar()
 let private mapSort = function
-    | PrimitiveSort "Int" -> "int"
-    | PrimitiveSort "Bool" -> "bool"
-    | PrimitiveSort s -> mapName s
+    | IntSort -> "int"
+    | BoolSort -> "bool"
+    | ADTSort s -> mapName s
     | _ -> __notImplemented__()
 let private mapSorts = List.map mapSort
 
@@ -47,8 +47,8 @@ and private mapTerm vars = function
 and private mapTerms vars = List.map (mapTerm vars)
 
 let private mapAtomInPremise vars = function
-    | Bot -> Some queryName
     | Top -> None
+    | Bot -> Some queryName
     | AApply(op, ts) -> mapApply vars op ts |> Some
     | Equal(t1, t2) -> $"%s{mapTerm vars t1} = %s{mapTerm vars t2}" |> Some
     | Distinct(t1, t2) -> $"%s{mapTerm vars t1} =\= %s{mapTerm vars t2}" |> Some
@@ -74,7 +74,8 @@ let private mapRule = function
             Some $"%s{clause}."
     | _ -> None
 
-let private mapDatatypeDeclaration (name, cs) =
+let private mapDatatypeDeclaration adtDef =
+    let name, cs = ADTExtensions.adtDefinitionToRaw adtDef
     let handleConstr (constr, selectors) =
         let constr = mapName constr
         let sorts = selectors |> List.map (snd >> mapSort)
@@ -94,19 +95,16 @@ let private mapPredicateDeclaration name args =
         | _ -> args |> join ", " |> sprintf "%s(%s)" name
     $":- pred %s{def}."
 
-let private mapFunctionDeclaration name args ret =
-    if ret <> boolSort then None else Some [mapPredicateDeclaration name args]
-
 let private mapOriginalCommand = function
-    | DeclareDatatype(name, cs) -> Some [mapDatatypeDeclaration (name, cs)]
-    | DeclareDatatypes dts -> Some <| List.map mapDatatypeDeclaration dts
-    | DeclareFun(name, args, ret) -> mapFunctionDeclaration name args ret
-    | DeclareConst(name, sort) -> mapFunctionDeclaration name [] sort
-    | _ -> None
+    | DeclareDatatype dt -> [mapDatatypeDeclaration dt]
+    | DeclareDatatypes dts -> List.map mapDatatypeDeclaration dts
+    | DeclareFun(name, args, BoolSort) -> [mapPredicateDeclaration name args]
+    | DeclareConst(name, BoolSort) -> [mapPredicateDeclaration name []]
+    | _ -> []
 
 let private mapTransformedCommand = function
     | OriginalCommand cmnd -> mapOriginalCommand cmnd
-    | TransformedCommand r -> mapRule r |> Option.map List.singleton
+    | TransformedCommand r -> mapRule r |> Option.toList
     | LemmaCommand _ -> __unreachable__()
 
 let isFirstOrderPrologProgram commands =
@@ -116,5 +114,5 @@ let isFirstOrderPrologProgram commands =
 
 let toPrologFile commands =
     let preamble = mapPredicateDeclaration queryName []
-    let commands = List.choose mapTransformedCommand commands |> List.concat
+    let commands = List.collect mapTransformedCommand commands
     preamble :: commands

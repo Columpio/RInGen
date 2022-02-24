@@ -2,9 +2,8 @@
 
     <PropertyGroup>
         <OutputType>Exe</OutputType>
-        <TargetFramework>net5.0</TargetFramework>
-<!--        <FsLexToolPath>bin\$(Configuration)\netcoreapp3.1</FsLexToolPath>-->
-<!--        <FsYaccToolPath>bin\$(Configuration)\netcoreapp3.1</FsYaccToolPath>-->
+        <TargetFramework>net6.0</TargetFramework>
+        <GenerateProgramFile>false</GenerateProgramFile>
     </PropertyGroup>
 
     <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
@@ -12,15 +11,30 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="Argu" Version="6.1.1" />
+        <PackageReference Include="CsvHelper" Version="15.0.5" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
+        <PackageReference Include="NUnit" Version="3.13.2" />
+        <PackageReference Include="NUnit3TestAdapter" Version="4.2.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="SMTLIB2Parser\SMTLIB2Parser.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Content Include="samples\**\*" />
+    </ItemGroup>
+
+    <ItemGroup>
         <Compile Include="IdentGenerator.fs" />
+        <Compile Include="FSharpExtensions.fs" />
         <Compile Include="Prelude.fs" />
         <Compile Include="Options.fs" />
         <Compile Include="Programs.fs" />
-<!--        <Compile Include="Runtime.fs" />-->
         <Compile Include="Operations.fs" />
-        <Compile Include="Typer.fs" />
         <Compile Include="ADTExtensions.fs" />
-        <Compile Include="VarEnv.fs" />
+        <Compile Include="Context.fs" />
         <Compile Include="SMTExpr.fs" />
         <Compile Include="Relativization.fs" />
         <Compile Include="SubstituteOperations.fs" />
@@ -39,16 +53,8 @@
         <Compile Include="Statistics.fs" />
         <Compile Include="ResultTable.fs" />
         <Compile Include="Solvers.fs" />
+        <Compile Include="ConsoleRunner.fs" />
+        <Compile Include="SmokeTests.fs" />
         <Compile Include="Main.fs" />
     </ItemGroup>
-
-    <ItemGroup>
-      <PackageReference Include="Argu" Version="6.1.1" />
-      <PackageReference Include="CsvHelper" Version="15.0.5" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <ProjectReference Include="SMTLIB2Parser\SMTLIB2Parser.csproj" />
-    </ItemGroup>
-<!--    <Import Project="FsLexYacc.Build.Tasks\FsLexYacc.targets" />-->
 </Project>

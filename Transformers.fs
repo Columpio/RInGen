@@ -64,7 +64,7 @@ type TransformerProgram (options : transformOptions) =
 //        let mutable total_generated = 0
 //                files <- files + 1
         if isHighOrderBenchmark exprs then x.ReportTransformationProblem dstPath TRANS_HIGH_ORDER_PROBLEM $"%O{srcPath} will not be transformed as it has a mix of define-fun and declare-fun commands" else
-        try
+//        try
             let trCtx = ClauseTransform.toClauses options exprs
             match tryFindExistentialClauses trCtx.commands with
             | Some r -> x.ReportTransformationProblem dstPath TRANS_CONTAINS_EXISTENTIALS $"Transformed %s{dstPath} contains existential subclause: %O{r}"
@@ -74,9 +74,9 @@ type TransformerProgram (options : transformOptions) =
             true
 //            total_generated <- total_generated + x.SaveClauses opts.path dst newTests
 //            successful <- successful + 1
-        with
-        | :? OutOfMemoryException -> x.ReportTransformationProblem dstPath TRANS_MEMORYLIMIT $"Transformation of %O{srcPath} halted due to a memory limit"
-        | e -> x.ReportTransformationProblem dstPath TRANS_UNHANDLED_EXCEPTION $"Exception in %O{srcPath}: {e.Message}"
+//        with
+//        | :? OutOfMemoryException -> x.ReportTransformationProblem dstPath TRANS_MEMORYLIMIT $"Transformation of %O{srcPath} halted due to a memory limit"
+//        | e -> x.ReportTransformationProblem dstPath TRANS_UNHANDLED_EXCEPTION $"Exception in %O{srcPath}: {e.Message}"
 //        if IN_VERBOSE_MODE () then printfn $"All files:       %d{files}"
 //        if IN_VERBOSE_MODE () then printfn $"Successful:      %d{successful}"
 //        if IN_VERBOSE_MODE () then printfn $"Total generated: %d{total_generated}"
@@ -94,13 +94,17 @@ type TransformerProgram (options : transformOptions) =
 let private preambulizeCommands logic chcSystem =
     OriginalCommand(SetLogic logic) :: chcSystem @ [OriginalCommand CheckSat]
 
+let private preambulizeCommandsHornOrAll commands =
+    let logic = if List.exists (function (TransformedCommand(Equivalence _)) -> true | _ -> false) commands then "ALL" else "HORN"
+    preambulizeCommands logic commands
+
 type OriginalTransformerProgram (options) =
     inherit TransformerProgram(options)
 
     override x.TargetPath path = $"%s{path}.Original"
 
     override x.Transform trCtx =
-        let commands' = preambulizeCommands "HORN" trCtx.commands
+        let commands' = preambulizeCommandsHornOrAll trCtx.commands
         List.map toString commands'
 
 type RCHCTransformerProgram (options) =
@@ -111,7 +115,7 @@ type RCHCTransformerProgram (options) =
             match body with
             | [] -> $"{Bot}"
             | [y] -> $"(not {y})"
-            | _ -> $"""(not (and {body |> List.filter ((<>) Top) |> List.map toString |> join "\n\t\t\t"}))"""
+            | _ -> $"""(not (and {body |> List.map toString |> join "\n\t\t\t"}))"""
             |> Quantifiers.toString qs
             |> sprintf "(assert %s)"
         | c -> toString c
@@ -119,7 +123,7 @@ type RCHCTransformerProgram (options) =
     override x.TargetPath path = $"%s{path}.RCHC_Transform"
 
     override x.Transform trCtx =
-        let commands' = preambulizeCommands "HORN" trCtx.commands
+        let commands' = preambulizeCommandsHornOrAll trCtx.commands
         List.map toString commands'
 
 type FreeSortsTransformerProgram (options) =
@@ -142,7 +146,7 @@ type PrologTransformerProgram (options) =
     override x.FileExtension = ".pl"
 
     override x.Transform trCtx =
-        let commands = preambulizeCommands "HORN" trCtx.commands
+        let commands = preambulizeCommandsHornOrAll trCtx.commands
         if PrintToProlog.isFirstOrderPrologProgram commands
             then PrintToProlog.toPrologFile commands
             else failwith_verbose "not a first order Prolog program"

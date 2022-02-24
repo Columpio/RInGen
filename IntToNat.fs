@@ -2,17 +2,17 @@ module RInGen.IntToNat
 open RInGen.SubstituteOperations
 open RInGen.Operations
 open RInGen.IdentGenerator
+open Rule
 
 type IntToNat () =
     inherit TheorySubstitutor ()
-    let nat_sort = gensymp "Nat" |> PrimitiveSort
+    let nat_sort_name = gensymp "Nat"
+    let nat_sort = nat_sort_name |> ADTSort
 
-    let Z_constr = gensymp "Z"
-    let S_constr = gensymp "S"
-    let unS_constr = gensymp "unS"
-    let S_op = Operation.makeElementaryOperationFromSorts S_constr [nat_sort] nat_sort
-    let Z = TConst(Z_constr, nat_sort)
-    let S t = TApply(S_op, [t])
+    let Z_constr, _, _ as Z_entry = ADTExtensions.generateConstructorAndTesterOps "Z" [] nat_sort
+    let S_constr, _, _ as S_entry = ADTExtensions.generateConstructorAndTesterOps "Z" ["unS", nat_sort] nat_sort
+    let Z = Term.apply0 Z_constr
+    let S = Term.apply1 S_constr
 
     let rec int_to_natrec (n : int64) = if n <= 0L then Z else S (int_to_natrec (n - 1L))
 
@@ -20,16 +20,12 @@ type IntToNat () =
     let y = gensymp "y"
     let r = gensymp "r"
     let z = gensymp "z"
-    let xvar = (x, nat_sort)
-    let yvar = (y, nat_sort)
-    let rvar = (r, nat_sort)
-    let zvar = (z, nat_sort)
-    let xid = TIdent xvar
-    let yid = TIdent yvar
-    let rid = TIdent rvar
-    let zid = TIdent zvar
+    let xid = TIdent(x, nat_sort)
+    let yid = TIdent(y, nat_sort)
+    let rid = TIdent(r, nat_sort)
+    let zid = TIdent(z, nat_sort)
 
-    let nat_datatype = DeclareDatatype(nat_sort, [Z_constr, []; S_constr, [unS_constr, nat_sort]])
+    let nat_datatype = command.DeclareDatatype(nat_sort_name, [Z_entry; S_entry])
 
     let add_app, add_def, add_op = Relativization.createBinaryOperation "add" nat_sort nat_sort nat_sort
     let minus_app, minus_def, minus_op = Relativization.createBinaryOperation "minus" nat_sort nat_sort nat_sort
@@ -42,48 +38,48 @@ type IntToNat () =
     let gt_app, gt_def, gt_op = Relativization.createBinaryRelation "gt" nat_sort nat_sort
     let add_decl =
         [
-            rule [yvar] [] (add_app Z yid yid)
-            rule [xvar; yvar; rvar] [add_app xid yid rid] (add_app (S xid) yid (S rid))
+            clARule [] (add_app Z yid yid)
+            clARule [add_app xid yid rid] (add_app (S xid) yid (S rid))
         ]
     let minus_decl =
         [
-            rule [yvar] [] (minus_app Z yid Z)
-            rule [xvar; yvar; rvar] [minus_app xid yid rid] (minus_app (S xid) yid (S rid))
+            clARule [] (minus_app Z yid Z)
+            clARule [minus_app xid yid rid] (minus_app (S xid) yid (S rid))
         ]
     let le_decl =
         [
-            rule [yvar] [] (le_app Z yid)
-            rule [xvar; yvar] [le_app xid yid] (le_app (S xid) (S yid))
+            clARule [] (le_app Z yid)
+            clARule [le_app xid yid] (le_app (S xid) (S yid))
         ]
     let ge_decl =
         [
-            rule [yvar] [] (ge_app yid Z)
-            rule [xvar; yvar] [ge_app xid yid] (ge_app (S xid) (S yid))
+            clARule [] (ge_app yid Z)
+            clARule [ge_app xid yid] (ge_app (S xid) (S yid))
         ]
     let lt_decl =
         [
-            rule [yvar] [] (lt_app Z (S yid))
-            rule [xvar; yvar] [lt_app xid yid] (lt_app (S xid) (S yid))
+            clARule [] (lt_app Z (S yid))
+            clARule [lt_app xid yid] (lt_app (S xid) (S yid))
         ]
     let gt_decl =
         [
-            rule [yvar] [] (gt_app (S yid) Z)
-            rule [xvar; yvar] [gt_app xid yid] (gt_app (S xid) (S yid))
+            clARule [] (gt_app (S yid) Z)
+            clARule [gt_app xid yid] (gt_app (S xid) (S yid))
         ]
     let mult_decl =
         [
-            rule [yvar] [] (mult_app Z yid Z)
-            rule [xvar; yvar; rvar; zvar] [mult_app xid yid rid; add_app rid yid zid] (mult_app (S xid) yid zid)
+            clARule [] (mult_app Z yid Z)
+            clARule [mult_app xid yid rid; add_app rid yid zid] (mult_app (S xid) yid zid)
         ]
     let div_decl =
         [
-            rule [xvar; yvar] [lt_app xid yid] (div_app xid yid Z)
-            rule [xvar; yvar; rvar; zvar] [ge_app xid yid; minus_app xid yid zid; div_app zid yid rid] (div_app xid yid (S rid))
+            clARule [lt_app xid yid] (div_app xid yid Z)
+            clARule [ge_app xid yid; minus_app xid yid zid; div_app zid yid rid] (div_app xid yid (S rid))
         ]
     let mod_decl =
         [
-            rule [xvar; yvar] [lt_app xid yid] (mod_app xid yid xid)
-            rule [xvar; yvar; rvar; zvar] [ge_app xid yid; minus_app xid yid zid; mod_app zid yid rid] (mod_app xid yid rid)
+            clARule [lt_app xid yid] (mod_app xid yid xid)
+            clARule [ge_app xid yid; minus_app xid yid zid; mod_app zid yid rid] (mod_app xid yid rid)
         ]
 
     let substitutions =
@@ -97,15 +93,15 @@ type IntToNat () =
             ">=", (ge_op, false)
             ">", (gt_op, false)
             "<", (lt_op, false)
-        ] |> List.map (fun (name, op) -> Map.find (symbol name) elementaryOperations, op) |> Map.ofList
+        ] |> List.map (fun (name, op) -> Map.find name elementaryOperations, op) |> Map.ofList
     let preamble =
         List.map OriginalCommand [nat_datatype; add_def; minus_def; le_def; ge_def; lt_def; gt_def; mult_def; div_def; mod_def]
         @ List.map TransformedCommand (add_decl @ minus_decl @ le_decl @ ge_decl @ lt_decl @ gt_decl @ mult_decl @ div_decl @ mod_decl)
 
     let intConstToNat (s: symbol) =
         let r = ref 0L
-        if System.Int64.TryParse(s.ToString(), r) then Some (int_to_natrec !r) else None
+        if System.Int64.TryParse(s.ToString(), r) then Some (int_to_natrec r.Value) else None
 
     override x.GenerateDeclarations() = preamble, nat_sort, substitutions, intConstToNat
 
-    override x.TryMapSort(s) = if s = integerSort then Some nat_sort else None
+    override x.TryMapSort(s) = if s = IntSort then Some nat_sort else None
