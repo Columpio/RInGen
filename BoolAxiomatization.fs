@@ -25,7 +25,7 @@ type BoolAxiomatization () =
         | _ -> None
 
     let generateDecl n app concreteFunction =
-        let combinations = List.init n (fun _ -> [false; true]) |> List.product
+        let combinations = List.replicate n [false; true] |> List.product
         combinations |> List.map (fun combination -> Rule.clAFact <| app (List.map toterm combination) (toterm <| concreteFunction combination))
 
     let generateBinaryDecl app concreteFunction =

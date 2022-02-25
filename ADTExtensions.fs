@@ -27,7 +27,7 @@ let private generateConstructorAndTesterNames constrBaseName =
 
 let generateConstructorAndTesterOps constrBaseName selectorSorts adtSort =
     let cName, tName = generateConstructorAndTesterNames constrBaseName
-    let selectorSorts = List.map (fun (selName, selSort) -> IdentGenerator.gensymp selName, selSort) selectorSorts
+    let selectorSorts = List.map SortedVar.freshFromVar selectorSorts
     Operation.makeADTOperations adtSort cName tName selectorSorts
 
 let adtDefinitionToRaw (adt : datatype_def) : sort * (ident * (ident * sort) list) list = //TODO: remove it with refactoring

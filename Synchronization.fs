@@ -9,21 +9,8 @@ let private combineNames ns = join "" ns |> gensymp
 let private topFreeVarsOf (pob : POB) = List.collect (List.choose (function TIdent(v, s) -> Some(v, s) | _ -> None)) pob |> List.unique
 
 let private uniformizeVars pob =
-    let mutable n = 0
-    let varMap = Dictionary()
-    let newIndex n = $"x%d{n}"
-    let rec substInTerm = function
-        | TConst _ as c -> c
-        | TIdent(i, s) ->
-            match Dictionary.tryGetValue i varMap with
-            | Some n -> TIdent(newIndex n, s)
-            | None ->
-            let newN = n
-            varMap.Add(i, newN)
-            n <- n + 1
-            TIdent(newIndex newN, s)
-        | TApply(id, ts) -> TApply(id, List.map substInTerm ts)
-    List.map (List.map substInTerm) pob
+    let u = Term.Uniformizer()
+    List.map (List.map u.Uniformize) pob
 
 let rec private product (xss : 'a list list) : 'a list seq =
     match xss with
@@ -76,6 +63,7 @@ type private POBDB (adts) =
         new_sort
 
     member private x.CombConstrName constrNames argSorts =
+        Dictionary.getOrInitWith constrNames comb_constructors (fun () ->
         match Dictionary.tryGetValue constrNames comb_constructors with
         | Some combinedName -> combinedName
         | None ->
@@ -83,13 +71,11 @@ type private POBDB (adts) =
         let retSorts = List.map Operation.returnType constrNames
         let combinedName = combineNames names
         let combinedReturnSort = x.CombSort retSorts
-        let op = Operation.makeElementaryOperationFromSorts combinedName argSorts combinedReturnSort
-        comb_constructors.Add(constrNames, op)
-        op
+        Operation.makeElementaryOperationFromSorts combinedName argSorts combinedReturnSort)
 
     member private x.CombVar sorts =
         let sort = x.CombSort sorts
-        TIdent(gensym (), sort)
+        Term.generateVariable sort
 
     member private x.RegisterPOB(pob) : operation =
         let pident = IdentGenerator.gensymp "phi"
@@ -102,15 +88,13 @@ type private POBDB (adts) =
     member private x.TryGetPOB(pob) : operation option = Dictionary.tryGetValue pob pobs
 
     member private x.AddCombRule pred rule =
-        match Dictionary.tryGetValue pred rules with
-        | Some predRules ->
-            rules.[pred] <- rule::predRules
-        | None -> rules.Add(pred, [rule])
+        let predRules = Dictionary.getOrInitWith pred rules (fun () -> [])
+        rules.[pred] <- rule::predRules
 
     member private x.PossibleTerms sorts =
         let instantiateConstructorSignature constrOp =
-            let vars = constrOp |> Operation.argumentTypes |> List.map (fun sort -> IdentGenerator.gensym (), sort)
-            TApply(constrOp, List.map TIdent vars)
+            let vars = constrOp |> Operation.argumentTypes |> List.map Term.generateVariable
+            TApply(constrOp, vars)
         let possibleTermsOfSort sort =
             let constrsSigns = adt_declarations.[sort]
             let possibleTerms = constrsSigns |> List.map instantiateConstructorSignature
@@ -135,7 +119,7 @@ type private POBDB (adts) =
         let handleTermTuple ts =
             match List.mapChoose cutHeadsFromTermTuple ts with
             | None -> // (Nil, #5, S #6)
-                let v = TIdent(IdentGenerator.gensym (), x.TypeOfCombinedTerm ts)
+                let v = Term.generateVariable (x.TypeOfCombinedTerm ts)
                 [ts], [v], v
             | Some constrNamesAndArgs ->
                 let combConstrName, combArgs = synchronizeConstructorCalls constrNamesAndArgs
@@ -239,7 +223,7 @@ type private POBDB (adts) =
 
     member private x.MakeVarsForArgumentTerms ts =
         let makeVarForArgument t sort =
-            let vs = gensym (), sort
+            let vs = SortedVar.freshFromSort sort
             vs, (t, TIdent vs)
 
         let argSorts = List.map Term.typeOf ts

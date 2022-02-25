@@ -30,9 +30,14 @@
         <Compile Include="IdentGenerator.fs" />
         <Compile Include="FSharpExtensions.fs" />
         <Compile Include="Prelude.fs" />
+        <Compile Include="Terms.fs" />
+        <Compile Include="Atoms.fs" />
+        <Compile Include="Quantifiers.fs" />
+        <Compile Include="FOL.fs" />
+        <Compile Include="Rule.fs" />
+        <Compile Include="Operations.fs" />
         <Compile Include="Options.fs" />
         <Compile Include="Programs.fs" />
-        <Compile Include="Operations.fs" />
         <Compile Include="ADTExtensions.fs" />
         <Compile Include="Context.fs" />
         <Compile Include="SMTExpr.fs" />

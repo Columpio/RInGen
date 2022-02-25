@@ -489,14 +489,14 @@ module DatatypesToSorts =
         List.map parse_constructor constructors
 
     let private generateConstructorDeclarations = function
-        | OriginalCommand(DeclareDatatype dt) ->
+        | FOLOriginalCommand(DeclareDatatype dt) ->
             let nc = ADTExtensions.adtDefinitionToRaw dt
             sortDeclaration dt :: constrDeclarations nc
-            |> List.map OriginalCommand
-        | OriginalCommand(DeclareDatatypes dts) ->
+            |> List.map FOLOriginalCommand
+        | FOLOriginalCommand(DeclareDatatypes dts) ->
             List.map sortDeclaration dts @ List.collect constrDeclarations (ADTExtensions.adtDefinitionsToRaw dts)
-            |> List.map OriginalCommand
-        | OriginalCommand(DeclareConst(name, sort)) -> DeclareFun(name, [], sort) |> OriginalCommand |> List.singleton
+            |> List.map FOLOriginalCommand
+        | FOLOriginalCommand(DeclareConst(name, sort)) -> DeclareFun(name, [], sort) |> FOLOriginalCommand |> List.singleton
         | c -> [c]
 
     let datatypesToSorts commands =
@@ -562,7 +562,7 @@ module private ArrayTransformations =
 
 module private SubstituteFreeSortsWithNat =
     type SubstituteFreeSortsWithNat (natSort, freeSorts) =
-        inherit FormulaTraverser ()
+        inherit FormulaMapper ()
         let mutable wasSubstituted = false
         
         member x.WasSubstituted = wasSubstituted
@@ -630,7 +630,7 @@ module SubstituteLemmas =
             | Some lemmas -> lemmas |> List.map (fun (op, _, _, _) -> Command.declareOp op)
             |> List.map FOLOriginalCommand
         | OriginalCommand c -> [FOLOriginalCommand c]
-        | TransformedCommand(Rule(qs, body, head)) -> mapRule lemmasMap qs body head |> folAssert |> Option.toList
+        | TransformedCommand(Rule(qs, body, head)) -> mapRule lemmasMap qs body head |> FOLCommand.folAssert |> Option.toList
         | LemmaCommand _ -> []
 
     let private collectAllLemmas commands =

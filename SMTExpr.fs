@@ -64,8 +64,8 @@ module private Env =
 
     let ofList vars : env = vars |> List.map (fun ((v, _) as vs) -> v, vs) |> Map.ofList
 
-    let replaceOne (env : env) (var, sort) : sorted_var * env =
-        let var' = IdentGenerator.gensymp var, sort
+    let replaceOne (env : env) (var, _ as vs) : sorted_var * env =
+        let var' = SortedVar.freshFromVar vs
         var', Map.add var var' env
 
 type VarEnvSaver (env : VarEnv) =

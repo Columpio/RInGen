@@ -2,6 +2,7 @@ module RInGen.SubstituteOperations
 
 open System.Runtime.CompilerServices
 open Operations
+open RInGen
 
 type private termArgumentFolding = LeftAssoc | RightAssoc
 type private atomArgumentFolding = Chainable | Pairwise
@@ -85,12 +86,6 @@ type FormulaTraverser () =
 
     member x.TraverseQuantifiers = Quantifiers.map (Quantifier.map x.TraverseSortedVars)
 
-    member x.TraverseRule (Rule(qs, premises, conclusion)) =
-        let qs = x.TraverseQuantifiers qs
-        let premises = x.TraverseAtoms premises
-        let conclusion = x.TraverseAtom conclusion
-        Rule(qs, premises, conclusion)
-
     member x.TraverseFOLFormula = FOL.map x.TraverseAtom
 
     member x.TraverseLemma (qs, (premises, lemma)) =
@@ -98,6 +93,15 @@ type FormulaTraverser () =
         let premises = x.TraverseAtoms premises
         let lemma = x.TraverseFOLFormula lemma
         (qs, (premises, lemma))
+        
+type FormulaMapper () =
+    inherit FormulaTraverser ()
+
+    member x.TraverseRule (Rule(qs, premises, conclusion)) =
+        let qs = x.TraverseQuantifiers qs
+        let premises = x.TraverseAtoms premises
+        let conclusion = x.TraverseAtom conclusion
+        Rule(qs, premises, conclusion)
 
     member x.TraverseCommand = function
         | DeclareFun(name, argSorts, retSort) ->
@@ -136,7 +140,7 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
     let relativizationsSubstitutor op ts justSubstOp defaultResult =
         let generateReturnArgument op =
             let retType = Operation.returnType op
-            let retArg = IdentGenerator.gensym (), retType
+            let retArg = SortedVar.freshFromSort retType
             let retVar = TIdent retArg
             retArg, retVar
         match searchInRelativizations op with
@@ -247,7 +251,7 @@ type SubstituteOperations(relativizations, eqSubstitutor, diseqSubstitutor, cons
         | c -> c
 
 type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool) =
-    inherit FormulaTraverser ()
+    inherit FormulaMapper ()
     let mutable acc = Unchecked.defaultof<'acc>
 
     override x.TraverseSort sort =
@@ -266,7 +270,7 @@ type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool
 
 [<AbstractClass>]
 type TheorySubstitutor () =
-    inherit FormulaTraverser ()
+    inherit FormulaMapper ()
     let mutable wasMapped = false
 
     member x.SubstInCommand (relativizer : SubstituteOperations) command =

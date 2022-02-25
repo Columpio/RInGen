@@ -65,6 +65,20 @@ type Async with
             else return None
         }
 
+module Map =
+    let union x y = Map.foldBack Map.add x y
+
+    let findOrDefault map x = Map.tryFind x map |> Option.defaultValue x
+
+    let findOrApply f map x = Map.tryFind x map |> Option.defaultWith (fun () -> f x)
+    
+    let findOrAdd f x map =
+        match Map.tryFind x map with
+        | Some y -> y, map
+        | None ->
+            let y = f x
+            y, Map.add x y map
+
 module List =
     let cons x xs = x :: xs
 
@@ -108,6 +122,15 @@ module List =
             | None -> None
 
     let mapChoose f xs = foldChoose (fun ys x -> match f x with Some y -> Some(y::ys) | None -> None) [] xs |> Option.map List.rev
+
+    let kfoldk f =
+        let rec kfoldk z xs k =
+            match xs with
+            | [] -> k z
+            | x::xs -> f z x (fun y -> kfoldk y xs k)
+        kfoldk
+
+    let instantiate map = List.map (Map.findOrDefault map)
 
     let butLast xs =
         let first, last = List.splitAt (List.length xs - 1) xs
@@ -162,6 +185,31 @@ module List =
 
     let initial xs = List.take (List.length xs - 1) xs
 
+module Counter =
+    let empty : Map<'a, int> = Map.empty
+
+    let addMany x m c =
+        match Map.tryFind x c with
+        | Some n -> Map.add x (n + m) c
+        | None -> Map.add x m c
+    
+    let add x c = addMany x 1 c
+
+    let union cBig cSmall = Map.foldBack addMany cSmall cBig
+    
+    let unionMany cs = List.fold union empty cs
+
+module Numbers =
+    let allNumbersBaseM n m =
+        let rec f n m acc =
+            match n with
+            | 0 -> List.rev acc
+            | _ ->
+                let helper = f (n-1) m
+                let iList = List.init m (fun i -> i::acc)
+                iList |> List.map helper |> List.concat
+        List.chunkBySize n (f n m [])
+
 module Seq =
     let rec nondiag = function
         | [] -> Seq.empty
@@ -171,9 +219,6 @@ module Seq =
                 yield! Seq.map (fun y -> y, x) xs
                 yield! nondiag xs
             }
-
-module Map =
-    let union x y = Map.foldBack Map.add x y
 
 module Dictionary =
     let toList (d : IDictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
@@ -185,6 +230,14 @@ module Dictionary =
     let tryGetValue (key : 'key) (d : IDictionary<'key, 'value>) =
         let dummy = ref Unchecked.defaultof<'value>
         if d.TryGetValue(key, dummy) then Some dummy.Value else None
+    
+    let getOrInitWith (key : 'key) (d : IDictionary<'key, 'value>) (init : unit -> 'value) =
+        match tryGetValue key d with
+        | Some value -> value
+        | None ->
+            let value = init ()
+            d.Add(key, value)
+            value
 
 type path = string
 
