@@ -11,11 +11,14 @@ type private pattern =
          pat |> List.map toString |> join ", "
 
 type private AutomatonRecord(name : ident, init : operation, isFinal : operation, delta : operation, reach: operation) =
-        member r.Init = Term.apply0 init
-        member r.IsFinal = Atom.apply1 isFinal
-        member r.Delta = Term.apply delta
-        member r.Reach = Atom.apply1 reach
-        member r.Declarations = List.map (Command.declareOp >> FOLOriginalCommand) [init; isFinal; delta; reach]
+    member r.Name = name
+    member r.Init = Term.apply0 init
+    member r.IsFinal = Atom.apply1 isFinal
+    member r.Delta = Term.apply delta
+    member r.Reach = Atom.apply1 reach
+    member r.Declarations = List.map (Command.declareOp >> FOLOriginalCommand) [init; isFinal; delta; reach]
+
+    override r.ToString() = r.Name
 
 type private state =
     | SVar of ident
@@ -289,10 +292,10 @@ module private Automaton =
         AutomatonRecord(name, initState, isFinal, delta, reach)
 
     let fromPattern m stateSort (Pattern terms) =
-        let vars = Terms.collectFreeVars terms
-        let renameMap = Terms.generateVariablesFromVars vars |> List.zip vars |> Map.ofList
-        let renamedTerms = List.map (Term.substituteWith renameMap) terms
-        let sorts = terms |> List.map Term.typeOf
+        let vars = Terms.collectFreeVars terms |> List.sortWith SortedVar.compare
+//        let renameMap = Terms.generateVariablesFromVars vars |> List.zip vars |> Map.ofList
+//        let renamedTerms = List.map (Term.substituteWith renameMap) terms
+        let sorts = vars |> List.map snd
         let name = IdentGenerator.gensymp "pat"
         fromSorts m stateSort name sorts
 
@@ -313,24 +316,30 @@ type private ToTTATraverser(m : int) =
     member private x.getEqRelName s arity =
         Dictionary.getOrInitWith (s, arity) equalities (fun () -> IdentGenerator.gensymp $"eq_{s}_{arity}")
 
-    member private x.getDiseqRelName s = //TODO: no need after diseq transform
+    member private x.getDiseqRelName s = // TODO: no need after diseq transform
         "diseq" + s.ToString()
+
+    member private x.GenerateAutomaton name args = Automaton.fromSorts m stateSort name args
 
     member private x.GenerateEqualityAutomaton s arity =
         let eqRelName = x.getEqRelName s arity
-        let eqRec = Automaton.fromSorts m stateSort eqRelName (List.replicate arity s)
+        let eqRec = x.GenerateAutomaton eqRelName (List.replicate arity s)
 
         let initAxiom = clAFact(eqRec.IsFinal eqRec.Init)
         let deltaAxiom =
             let qTerms = Terms.generateNVariablesOfSort (pown m arity) stateSort
-            let constrTerms =
-                let fTerm = Term.generateVariable s
-                List.replicate arity fTerm
+            let constrTerms = List.init arity (fun _ -> Term.generateVariable s)
             let l = eqRec.IsFinal(eqRec.Delta(constrTerms @ qTerms))
             let r =
-                let qTerms = Array.ofList qTerms
-                let qDiag = List.init m (fun i -> qTerms.[i*(m+1)])
-                List.map eqRec.IsFinal qDiag
+                let constrEqs =
+                    let eqOp = equal_op s
+                    let t, ts = List.uncons constrTerms
+                    List.map (fun el -> AApply(eqOp, [t; el])) ts
+                let qDiag =
+                    let qTerms = Array.ofList qTerms
+                    let diagCoof = List.init arity (fun i -> pown m i) |> List.sum
+                    List.init m (fun i -> qTerms.[i*diagCoof])
+                constrEqs @ List.map eqRec.IsFinal qDiag
             clAEquivalence r l
         eqRec.Declarations @ [initAxiom; deltaAxiom]
 
@@ -341,29 +350,30 @@ type private ToTTATraverser(m : int) =
         List.map FOLOriginalCommand (DeclareSort(sName) :: constrDecls)
 
     member private x.GetOrAddPattern (Pattern pattern) =
-        let uniformizeVars =
-            let u = Term.Uniformizer()
-            List.map u.Uniformize
-        let pattern = uniformizeVars pattern
+        let vars = Terms.collectFreeVars pattern |> List.unique |> List.sortWith SortedVar.compare
+        let renameMap = List.mapi (fun i v -> (v, TIdent ("x_" + i.ToString(), snd v))) vars |> Map.ofList
+        let pattern = List.map (Term.substituteWith renameMap) pattern
         Dictionary.getOrInitWith pattern patternAutomata (fun () ->
-            PatternAutomatonGenerator.generatePatternAutomaton m (Pattern pattern))
+            Automaton.fromPattern m stateSort (Pattern pattern))
+//            PatternAutomatonGenerator.generatePatternAutomaton m (Pattern pattern))
 
     member private x.TraverseRule (Rule(_, body, head) as rule) =
         let atoms = head :: body
+        let atoms = List.filter (function | Top | Bot -> false | _ -> true) atoms
         let patAutomata = Pattern.extractFromRule rule |> List.map x.GetOrAddPattern
 
         let clauseName = IdentGenerator.gensymp "clause"
         let clauseVars = Atoms.collectFreeVars atoms |> List.sortWith SortedVar.compare
-        let cRecord = Automaton.fromSorts m stateSort clauseName (List.map snd clauseVars)
+        let cRecord = x.GenerateAutomaton clauseName (List.map snd clauseVars)
 
         // process rule
         let atomsVars = atoms |> List.map Atom.collectFreeVars |> List.map (List.sortWith SortedVar.compare)
         let clauseVarsTerms = clauseVars |> List.map TIdent
 
-        let clauseLen = List.length patAutomata
-        let prodName = "prod_" + clauseName
+        let clauseLen = atomsVars |> List.length
 
         let prodOp =
+            let prodName = "prod_" + clauseName
             let ss = List.replicate clauseLen stateSort
             Operation.makeElementaryOperationFromSorts prodName ss stateSort
 
@@ -381,8 +391,8 @@ type private ToTTATraverser(m : int) =
                 // helper functions
                 let genQMask aVars = List.map (fun v -> List.contains v aVars) clauseVars
                 let applyMask combination mask =
-                    List.zip combination mask |> List.filter snd |> List.rev
-                    |> List.mapi (fun i (el,_) -> el * (pown m i)) |> List.sum
+                    List.zip combination mask |> List.filter snd |> List.rev |>
+                    List.mapi (fun i (el,_) -> el * (pown m i)) |> List.sum
 
                 (*
                     masks ~ used ADT variables in atom
@@ -420,17 +430,16 @@ type private ToTTATraverser(m : int) =
             let l = List.map cRecord.Reach qTerms
             let r = cRecord.Reach(cRecord.Delta(clauseVarsTerms @ qTerms))
             clARule l r
-        let condition = //TODO: what's that? I think, I might have broken it
+        let condition =
             let qTerm = Term.generateVariableWithPrefix("q", stateSort)
             clARule [cRecord.Reach qTerm; cRecord.IsFinal qTerm] Bot
         let tCommands = [initAxiom; deltaAxiom; finalAxiom; reachInit; reachDelta; condition]
 
-        let prodDecl = FOLOriginalCommand <| Command.declareOp prodOp
-        let clauseDecls = cRecord.Declarations
+        let clauseDecls =
+            let prodDecl = FOLOriginalCommand <| Command.declareOp prodOp
+            prodDecl :: cRecord.Declarations
 
         clauseDecls @ tCommands
-
-    member private x.GenerateAutomaton name args = Automaton.fromSorts m stateSort name args
 
     member private x.TraverseCommand = function
         | DeclareFun(fname, args, BoolSort) -> (x.GenerateAutomaton fname args).Declarations
@@ -438,17 +447,22 @@ type private ToTTATraverser(m : int) =
         | DeclareDatatypes dts -> List.collect x.TraverseDatatype dts
         | c -> [FOLOriginalCommand c]
 
-    member private x.TraverseTransformedCommand = function
-        | OriginalCommand o -> x.TraverseCommand o
-        | TransformedCommand rule -> x.TraverseRule rule
-        | LemmaCommand _ -> __unreachable__()
+    member private x.traversePatterns =
+        let res = seq {
+            for KeyValue(_, aRec) in patternAutomata do
+                yield! aRec.Declarations
+        }
+        List.ofSeq res
 
     member x.TraverseCommands commands =
+        let commands, rules = List.choose2 (function OriginalCommand o -> Choice1Of2 o | TransformedCommand t -> Choice2Of2 t | LemmaCommand _ -> __unreachable__()) commands
+        let commands' = List.collect x.TraverseCommand commands
+        let rules' = List.collect x.TraverseRule rules
         let header = FOLOriginalCommand(DeclareSort(stateSortName))
-        let commands' = List.collect x.TraverseTransformedCommand commands
-        header :: commands'
+        let patternsAxioms = x.traversePatterns
+        header :: commands' @ patternsAxioms @ rules'
 
-let transform commands =
+let transform (commands : transformedCommand list) =
     let maxConstructorWidth = List.max <| List.map (function OriginalCommand c -> Command.maxConstructorArity c | _ -> Datatype.noConstructorArity) commands
     let processer = ToTTATraverser(maxConstructorWidth)
     processer.TraverseCommands(commands)

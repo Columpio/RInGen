@@ -84,6 +84,8 @@ module List =
 
     let unique xs = xs |> Set.ofList |> Set.toList
 
+    let notEmpty xs = not (List.isEmpty xs)
+
     let groups n ys =
         // for [x0; x1; x2; x3; ...] and n=2 returns [[x0, x1]; [x2, x3]; ...]
         let l = List.length ys

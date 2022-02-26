@@ -92,10 +92,11 @@ type TransformerProgram (options : transformOptions) =
         | Some transformer -> transformer.RunOnFile srcPath dstPath
 
 let private preambulizeCommands logic chcSystem =
-    OriginalCommand(SetLogic logic) :: chcSystem @ [OriginalCommand CheckSat]
+    FOLOriginalCommand(SetLogic logic) :: chcSystem @ [FOLOriginalCommand CheckSat]
 
 let private preambulizeCommandsHornOrAll commands =
-    preambulizeCommands "HORN" commands
+    // TODO: rewrite with preambulizeCommands
+    OriginalCommand(SetLogic "HORN") :: commands @ [OriginalCommand CheckSat]
 
 type OriginalTransformerProgram (options) =
     inherit TransformerProgram(options)
@@ -131,13 +132,14 @@ type FreeSortsTransformerProgram (options) =
     override x.TargetPath path = $"%s{path}.FreeSorts"
 
     override x.Transform trCtx =
-        let commands = preambulizeCommands "UF" trCtx.commands
+        let commands = trCtx.commands
         let commands =
             if options.tta_transform then TtaTransform.transform commands
             else
                 let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
                 Simplification.simplify trCtx.diseqs commands
         let commands = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
+        let commands = preambulizeCommands "UF" commands
         List.map toString commands
 
 type PrologTransformerProgram (options) =
