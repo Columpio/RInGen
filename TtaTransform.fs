@@ -53,7 +53,8 @@ module private Pattern =
         let pat', vars2vars = Terms.generalizeVariables pat
         Pattern pat', vars2vars
 
-    let extractFromAtom = Atom.tryGetArguments >> Option.map Pattern
+    // TODO: empty patterns should not be None
+    let extractFromAtom a = Option.map Pattern (if Atom.collectFreeVars a <> [] then Atom.tryGetArguments a else None)
 
     let extractFromRule (Rule(_, body, head)) = List.choose extractFromAtom (head::body)
 
@@ -359,9 +360,11 @@ type private ToTTATraverser(m : int) =
 
     member private x.TraverseRule (Rule(_, body, head) as rule) =
         let atoms = head :: body
-        let atoms = List.filter (function | Top | Bot -> false | _ -> true) atoms
+        // TODO: this is tmp solution for empty patterns
+        let atoms = List.filter (fun a -> Atom.collectFreeVars a <> []) atoms
         let patAutomata = Pattern.extractFromRule rule |> List.map x.GetOrAddPattern
 
+        if List.isEmpty patAutomata then [] else
         let clauseName = IdentGenerator.gensymp "clause"
         let clauseVars = Atoms.collectFreeVars atoms |> List.sortWith SortedVar.compare
         let cRecord = x.GenerateAutomaton clauseName (List.map snd clauseVars)
