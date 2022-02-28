@@ -70,8 +70,6 @@ module Map =
 
     let findOrDefault map x = Map.tryFind x map |> Option.defaultValue x
 
-    let findOrApply f map x = Map.tryFind x map |> Option.defaultWith (fun () -> f x)
-    
     let findOrAdd f x map =
         match Map.tryFind x map with
         | Some y -> y, map
@@ -194,11 +192,11 @@ module Counter =
         match Map.tryFind x c with
         | Some n -> Map.add x (n + m) c
         | None -> Map.add x m c
-    
+
     let add x c = addMany x 1 c
 
     let union cBig cSmall = Map.foldBack addMany cSmall cBig
-    
+
     let unionMany cs = List.fold union empty cs
 
 module Numbers =
@@ -229,12 +227,14 @@ module Dictionary =
 
     let copyContents (toD : IDictionary<_,_>) (fromD : IDictionary<_,_>) = Seq.iter toD.Add fromD
 
-    let tryGetValue (key : 'key) (d : IDictionary<'key, 'value>) =
+    let tryFind (key : 'key) (d : IDictionary<'key, 'value>) =
         let dummy = ref Unchecked.defaultof<'value>
         if d.TryGetValue(key, dummy) then Some dummy.Value else None
-    
+
+    let findOrApply f map x = tryFind x map |> Option.defaultWith (fun () -> f x)
+
     let getOrInitWith (key : 'key) (d : IDictionary<'key, 'value>) (init : unit -> 'value) =
-        match tryGetValue key d with
+        match tryFind key d with
         | Some value -> value
         | None ->
             let value = init ()

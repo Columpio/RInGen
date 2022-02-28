@@ -55,7 +55,7 @@ type private POBDB (adts) =
         adt_declarations.Add(comb_sort, constrOps)
 
     member private x.CombSort sorts =
-        match Dictionary.tryGetValue sorts comb_sorts with
+        match Dictionary.tryFind sorts comb_sorts with
         | Some comb_sort -> comb_sort
         | None ->
         let new_sort = sorts |> List.map (function ADTSort i -> i | _ -> __notImplemented__()) |> combineNames |> ADTSort
@@ -64,7 +64,7 @@ type private POBDB (adts) =
 
     member private x.CombConstrName constrNames argSorts =
         Dictionary.getOrInitWith constrNames comb_constructors (fun () ->
-        match Dictionary.tryGetValue constrNames comb_constructors with
+        match Dictionary.tryFind constrNames comb_constructors with
         | Some combinedName -> combinedName
         | None ->
         let names = List.map Operation.opName constrNames
@@ -85,7 +85,7 @@ type private POBDB (adts) =
         print_extra_verbose $"""registered {op}: {pob |> List.map (List.map toString >> join ", " >> sprintf "(%s)") |> join "; "}"""
         op
 
-    member private x.TryGetPOB(pob) : operation option = Dictionary.tryGetValue pob pobs
+    member private x.TryGetPOB(pob) : operation option = Dictionary.tryFind pob pobs
 
     member private x.AddCombRule pred rule =
         let predRules = Dictionary.getOrInitWith pred rules (fun () -> [])

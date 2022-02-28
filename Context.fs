@@ -24,7 +24,7 @@ type Context() =
 
     member x.IsDefinedOperation ident = operations.ContainsKey(ident)
 
-    member x.TryFindDefinedOperation ident = Dictionary.tryGetValue ident operations
+    member x.TryFindDefinedOperation ident = Dictionary.tryFind ident operations
 
     member x.FillOperation opName argTypes =
         match x.TryFindDefinedOperation opName with
@@ -57,14 +57,14 @@ type Context() =
     member x.TryGetTesters adtSort =
         opt {
             let! adtName = ADTExtensions.tryGetADTName adtSort
-            let! adtOps = Dictionary.tryGetValue adtName adts
+            let! adtOps = Dictionary.tryFind adtName adts
             return List.map snd3 adtOps
         }
     
     member x.TryGetConstructors adtSort =
         opt {
             let! adtName = ADTExtensions.tryGetADTName adtSort
-            let! adtOps = Dictionary.tryGetValue adtName adts
+            let! adtOps = Dictionary.tryFind adtName adts
             return List.map fst3 adtOps
         }
     

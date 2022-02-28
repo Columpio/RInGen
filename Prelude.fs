@@ -54,6 +54,8 @@ module SortedVar =
 module SortedVars =
     let mapFold = List.mapFold
 
+    let sort = List.sortWith SortedVar.compare
+
     let withFreshVariables = List.mapFold (fun freshVarsMap vs -> let vs' = SortedVar.freshFromVar vs in vs', Map.add vs vs' freshVarsMap)
 
     let toString : sorted_var list -> string = List.map (fun (v, s) -> $"({v} {s})") >> join " "

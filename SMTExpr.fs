@@ -100,7 +100,7 @@ and VarEnv(ctx : Context, vars2sorts) as this =
     default x.TryFindDefinedOperation ident = ctx.TryFindDefinedOperation ident
 
     member private x.TryGetFromIdent var =
-        match Dictionary.tryGetValue var vars2sorts with
+        match Dictionary.tryFind var vars2sorts with
         | Some sort -> Some(var, sort)
         | None -> None
 
@@ -154,7 +154,7 @@ type private SubstVarEnv(ctx : Context, osyms2nsyms, nvars2nsorts) as this =
     member x.InIsolation () = saver
 
     member private x.TryFindSymbol symbol =
-        if ctx.IsPredefinedSymbol symbol then Some symbol else Dictionary.tryGetValue symbol osyms2nsyms
+        if ctx.IsPredefinedSymbol symbol then Some symbol else Dictionary.tryFind symbol osyms2nsyms
 
     member x.FindSymbol symbol =
         match x.TryFindSymbol symbol with

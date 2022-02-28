@@ -75,7 +75,7 @@ type ProgramRunner () =
         |> Path.GetDirectoryName
 
     member private x.SetupProcess (psinfo : ProcessStartInfo) filename =
-        let executable = Option.defaultValue x.BinaryName <| Dictionary.tryGetValue x.BinaryName psinfo.Environment
+        let executable = Option.defaultValue x.BinaryName <| Dictionary.tryFind x.BinaryName psinfo.Environment
         let arguments = x.BinaryOptions filename
         let statisticsFile = Path.GetTempFileName()
         File.Delete(statisticsFile)
