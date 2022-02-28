@@ -2,7 +2,6 @@ module RInGen.TtaTransform
 
 open System.Collections.Generic
 open FOLCommand
-open Operations
 
 type private pattern =
      | Pattern of term list
@@ -19,6 +18,12 @@ type private AutomatonRecord(name : ident, init : operation, isFinal : operation
     member r.Declarations = List.map (Command.declareOp >> FOLOriginalCommand) [init; isFinal; delta; reach]
 
 type private Automaton(r : AutomatonRecord, tr) =
+    member x.Record = r
+    member x.Name = r.Name
+    member x.Init = r.Init
+    member x.IsFinal = r.IsFinal
+    member x.Delta = r.Delta
+    member x.Reach = r.Reach
     member x.Declarations = r.Declarations @ tr
 
 module private Automaton =
@@ -37,9 +42,21 @@ module private Automaton =
         let reach = Operation.makeElementaryRelationFromSorts reachName [stateSort]
         AutomatonRecord(name, initState, isFinal, delta, reach)
 
+    let fromOperation m stateSort op =
+        let name = Operation.opName op
+        let sorts = Operation.argumentTypes op
+        fromSorts m stateSort name sorts
+
     let fromPattern m stateSort (Pattern terms) =
         let sorts = terms |> List.map Term.typeOf
-        fromSorts m stateSort "pat" sorts
+        fromSorts m stateSort (IdentGenerator.gensymp "pat") sorts
+
+module MetaConstructor =
+    let create name retSort = Operation.makeUserOperationFromSorts name [] retSort
+
+    let isMetaConstructor = Operation.isUserOperation
+
+    let toTerm = Operations.operationToIdent
 
 type private state =
     | SVar of ident
@@ -114,6 +131,14 @@ module private Pattern =
         List.fold (Term.foldVarsWithDepth Map.add) Map.empty pat
 
 module private State =
+    let rec toTerm stateSort = function
+        | SVar name -> TIdent(name, stateSort)
+        | DeltaApply(record, constrs, states) ->
+            let terms = List.map (toTerm stateSort) states
+            let constrs = List.map MetaConstructor.toTerm constrs
+            record.Delta(constrs @ terms)
+        | _ -> __notImplemented__()
+
     let mapAutomatonApplies f =
         let rec mapPattern = function
             | SVar _ as v -> v
@@ -142,13 +167,11 @@ module private State =
                 CombinedState(heads, states), z
         mapFold
 
-    let private isMetaVariableForConstructor _ = __notImplemented__()
-
     let freeConstructors =
         let rec freeConstructors free state =
             match state with
             | DeltaApply(_, constrs, states) ->
-                List.fold freeConstructors (constrs |> List.filter isMetaVariableForConstructor |> Set.ofList |> Set.union free) states
+                List.fold freeConstructors (constrs |> List.filter MetaConstructor.isMetaConstructor |> Set.ofList |> Set.union free) states
             | _ -> free
         freeConstructors Set.empty >> Set.toList
 
@@ -193,8 +216,6 @@ module private State =
                 SVar freshName
         mapAutomatonApplies helper s, (vars2states, states2vars)
 
-    let collectAutomatonApplies = foldAutomatonApplies (fun states name pat -> Set.add (AutomatonApply(name, pat)) states) Set.empty
-
 module private Invariant =
     let fromConstructorsAndStates freeConstrs states =
         Invariant(freeConstrs, states)
@@ -226,13 +247,11 @@ module private Invariant =
             | _ -> __notImplemented__()
         rewrite state
 
-    let collectAutomatonApplies (Invariant(_, states)) = states |> List.map State.collectAutomatonApplies |> Set.unionMany
-
 module private PatternAutomatonGenerator =
     let private linearInstantiator width pattern =
         let var2depth = Pattern.collectVariableDepths pattern
         let patDepth = Pattern.depth pattern
-        var2depth |> Map.map (fun _ depth -> Term.falsehood) //TODO: Term.mkFullTree width (patDepth - depth))
+        var2depth |> Map.map (fun v depth -> if patDepth = depth then Term.generateVariableWithPrefix v else Term.falsehood) //TODO: Term.mkFullTree width (patDepth - depth))
 
     let private instantiate instantiator A B =
         let A' = State.instantiate instantiator A
@@ -273,14 +292,23 @@ module private PatternAutomatonGenerator =
             Invariant.mapAutomatonApplies mapper rightSide
         abstrLeftSide, abstrRightSide
 
-    let private automatonFromDeltaAndFinals delta finalStates =
-        __notImplemented__()
+    let private automatonFromDeltaAndFinals stateSort (patternRec : AutomatonRecord) (baseAutomaton : AutomatonRecord) delta (finalConstrs, finalIdents, finalState) =
+        // """Fb(freeConstrs, abstrVars) <=> Fa(abstrState)"""
+        let finalDecls =
+            let r = baseAutomaton.IsFinal(State.toTerm stateSort finalState)
+            let Delay = function
+                | [], [x] -> TIdent(x, stateSort)
+                | _ -> __notImplemented__()
+            let l = patternRec.IsFinal(Delay(finalConstrs, finalIdents))
+            clAEquivalence [l] r
+        let decls = finalDecls :: []
+        Automaton(patternRec, decls)
 
-    let generatePatternAutomaton width stateSort (baseAutomaton : AutomatonRecord) pattern =
+    let generatePatternAutomaton width stateSort (baseAutomaton : Automaton) pattern =
         let generalizedPattern, vars2vars = Pattern.generalizeVariables pattern
         let newVars = Map.toList vars2vars |> List.map fst |> List.unique
         let instantiator = linearInstantiator width generalizedPattern
-        let A = AutomatonApply(baseAutomaton, generalizedPattern)
+        let A = AutomatonApply(baseAutomaton.Record, generalizedPattern)
         let patternRec, B =
             let pattern' = pattern |> Pattern.collectFreeVars |> SortedVars.sort |> List.map TIdent |> Pattern
             let record = Automaton.fromPattern width stateSort pattern'
@@ -289,7 +317,7 @@ module private PatternAutomatonGenerator =
         let finalStates, invariantA = finalStatesAndInvariant A B
         let leftSide, rightSide = inductiveUnfoldings width B invariantA
         let delta = inductionSchema leftSide rightSide
-        let patAutomaton = automatonFromDeltaAndFinals delta finalStates
+        let patAutomaton = automatonFromDeltaAndFinals stateSort baseAutomaton.Record patternRec delta finalStates
 //        let equalityAutomaton = buildEqualityAutomaton newVars
 //        let intersectionAutomaton = intersect equalityAutomaton patAutomaton
 //        let prAutomaton = proj newVars intersectionAutomaton //TODO: do we really need it?
@@ -300,7 +328,7 @@ type private ToTTATraverser(m : int) =
     let stateSortName = IdentGenerator.gensymp "State"
     let stateSort = FreeSort stateSortName
 
-    let equal s = Atom.apply2 (equal_op s)
+    let equal s = Atom.apply2 (Operations.equal_op s)
     let equalStates = equal stateSort
 
     let botSymbols = Dictionary<_, _>()
@@ -340,14 +368,25 @@ type private ToTTATraverser(m : int) =
                 let qDiag = List.init m (fun i -> qTerms.[i*(m+1)])
                 List.map eqRec.IsFinal qDiag
             clAEquivalence r l
-        eqRec, eqRec.Declarations @ [initAxiom; deltaAxiom]
+        Automaton(eqRec, [initAxiom; deltaAxiom])
+
+    member private x.GenerateDisqualityAutomaton s =
+        __notImplemented__()
 
     member private x.GetOrAddEqualityAutomaton ts =
         let s = List.head ts |> Term.typeOf
         let n = List.length ts
-        let name = x.getEqRelName s n
-        let baseAutomaton, decls = Dictionary.getOrInitWith name equalities (fun () -> x.GenerateEqualityAutomaton s n)
-        x.GetOrAddPattern baseAutomaton (Pattern ts)
+        let baseAutomaton = Dictionary.getOrInitWith (s, n) equalities (fun () -> x.GenerateEqualityAutomaton s n)
+        x.GetOrAddPatternAutomaton baseAutomaton (Pattern ts)
+
+    member private x.GetOrAddDisequalityAutomaton y z =
+        let s = Term.typeOf y
+        let baseAutomaton = Dictionary.getOrInitWith s disequalities (fun () -> x.GenerateDisqualityAutomaton s)
+        x.GetOrAddPatternAutomaton baseAutomaton (Pattern [y; z])
+
+    member private x.GetOrAddApplicationAutomaton op xs =
+        let baseAutomaton = x.GetOrAddOperationAutomaton op
+        x.GetOrAddPatternAutomaton baseAutomaton (Pattern xs)
 
     member private x.TraverseDatatype (sName, xs) =
         let s = ADTSort sName
@@ -355,7 +394,7 @@ type private ToTTATraverser(m : int) =
         let constrDecls = List.map (fun name -> DeclareConst(name, s)) constructors
         List.map FOLOriginalCommand (DeclareSort(sName) :: constrDecls)
 
-    member private x.GetOrAddPattern baseAutomaton (Pattern pattern) =
+    member private x.GetOrAddPatternAutomaton baseAutomaton (Pattern pattern) =
         let vars = Terms.collectFreeVars pattern |> List.sortWith SortedVar.compare
         let renameMap = List.mapi (fun i (_, s as v) -> (v, TIdent ($"x_{i}", s))) vars |> Map.ofList
         let pattern = List.map (Term.substituteWith renameMap) pattern
@@ -394,13 +433,13 @@ type private ToTTATraverser(m : int) =
 
         let initAxiom =
             let l = cRecord.Init
-            let inits = patAutomata |> List.map (fun (r : AutomatonRecord) -> r.Init)
+            let inits = patAutomata |> List.map (fun (r : Automaton) -> r.Init)
             let r = x.Product inits
             clAFact (equalStates l r)
         let deltaAxiom =
             let stateTerms = List.map (fun vars -> (Terms.generateNVariablesOfSort (pown m (List.length vars)) stateSort)) atomsVars
             let atomsTerms = List.map (List.map TIdent) atomsVars
-            let rs = List.map3 (fun (r : AutomatonRecord) vs s -> r.Delta(vs @ s)) patAutomata atomsTerms stateTerms
+            let rs = List.map3 (fun (r : Automaton) vs s -> r.Delta(vs @ s)) patAutomata atomsTerms stateTerms
             let r = x.Product rs
             let l =
                 // helper functions
@@ -431,7 +470,7 @@ type private ToTTATraverser(m : int) =
             let stateTerms = Terms.generateNVariablesOfSort (List.length patAutomata) stateSort
             let li = x.Product stateTerms
             let l = FOLAtom <| cRecord.IsFinal li
-            let rs = List.map2 (fun (r : AutomatonRecord) -> r.IsFinal >> FOLAtom) patAutomata stateTerms
+            let rs = List.map2 (fun (r : Automaton) -> r.IsFinal >> FOLAtom) patAutomata stateTerms
             let rs =
                 match head with
                 | Bot -> rs
@@ -455,8 +494,19 @@ type private ToTTATraverser(m : int) =
 
     member private x.GenerateAutomaton name args = Automaton.fromSorts m stateSort name args
 
+    member private x.GetOrAddOperationAutomaton op =
+        Dictionary.getOrInitWith op applications (fun () -> Automaton(Automaton.fromOperation m stateSort op, []))
+
+    member private x.GenerateProductDeclarations () =
+        products |> Dictionary.toList |> List.collect (fun (_, op) -> (Automaton.fromOperation m stateSort op).Declarations)
+
+    member private x.GeneratePatternDeclarations () =
+        patternAutomata |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
+
     member private x.TraverseCommand = function
-        | DeclareFun(fname, args, BoolSort) -> (x.GenerateAutomaton fname args).Declarations
+        | DeclareFun(name, args, BoolSort) ->
+            let op = Operation.makeUserRelationFromSorts name args
+            (x.GetOrAddOperationAutomaton op).Declarations
         | DeclareDatatype dt -> x.TraverseDatatype dt
         | DeclareDatatypes dts -> List.collect x.TraverseDatatype dts
         | c -> [FOLOriginalCommand c]
@@ -473,7 +523,8 @@ type private ToTTATraverser(m : int) =
         let patternDecls = x.GeneratePatternDeclarations ()
         header :: prodDecls @ patternDecls @ commands'
 
-let transform commands =
+let transform (commands : 'a list) =
+    let commands = [commands.[0]; commands.[1]; commands.[2]; commands.[3]; commands.[4]; commands.[11]; commands.[12]; commands.[13]; commands.[14]]
     let maxConstructorWidth = List.max <| List.map (function OriginalCommand c -> Command.maxConstructorArity c | _ -> Datatype.noConstructorArity) commands
     let processer = ToTTATraverser(maxConstructorWidth)
     processer.TraverseCommands(commands)

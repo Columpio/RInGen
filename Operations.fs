@@ -63,10 +63,10 @@ let opSubstitutor empty opMap t1 t2 =
 
 
 //let identToUserOp name sort = Operation.makeUserOperationFromSorts name [] sort
-//let operationToIdent = function //TODO: it should be not needed to do it as TIdent are vars and ops are for constrs
-//    | ElementaryOperation(name, [], sort)
-//    | UserDefinedOperation(name, [], sort) -> TIdent(name, sort)
-//    | op -> failwithf $"Can't create identifier from operation: {op}"
+
+let operationToIdent = function
+    | ElementaryOperation(name, _, sort)
+    | UserDefinedOperation(name, _, sort) -> TIdent(name, sort)
 
 let findAndInstantiateGenericOperation opName argTypes =
     match opName, argTypes with

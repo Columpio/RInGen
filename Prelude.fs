@@ -80,6 +80,8 @@ module Operation =
         | ElementaryOperation(n, _, _)
         | UserDefinedOperation(n, _, _) -> n
 
+    let isUserOperation = function UserDefinedOperation _ -> true | _ -> false
+
     let changeName name = function
         | ElementaryOperation(_, s1, s2) -> ElementaryOperation(name, s1, s2)
         | UserDefinedOperation(_, s1, s2) -> UserDefinedOperation(name, s1, s2)
@@ -91,6 +93,7 @@ module Operation =
     let makeUserOperationFromVars name vars retSort = UserDefinedOperation(name, List.map snd vars, retSort)
     let makeUserOperationFromSorts name argSorts retSort = UserDefinedOperation(name, argSorts, retSort)
     let makeUserRelationFromVars name vars = makeUserOperationFromVars name vars BoolSort
+    let makeUserRelationFromSorts name sorts = makeUserOperationFromSorts name sorts BoolSort
     let makeElementaryOperationFromVars name vars retSort = ElementaryOperation(name, List.map snd vars, retSort)
     let makeElementaryOperationFromSorts name argSorts retSort = ElementaryOperation(name, argSorts, retSort)
     let makeElementaryRelationFromVars name vars = makeElementaryOperationFromVars name vars BoolSort

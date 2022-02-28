@@ -70,6 +70,8 @@ module Map =
 
     let findOrDefault map x = Map.tryFind x map |> Option.defaultValue x
 
+    let findOrApply f map x = Map.tryFind x map |> Option.defaultWith (fun () -> f x)
+
     let findOrAdd f x map =
         match Map.tryFind x map with
         | Some y -> y, map
