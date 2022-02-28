@@ -81,15 +81,11 @@ module Term =
     let collectFreeVars = foldVars Set.add Set.empty >> Set.toList
     let collectFreeVarsCounter = foldVars Counter.add Counter.empty
 
-//    let mkApplyNary N prefix init = TApply(IdentGenerator.gensymp prefix, List.init N init)
-//
-//    let mkFullTree width height =
-//        let rec iter height = if height <= 0 then mkFreshVar () else mkApplyNary width "f" (fun _ -> iter (height - 1))
-//        iter height
-
-    let cut = function
+    let tryCut = function
         | TApply(opname, args) -> Some(opname, args)
         | _ -> None
+
+    let cut t = t |> tryCut |> Option.defaultWith (fun () -> failwith $"cannot get constructor and arguments of {t}")
 
     let private trySubstituteIdent map ident = Map.findOrApply TIdent map ident
 
@@ -135,4 +131,4 @@ module Terms =
 
     let rewrite substConstrs instantiator = List.map (Term.rewrite substConstrs instantiator)
 
-    let cutHeads = List.mapChoose Term.cut >> Option.map List.unzip
+    let cutHeads = List.mapChoose Term.tryCut >> Option.map List.unzip
