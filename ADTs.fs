@@ -14,7 +14,7 @@ module SupplementaryADTAxioms =
             let generateSelector selectorsMap (retArg, (selectorName, selectorType)) =
                 let relselectorName = IdentGenerator.gensymp selectorName
                 let op = Operation.makeElementaryOperationFromSorts selectorName [adtSort] selectorType
-                let relselectorOp = Operation.makeElementaryOperationFromSorts relselectorName [adtSort] selectorType |> Relativization.relativizeOperation
+                let relselectorOp = Operation.makeUserOperationFromSorts relselectorName [adtSort] selectorType |> Relativization.relativizeOperation
                 let decl = Relativization.reldeclare relselectorName [adtSort] selectorType
                 let body = clARule selectorPremise (relapply relselectorOp [adtArg] retArg)
                 (OriginalCommand decl, TransformedCommand body), addShouldRelativize op relselectorOp selectorsMap
@@ -31,7 +31,7 @@ module SupplementaryADTAxioms =
         let testerName = ADTExtensions.getTesterNameFromConstructor constructorName
         let relTesterName = IdentGenerator.gensymp testerName
         let op = Operation.makeElementaryRelationFromSorts testerName [sort]
-        let relOp = Operation.makeElementaryRelationFromSorts relTesterName [sort]
+        let relOp = Operation.makeUserRelationFromSorts relTesterName [sort]
         let decl = DeclareFun(relTesterName, [sort], BoolSort)
         relOp, decl, addShouldNotRelativize op relOp substs
 
@@ -50,7 +50,7 @@ module SupplementaryADTAxioms =
 
     let private generateCongruenceHeader congrBaseName diseqs name =
         let diseq_name = IdentGenerator.gensymp (congrBaseName + (Sort.sortToFlatString name))
-        let op = Operation.makeElementaryRelationFromSorts diseq_name [name; name]
+        let op = Operation.makeUserRelationFromSorts diseq_name [name; name]
         let decl = DeclareFun(diseq_name, [name; name], BoolSort)
         op, Map.add name op diseqs, decl
 
