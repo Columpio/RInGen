@@ -58,7 +58,7 @@ module MetaConstructor =
 
     let isMetaConstructor = Operation.isUserOperation
 
-    let toTerm = Operations.operationToIdent
+    let toTerm op = if isMetaConstructor op then Operations.operationToIdent op else Term.apply0 op
 
 type private state =
     | SVar of ident
@@ -402,6 +402,8 @@ type private ToTTATraverser(m : int) =
             | CombinedState(constrs, states) -> constrStatesToTerm constrs states
             | AutomatonApply _ -> __unreachable__()
         let Invariant_toTerm (Invariant(constrs, states)) = constrStatesToTerm constrs states
+        let initDecls =
+            clAFact(Equal(patternRec.Init, baseAutomaton.Init))
         let deltaDecls =
             let l =
                 let t = State_toTerm deltaLeft
@@ -415,7 +417,7 @@ type private ToTTATraverser(m : int) =
             let finalTerms = List.map (fun name -> TIdent(name, stateSort)) finalIdents
             let l = patternRec.IsFinal(x.Delay(constrsToTerms finalConstrs, finalTerms))
             clAEquivalence [l] r
-        let decls = deltaDecls :: finalDecls :: []
+        let decls = initDecls :: deltaDecls :: finalDecls :: []
         Automaton(patternRec, decls)
 
     member private x.GetOrAddPatternAutomaton baseAutomaton (Pattern pattern) =
