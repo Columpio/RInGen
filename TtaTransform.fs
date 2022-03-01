@@ -563,7 +563,7 @@ type private ToTTATraverser(m : int) =
         let patDecls = x.GeneratePatternDeclarations ()
         let all = header :: patDecls @ prodDecls @ delayDecls @ commands'
         let sortDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareSort _) as s -> Choice1Of2 s | c -> Choice2Of2 c) all
-        let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
+        let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
         sortDecls @ funDecls @ rest
 
 let transform (commands : 'a list) =
