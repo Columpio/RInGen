@@ -92,7 +92,7 @@ type TransformerProgram (options : transformOptions) =
         | Some transformer -> transformer.RunOnFile srcPath dstPath
 
 let private preambulizeCommands logic chcSystem =
-    FOLOriginalCommand(SetLogic logic) :: chcSystem @ [FOLOriginalCommand CheckSat]
+    FOLOriginalCommand(SetLogic logic) :: chcSystem @ [FOLOriginalCommand CheckSat; FOLOriginalCommand GetModel]
 
 let private preambulizeCommandsHornOrAll commands =
     // TODO: rewrite with preambulizeCommands

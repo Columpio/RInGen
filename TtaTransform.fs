@@ -176,7 +176,7 @@ module private State =
         let unfoldAutomatonApply name pattern =
             match Pattern.cutHeads pattern with
             | Some(heads, bodies) ->
-                let bodies = List.map (List.map bottomize) bodies
+                let bodies = List.map2 bottomize heads bodies
                 let states = List.product bodies |> List.map (fun pat -> AutomatonApply(name, Pattern pat))
                 let states = List.map mapChild states
                 DeltaApply(name, heads, states)
@@ -306,7 +306,7 @@ type private ToTTATraverser(m : int) =
     let applications = Dictionary<_, _>()
 
     let dumpOpDictionary opDict =
-        opDict |> Dictionary.toList |> List.collect (fun (_, op) -> FOLOriginalCommand(Command.declareOp op) :: (Automaton.fromOperation m stateSort op).Declarations)
+        opDict |> Dictionary.toList |> List.map (fun (_, op) -> FOLOriginalCommand(Command.declareOp op))
 
     member private x.getBotSymbol sort =
         Dictionary.getOrInitWith sort botSymbols (fun () -> IdentGenerator.gensymp <| Sort.sortToFlatString sort + "_bot")
@@ -359,18 +359,20 @@ type private ToTTATraverser(m : int) =
         let constrDecls = List.map (fun name -> DeclareConst(name, s)) constructors
         List.map FOLOriginalCommand (DeclareSort(sName) :: constrDecls)
 
+    member private x.BottomizeTerms op ts =
+        let s = Operation.returnType op //TODO: it works only for single sorted ADTs
+        let bottom = Term.apply0 <| Operation.makeElementaryOperationFromSorts (x.getBotSymbol s) [] s
+        let ts' = List.map x.BottomizeTerm ts
+        let ts'' = List.replicate (m - List.length ts') bottom
+        ts' @ ts''
     member private x.BottomizeTerm = function
         | TApply(op, ts) ->
-            let s = Operation.returnType op //TODO: it works only for single sorted ADTs
-            let bottom = Term.apply0 <| Operation.makeElementaryOperationFromSorts (x.getBotSymbol s) [] s
-            let ts' = List.map x.BottomizeTerm ts
-            let ts'' = List.replicate (m - List.length ts') bottom
-            TApply(op, ts' @ ts'')
+            let ts' = x.BottomizeTerms op ts
+            TApply(op, ts')
         | t -> t
 
     member private x.GeneratePatternAutomaton (baseAutomaton : Automaton) pattern =
-        let Pattern generalizedPattern, vars2vars = Pattern.generalizeVariables pattern
-        let generalizedPattern = Pattern <| List.map x.BottomizeTerm generalizedPattern
+        let generalizedPattern, vars2vars = Pattern.generalizeVariables pattern
         let newVars = Map.toList vars2vars |> List.map fst |> List.unique
         let instantiator = PatternAutomatonGenerator.linearInstantiator m generalizedPattern
         let A = AutomatonApply(baseAutomaton.Record, generalizedPattern)
@@ -378,9 +380,9 @@ type private ToTTATraverser(m : int) =
             let pattern' = generalizedPattern |> Pattern.collectFreeVars |> SortedVars.sort |> List.map TIdent |> Pattern
             let record = Automaton.fromPattern m stateSort pattern'
             record, AutomatonApply(record, pattern')
-        let A, B = PatternAutomatonGenerator.instantiate x.BottomizeTerm instantiator A B
+        let A, B = PatternAutomatonGenerator.instantiate x.BottomizeTerms instantiator A B
         let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant A B
-        let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.BottomizeTerm m B invariantA
+        let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.BottomizeTerms m B invariantA
         let delta = PatternAutomatonGenerator.inductionSchema leftSide rightSide
         let patAutomaton = x.AutomatonFromDeltaAndFinals baseAutomaton.Record patternRec delta finalStates
 //        let equalityAutomaton = buildEqualityAutomaton newVars
