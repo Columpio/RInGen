@@ -223,6 +223,8 @@ module Seq =
             }
 
 module Dictionary =
+    let ofList l = Dictionary(List.map KeyValuePair.Create l)
+
     let toList (d : IDictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
 
     let copy (d : IDictionary<_,_>) = Dictionary<_, _>(d)

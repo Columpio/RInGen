@@ -121,11 +121,24 @@ module Terms =
 
     let collectFreeVarsCounter = List.map Term.collectFreeVarsCounter >> Counter.unionMany
 
-    let generalizeVariables ts =
-        let generalizeVar v map =
-            let v' = SortedVar.freshFromVar v
-            v', Map.add v' v map
-        List.mapFold (Term.mapFoldVars generalizeVar) Map.empty ts
+    let linearizeVariables ts =
+        let oldVars =
+            collectFreeVarsCounter ts
+            |> Map.toList
+            |> List.sortWith (fun (v1, _) (v2, _) -> SortedVar.compare v1 v2)
+        let newVars =
+            oldVars
+            |> List.map (fun ((_, s) as v, n) -> v, SortedVars.generateNVariablesOfSort n s |> List.rev |> Array.ofList)
+            |> Dictionary.ofList
+        let oldVarsCount = Dictionary.ofList oldVars
+        let findNewVar oldV =
+            let count = oldVarsCount.[oldV] - 1
+            oldVarsCount.[oldV] <- count
+            let newVar = newVars.[oldV].[count]
+            TIdent newVar
+        let ts' = List.map (Term.mapVars findNewVar) ts
+        let newVars' = newVars |> Dictionary.toList |> List.collect (fun (v, newVs) -> List.map (fun v' -> v', v) <| List.ofArray newVs) |> Map.ofList
+        ts', newVars'
 
     let instantiate instantiator = List.map (Term.instantiate instantiator)
 

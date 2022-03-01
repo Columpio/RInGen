@@ -90,8 +90,8 @@ type private invariant =
 module private Pattern =
     let collectFreeVars (Pattern pat) = Terms.collectFreeVars pat
     let collectFreeVarsCounter (Pattern pat) = Terms.collectFreeVarsCounter pat
-    let generalizeVariables (Pattern pat) =
-        let pat', vars2vars = Terms.generalizeVariables pat
+    let linearizeVariables (Pattern pat) =
+        let pat', vars2vars = Terms.linearizeVariables pat
         Pattern pat', vars2vars
 
     let extractFromAtom = Atom.tryGetArguments >> Option.map Pattern
@@ -372,12 +372,12 @@ type private ToTTATraverser(m : int) =
         | t -> t
 
     member private x.GeneratePatternAutomaton (baseAutomaton : Automaton) pattern =
-        let generalizedPattern, vars2vars = Pattern.generalizeVariables pattern
+        let linearizedPattern, vars2vars = Pattern.linearizeVariables pattern
         let newVars = Map.toList vars2vars |> List.map fst |> List.unique
-        let instantiator = PatternAutomatonGenerator.linearInstantiator m generalizedPattern
-        let A = AutomatonApply(baseAutomaton.Record, generalizedPattern)
+        let instantiator = PatternAutomatonGenerator.linearInstantiator m linearizedPattern
+        let A = AutomatonApply(baseAutomaton.Record, linearizedPattern)
         let patternRec, B =
-            let pattern' = generalizedPattern |> Pattern.collectFreeVars |> SortedVars.sort |> List.map TIdent |> Pattern
+            let pattern' = linearizedPattern |> Pattern.collectFreeVars |> SortedVars.sort |> List.map TIdent |> Pattern
             let record = Automaton.fromPattern m stateSort pattern'
             record, AutomatonApply(record, pattern')
         let A, B = PatternAutomatonGenerator.instantiate x.BottomizeTerms instantiator A B
@@ -568,7 +568,7 @@ type private ToTTATraverser(m : int) =
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
         sortDecls @ funDecls @ rest
 
-let transform (commands : 'a list) =
+let transform (commands : list<_>) =
     let commands = [commands.[0]; commands.[1]; commands.[2]; commands.[3]; commands.[4]; commands.[11]; commands.[12]; commands.[13]; commands.[14]]
     let maxConstructorWidth = List.max <| List.map (function OriginalCommand c -> Command.maxConstructorArity c | _ -> Datatype.noConstructorArity) commands
     let processer = ToTTATraverser(maxConstructorWidth)

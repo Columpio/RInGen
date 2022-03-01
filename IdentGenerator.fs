@@ -11,7 +11,13 @@ type Counter () =
         counter
 
 type IdentGenerator() =
-    let symbols = Dictionary<string, int>()
+    let symbols = Dictionary<string, int>(Map.ofList ["x", 0])
+
+    member x.gensym () =
+        let prefixStrLow = "x"
+        let v = symbols.[prefixStrLow]
+        symbols.[prefixStrLow] <- v + 1
+        $"x_%d{v}"
 
     member x.gensymp prefix =
         let prefixStr = prefix.ToString()
@@ -28,4 +34,4 @@ type IdentGenerator() =
 let private idgen = IdentGenerator()
 
 let gensymp prefix = idgen.gensymp prefix
-let gensym () = gensymp "x"
+let gensym () = idgen.gensym ()

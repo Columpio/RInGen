@@ -58,6 +58,8 @@ module SortedVars =
 
     let withFreshVariables = List.mapFold (fun freshVarsMap vs -> let vs' = SortedVar.freshFromVar vs in vs', Map.add vs vs' freshVarsMap)
 
+    let generateNVariablesOfSort n sort = List.init n (fun _ -> SortedVar.freshFromSort sort)
+
     let toString : sorted_var list -> string = List.map (fun (v, s) -> $"({v} {s})") >> join " "
 
 type operation =
