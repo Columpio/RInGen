@@ -210,7 +210,7 @@ module Numbers =
                 let helper = f (n-1) m
                 let iList = List.init m (fun i -> i::acc)
                 iList |> List.map helper |> List.concat
-        List.chunkBySize n (f n m [])
+        if n = 0 then [] else List.chunkBySize n (f n m [])
 
 module Seq =
     let rec nondiag = function

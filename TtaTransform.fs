@@ -123,9 +123,10 @@ module private Pattern =
     let instantiate instantiator (Pattern pat) = Pattern(Terms.instantiate instantiator pat)
     let rewrite substConstrs instantiator (Pattern pat) = Pattern(Terms.rewrite substConstrs instantiator pat)
 
-    let cutHeads (Pattern pat) =
-//        if Terms.isBottoms pat then None else //TODO
-        Terms.cutHeads pat
+    let cutHeads isBottom (Pattern pat) =
+        match Terms.cutHeads pat with
+        | Some(ops, _) when List.forall isBottom ops -> None
+        | o -> o
 
     let depth (Pattern pat) = List.max <| List.map Term.depth pat
 
@@ -172,9 +173,9 @@ module private State =
     let instantiate instantiator = mapAutomatonApplies (fun name pat -> AutomatonApply(name, Pattern.instantiate instantiator pat))
     let rewrite substConstrs instantiator = mapAutomatonApplies (fun name pat -> AutomatonApply(name, Pattern.rewrite substConstrs instantiator pat))
 
-    let private unfoldAutomatonApplyGeneric bottomize mapChild =
+    let private unfoldAutomatonApplyGeneric isBottom bottomize mapChild =
         let unfoldAutomatonApply name pattern =
-            match Pattern.cutHeads pattern with
+            match Pattern.cutHeads isBottom pattern with
             | Some(heads, bodies) ->
                 let bodies = List.map2 bottomize heads bodies
                 let states = List.product bodies |> List.map (fun pat -> AutomatonApply(name, Pattern pat))
@@ -183,8 +184,9 @@ module private State =
             | None -> AutomatonApply(name, pattern)
         mapAutomatonApplies unfoldAutomatonApply
 
-    let unfoldAutomatonApplyOnce bottomize = unfoldAutomatonApplyGeneric bottomize id
-    let rec unfoldAutomatonApplyRec bottomize state = unfoldAutomatonApplyGeneric bottomize (unfoldAutomatonApplyRec bottomize) state
+    let unfoldAutomatonApplyOnce isBottom bottomize = unfoldAutomatonApplyGeneric isBottom bottomize id
+    let rec unfoldAutomatonApplyRec isBottom bottomize state =
+        unfoldAutomatonApplyGeneric isBottom bottomize (unfoldAutomatonApplyRec isBottom bottomize) state
 
     let freeVars = foldAutomatonApplies (fun free _ -> Pattern.collectFreeVars >> Set.ofList >> Set.union free) Set.empty
 
@@ -212,7 +214,7 @@ module private Invariant =
 
     let mapAutomatonApplies f = mapEachState (State.mapAutomatonApplies f)
 
-    let unfoldAutomatonApplyRec bottomize = mapEachState (State.unfoldAutomatonApplyRec bottomize)
+    let unfoldAutomatonApplyRec isBottom bottomize = mapEachState (State.unfoldAutomatonApplyRec isBottom bottomize)
 
     let private matchAutomatonApplyStates statePattern stateInstance =
         match statePattern, stateInstance with
@@ -245,10 +247,10 @@ module private PatternAutomatonGenerator =
         let patDepth = Pattern.depth pattern
         var2depth |> Map.map (fun (_, s) depth -> mkFullTree width (patDepth - depth) s)
 
-    let instantiate bottomize instantiator A B =
+    let instantiate isBottom bottomize instantiator A B =
         let A' = State.instantiate instantiator A
         let B' = State.instantiate instantiator B
-        let A'' = State.unfoldAutomatonApplyRec bottomize A'
+        let A'' = State.unfoldAutomatonApplyRec isBottom bottomize A'
         A'', B'
 
     let finalStatesAndInvariant A B =
@@ -259,18 +261,18 @@ module private PatternAutomatonGenerator =
         let inv = Invariant.fromConstructorsAndStates freeConstrs (List.map (Dictionary.findOrApply SVar abstrVarsMap) abstrVars)
         (freeConstrs, abstrVars, abstrState), inv
 
-    let inductiveUnfoldings bottomize width B invariantA =
+    let inductiveUnfoldings isBottom bottomize width B invariantA =
         let freeVars = State.freeVars B |> Set.toList
         let instantiator=
             freeVars
             |> List.map (fun (_, s as ident) -> ident, mkFullTree width 1 s)
             |> Map.ofList
         let B' = State.instantiate instantiator B
-        let B'' = State.unfoldAutomatonApplyOnce bottomize B'
+        let B'' = State.unfoldAutomatonApplyOnce isBottom bottomize B'
         let sideB = Invariant.rewrite B'' (B, invariantA)
 
         let invariantA' = Invariant.instantiate instantiator invariantA
-        let invariantA'' = Invariant.unfoldAutomatonApplyRec bottomize invariantA'
+        let invariantA'' = Invariant.unfoldAutomatonApplyRec isBottom bottomize invariantA'
         sideB, invariantA''
 
     let inductionSchema leftSide rightSide =
@@ -371,6 +373,11 @@ type private ToTTATraverser(m : int) =
             TApply(op, ts')
         | t -> t
 
+    member private x.IsBottom op =
+        match Dictionary.tryFind (Operation.returnType op) botSymbols with
+        | Some name -> Operation.opName op = name
+        | None -> false
+
     member private x.GeneratePatternAutomaton (baseAutomaton : Automaton) pattern =
         let linearizedPattern, vars2vars = Pattern.linearizeVariables pattern
         let newVars = Map.toList vars2vars |> List.map fst |> List.unique
@@ -380,9 +387,9 @@ type private ToTTATraverser(m : int) =
             let pattern' = linearizedPattern |> Pattern.collectFreeVars |> SortedVars.sort |> List.map TIdent |> Pattern
             let record = Automaton.fromPattern m stateSort pattern'
             record, AutomatonApply(record, pattern')
-        let A, B = PatternAutomatonGenerator.instantiate x.BottomizeTerms instantiator A B
+        let A, B = PatternAutomatonGenerator.instantiate x.IsBottom x.BottomizeTerms instantiator A B
         let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant A B
-        let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.BottomizeTerms m B invariantA
+        let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.IsBottom x.BottomizeTerms m B invariantA
         let delta = PatternAutomatonGenerator.inductionSchema leftSide rightSide
         let patAutomaton = x.AutomatonFromDeltaAndFinals baseAutomaton.Record patternRec delta finalStates
 //        let equalityAutomaton = buildEqualityAutomaton newVars
@@ -444,6 +451,9 @@ type private ToTTATraverser(m : int) =
 
     member private x.Product terms =
         assert(List.forall (fun t -> Term.typeOf t = stateSort) terms)
+        match terms with
+        | [t] -> t
+        | _ ->
         let n = List.length terms
         let generateProdOperation () =
             let prodName = IdentGenerator.gensymp "prod"
@@ -569,7 +579,6 @@ type private ToTTATraverser(m : int) =
         sortDecls @ funDecls @ rest
 
 let transform (commands : list<_>) =
-    let commands = [commands.[0]; commands.[1]; commands.[2]; commands.[3]; commands.[4]; commands.[11]; commands.[12]; commands.[13]; commands.[14]]
     let maxConstructorWidth = List.max <| List.map (function OriginalCommand c -> Command.maxConstructorArity c | _ -> Datatype.noConstructorArity) commands
     let processer = ToTTATraverser(maxConstructorWidth)
     processer.TraverseCommands(commands)
