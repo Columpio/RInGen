@@ -1,0 +1,4 @@
+41
+50716
+940
+SAT FiniteModel

@@ -3,9 +3,9 @@ open RInGen
 open RInGen.IntToNat
 open RInGen.Context
 open RInGen.SMTExpr
-open Relativization
 open SubstituteOperations
 open Operations
+open System.Collections.Generic
 
 module private DefinitionsToDeclarations =
     let assumeTrue x = [x], Term.truth
@@ -62,12 +62,6 @@ module private DefinitionsToDeclarations =
         let neg_cnf_e = Conj.bind ctx.Not cnf_e    // ~not~>   (is-B x \/ is-A y) /\ (is-B z \/ is-A t)
         let dnf_neg_e = Conj.exponent neg_cnf_e         // ~dnf~>   (is-B x /\ is-b z) \/ (is-B x /\ is-A t) \/ ...
         dnf_neg_e
-
-    let rec private atomToTerm = function
-//        | AApply(op, ts) -> TApply(op, ts)
-//        | Distinct(t, t2) when t2 = Term.truth -> TApply(DummyOperations.notOp, [t])
-//        | ANot t -> TApply(DummyOperations.notOp, [atomToTerm t])
-        | t -> failwithf $"Can't obtain term from atom: {t}"
 
     let rec private exprToTerm atomsAreTerms : smtExpr -> term choosable = function
         | Ident(name, sort) -> TIdent(name, sort) |> toChoosable
@@ -128,7 +122,7 @@ module private DefinitionsToDeclarations =
                 let! conds, pat = toTerm currentPattern
                 return [], conds, Equal(exprToMatch, pat)
             }
-    
+
     let rec private toRuleProduct tes args =
         let combine2 arg st =
             let arg = exprToRule tes arg
@@ -234,7 +228,7 @@ module private DefinitionsToDeclarations =
 
     let private defineOperationName = "*define*"
     let private defineOperation call body = Operation.makeElementaryOperationFromSorts defineOperationName [Term.typeOf call; Term.typeOf body] BoolSort
-    let (|DefineOperation|_|) = function
+    let private (|DefineOperation|_|) = function
         | AApply(ElementaryOperation(name, [_; _], s), [call; bodyResult]) when name = defineOperationName && s = BoolSort -> Some (call, bodyResult)
         | _ -> None
     let private connectFunctionCallWithBody call bodyResult =
@@ -262,14 +256,6 @@ module private DefinitionsToDeclarations =
             | And cs -> List.collect eatCondition cs
             | c -> [c]
         let isPredicate = function AApply(UserDefinedOperation _, _) -> true | _ -> false
-//        let resultTerm t =
-//            let (Disjunction conjs) = exprToAtoms ctx assertsToQueries t
-//            let predicates, constraints = List.partition hasPredicate conjs
-//            let constraint_in_body = negateDNF ctx <| Disjunction constraints
-//            match predicates with
-//            | [] -> constraint_in_body, Bot
-//            | [Conjunction [pred]] -> constraint_in_body, pred
-//            | ts -> failwithf $"Too many atoms in head: {ts}"
         let resultTerm =
             let withPremise = function
                 | Top -> [[], Bot]
@@ -296,7 +282,7 @@ module private DefinitionsToDeclarations =
         let rec eatResultTerm conds = function
             | Hence(cond, body) -> eatResultTerm (eatCondition cond @ conds) body
             | Not cond -> eatResultTerm (eatCondition cond @ conds) SMTExpr.falsehood
-            | And _ as ts -> //TODO: something is completely wrong here. test result has (assert false) things...
+            | And _ as ts ->
                 let ts = eatCondition ts
                 List.map (fun t -> conds, t) ts
             | t -> [conds, t]
@@ -311,27 +297,6 @@ module private DefinitionsToDeclarations =
                 | _ -> failwithf $"Disjunction in clause head: %O{apps}"
             | Hence(cond, body) -> eat vars (eatCondition cond @ conds) body
             | And es -> List.collect (eat vars conds) es
-//            | Apply(op, [app; body]) when op = equal_op BoolSort ->
-//                let vars, body =
-//                    match body with
-//                    | Forall(varsBody, body) -> vars @ varsBody, body
-//                    | _ -> vars, body
-//                let te = VarEnv.create ctx vars
-//                collector {
-//                    let! bodyVars, bodyConditions, bodyResult = exprToRule te body
-//                    let bodyResult = exprToAtoms bodyResult
-//                    let! appVars, appConditions, appResult = exprToRule te app
-//                    let r = finalRule vars bodyVars appVars (bodyResult @ bodyConditions @ appConditions) (getAppResult appResult)
-//                    return TransformedCommand r
-//                }
-//            | Apply(ElementaryOperation("=", _, _), [app; body]) ->
-//                let te = VarEnv.create ctx vars
-//                collector {
-//                    let! bodyVars, bodyConditions, bodyResult = exprToRule te body
-//                    let! appVars, appConditions, appResult = exprToRule te app
-//                    let r = finalRule vars bodyVars appVars (bodyConditions @ appConditions) (connectFunctionCallWithBody (exprToTerm appResult) bodyResult)
-//                    return TransformedCommand r
-//                }
             | app ->
                 let tes = VarEnv(ctx).WithVars(vars), Map.empty
                 collector {
@@ -341,7 +306,7 @@ module private DefinitionsToDeclarations =
                     let! bodyVars, bodyConditions, bodyResult = toRuleProduct tes (conds @ headConds)
                     let! bodyResult = List.map (exprToAtoms ctx assertsToQueries) bodyResult |> Disj.conj
                     let! headConstraints, head_atom = exprToAtoms ctx assertsToQueries head |> takeHead
-                    let r = finalRule vars bodyVars appVars (headConstraints @ bodyAddition @ bodyResult @ bodyConditions @ appConditions) head_atom // TODO: not Bot
+                    let r = finalRule vars bodyVars appVars (headConstraints @ bodyAddition @ bodyResult @ bodyConditions @ appConditions) head_atom
                     return TransformedCommand r
                 }
         eat [] []
@@ -375,32 +340,78 @@ module private DefinitionsToDeclarations =
         let lemma = FOL.map replaceAtom lemma
         qs, (conds, lemma)
 
-    let rec private defineCommandToDeclarations assertsToQueries ctx wereDefines = function
-        | Definition(DefineFun df)
-        | Definition(DefineFunRec df) ->
-            let name, def = definitionToDeclaration df
-            def :: definitionToAssertion ctx df, Set.add name wereDefines
-        | Definition(DefineFunsRec dfs) ->
-            let names, defs = List.map definitionToDeclaration dfs |> List.unzip
-            defs @ List.collect (definitionToAssertion ctx) dfs, Set.union (Set.ofList names) wereDefines
-        | Lemma(pred, vars, lemma) ->
-            let tes = VarEnv(ctx).WithVars(vars), Map.empty
-            collector {
-                let! lemmaQs, lemmaConds, lemmaBody = exprToRule tes lemma
-                let lemma = exprToAtoms ctx assertsToQueries lemmaBody
-                let lemmaFOL = lemma |> DNF.toFOL
-                let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals ctx vars lemmaQs lemmaConds lemmaFOL
-                let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
-                let doubleNegatedLemma = doubleNegateLemma ctx strongLemma
-                let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
-                return LemmaCommand(pred, vars, bodyLemma, headCube)
-            }, wereDefines
-        | Assert e -> expressionToDeclarations assertsToQueries ctx e, wereDefines
-        | Command c -> [OriginalCommand c], wereDefines
+    type CommandsAndClauses() as this =
+        let wereDefines = HashSet<_>()
+        let mutable assertsToQueries = false
+        let mutable commands = []
+        let ctx = Context ()
 
-    let definesToDeclarations assertsToQueries commands =
-        let commands, wereDefines = Context.typerMapFold (defineCommandToDeclarations assertsToQueries) Set.empty commands
-        List.concat commands, wereDefines
+        let addNewSymbolsToRelativize rels = function
+            | OriginalCommand(DeclareFun(name, args, ret)) when wereDefines.Contains(name) ->
+                let op = Operation.makeUserOperationFromSorts name args ret
+                Relativization.addShouldRelativize op (Relativization.relativizeOperation op) rels
+            | _ -> rels
+
+        let splitHasResult cs call =
+            let rec iter cs k =
+                match cs with
+                | AApply(_, t::_) as c ::cs when t = call -> c, k cs
+                | c::cs -> iter cs (fun cs -> k <| c :: cs)
+                | [] -> __unreachable__()
+            iter cs id
+
+        let relativizeDeclarations = function
+            | OriginalCommand(DeclareFun(name, args, ret)) when wereDefines.Contains(name) ->
+                let decl = Relativization.reldeclare name args ret
+                OriginalCommand decl
+            | TransformedCommand(Rule(vars, cs, DefineOperation(call, bodyResult))) ->
+                let c, cs = splitHasResult cs call
+                Rule(vars, Equal(call, bodyResult)::cs, c) |> TransformedCommand
+            | c -> c
+
+        let relativizeSingleCommand rels command =
+            let rels = addNewSymbolsToRelativize rels command
+            let relativizer = SubstituteOperations(rels)
+            let command = relativizer.SubstituteOperationsWithRelations(command)
+            command, rels
+
+        member x.TraverseOriginalCommands oldCommands =
+            assertsToQueries <- List.exists (function Definition _ -> true | _ -> false) oldCommands
+            commands <- List.collect this.TraverseOriginalCommand oldCommands |> this.RelativizeSymbols
+            x
+
+        member x.Clauses = commands
+
+        member private x.RelativizeSymbols commands =
+            let commands, _ = List.mapFold relativizeSingleCommand Map.empty commands
+            List.map relativizeDeclarations commands
+
+        member private x.TraverseOriginalCommand c =
+            ctx.AddToCTXOriginalCommand(c)
+            match c with
+            | Definition(DefineFun df)
+            | Definition(DefineFunRec df) ->
+                let name, def = definitionToDeclaration df
+                wereDefines.Add(name) |> ignore
+                def :: definitionToAssertion ctx df
+            | Definition(DefineFunsRec dfs) ->
+                let names, defs = List.map definitionToDeclaration dfs |> List.unzip
+                wereDefines.UnionWith(names)
+                defs @ List.collect (definitionToAssertion ctx) dfs
+            | Lemma(pred, vars, lemma) ->
+                let tes = VarEnv(ctx).WithVars(vars), Map.empty
+                collector {
+                    let! lemmaQs, lemmaConds, lemmaBody = exprToRule tes lemma
+                    let lemma = exprToAtoms ctx assertsToQueries lemmaBody
+                    let lemmaFOL = lemma |> DNF.toFOL
+                    let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals ctx vars lemmaQs lemmaConds lemmaFOL
+                    let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
+                    let doubleNegatedLemma = doubleNegateLemma ctx strongLemma
+                    let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
+                    return LemmaCommand(pred, vars, bodyLemma, headCube)
+                }
+            | Assert e -> expressionToDeclarations assertsToQueries ctx e
+            | Command c -> [OriginalCommand c]
 
 module private TIPFixes =
     let rec private invertMatchesInExpr = function
@@ -438,48 +449,6 @@ module private TIPFixes =
     let applyTIPfix commands =
         let commands = List.map (function Assert(Not(QuantifierApplication(ForallQuantifier _::_, _) as body)) -> Assert body | c -> c) commands
         List.map invertMatches commands
-
-module private RelativizeSymbols =
-    open DefinitionsToDeclarations
-    let private addNewSymbolsToRelativize wereDefines rels = function
-        | OriginalCommand(DeclareFun(name, args, ret)) when Set.contains name wereDefines ->
-            let op = Operation.makeUserOperationFromSorts name args ret
-            addShouldRelativize op (Relativization.relativizeOperation op) rels
-        | _ -> rels
-
-    let private assertIsFunction name args ret =
-        let op = Operation.makeUserOperationFromSorts name args ret |> relativizeOperation
-        let args = List.map Term.generateVariable args
-        let ret = Term.generateVariable ret
-        Rule.aerule args [ret] [] (relapply op args ret)
-
-    let private splitHasResult cs call =
-        let rec iter cs k =
-            match cs with
-            | AApply(_, t::_) as c ::cs when t = call -> c, k cs
-            | c::cs -> iter cs (fun cs -> k <| c :: cs)
-            | [] -> __unreachable__()
-        iter cs id
-
-    let private relativizeDeclarations wereDefines = function
-        | OriginalCommand(DeclareFun(name, args, ret)) when Set.contains name wereDefines ->
-            let decl = reldeclare name args ret
-//            let assertNonEmpty = TransformedCommand <| assertIsFunction name args ret
-            [OriginalCommand decl]
-        | TransformedCommand(Rule(vars, cs, DefineOperation(call, bodyResult))) ->
-            let c, cs = splitHasResult cs call
-            [Rule(vars, Equal(call, bodyResult)::cs, c) |> TransformedCommand]
-        | c -> [c]
-
-    let relativizeSingleCommand wereDefines rels command =
-        let rels = addNewSymbolsToRelativize wereDefines rels command
-        let relativizer = SubstituteOperations(rels)
-        let command = relativizer.SubstituteOperationsWithRelations(command)
-        command, rels
-
-    let relativizeSymbols wereDefines commands =
-        let commands, _ = List.mapFold (relativizeSingleCommand wereDefines) Map.empty commands
-        List.collect (relativizeDeclarations wereDefines) commands
 
 module DatatypesToSorts =
     let private sortDeclaration (name, _) = DeclareSort name
@@ -537,11 +506,11 @@ module private ArrayTransformations =
 
     let private selectRelativization rels selectOp =
         let originalSelectOp = selectOp |> Operation.changeName "select"
-        addShouldNotRelativize originalSelectOp selectOp rels
+        Relativization.addShouldNotRelativize originalSelectOp selectOp rels
 
     let private storeRelativization rels storeOp =
         let originalStoreOp = storeOp |> Operation.changeName "store"
-        addShouldNotRelativize originalStoreOp storeOp rels
+        Relativization.addShouldNotRelativize originalStoreOp storeOp rels
 
     let private mapArraySorts (rels, arraySorts, eqs, diseqs) command =
         let command, (arraySorts, originalSorts) = MapSorts(mapSort).FoldCommand (arraySorts, Set.empty) command
@@ -564,12 +533,13 @@ module private SubstituteFreeSortsWithNat =
     type SubstituteFreeSortsWithNat (natSort, freeSorts) =
         inherit FormulaMapper ()
         let mutable wasSubstituted = false
-        
+
         member x.WasSubstituted = wasSubstituted
-        
+
         override x.TraverseSort s = if Set.contains s freeSorts then wasSubstituted <- true; natSort else s
-    
-    let transformation freeSorts natSort (eqs, diseqs) commands =
+
+    let transformation natSort (eqs, diseqs) commands =
+        let freeSorts = commands |> List.choose (function OriginalCommand(DeclareSort(s)) -> Some s | _ -> None) |> Set.ofList
         let x = SubstituteFreeSortsWithNat(natSort, Set.map FreeSort freeSorts)
         let substFreeSortsInCommand = function
             | OriginalCommand(DeclareSort s) when Set.contains s freeSorts -> None
@@ -645,7 +615,7 @@ module SubstituteLemmas =
     let substituteLemmas commands =
         let lemmasMap, commands = collectAllLemmas commands
         let lemmasMap = Map.map (fun pred -> List.map (fun (vars, bl, hl) -> freshLemmaPredicate pred vars, vars, bl, hl)) lemmasMap
-        List.collect (mapCommand lemmasMap) commands
+        if Map.isEmpty lemmasMap then Choice1Of2 commands else Choice2Of2 <| List.collect (mapCommand lemmasMap) commands
 
 module private Simplify =
     let private simplifyCommand (ctx : Context) = function
@@ -655,26 +625,60 @@ module private Simplify =
             | Some (qs, body, head) -> Some (TransformedCommand(Rule(qs, body, head)))
         | c -> Some c
 
-    let simplify commands = Context.typerMap simplifyCommand commands |> List.choose id
+    let simplify commands =
+        let ctx = Context ()
+        List.map (fun c -> ctx.AddToCTXTransformedCommand c; simplifyCommand ctx c) commands |> List.choose id
+
+module private RemoveUnreachable =
+    let private removeUnreachablePredicatesFromRules origRules =
+        let rules, queries = List.choose2 (function Rule(_, _, AApply _) as r -> Choice1Of2 r | Rule(_, body, _) -> Choice2Of2 body) origRules
+        let addNewPredicates atoms set = List.choose Atom.tryGetPredicate atoms |> Set.ofList |> Set.union set
+        let rec iter reachedPredicates alreadyProcessedRules = function
+            | Rule(_, body, AApply(op, _)) as r ::rs ->
+                if Set.contains op reachedPredicates
+                    then iter (addNewPredicates body reachedPredicates) [] (alreadyProcessedRules @ rs)
+                    else iter reachedPredicates (r::alreadyProcessedRules) rs
+            | _::rs -> iter reachedPredicates alreadyProcessedRules rs
+            | [] -> reachedPredicates
+        let reachedPredicates = List.foldBack addNewPredicates queries Set.empty
+        let reachedPredicates = iter reachedPredicates [] rules
+        let chooseReachableClause = function
+            | Rule(_, _, AApply(op, _)) when not <| Set.contains op reachedPredicates -> None
+            | r -> Some r
+        List.choose chooseReachableClause origRules, reachedPredicates
+
+    let private removeUnreachablePredicatesFromCommands remainedPredicates decls =
+        let remainedPredicates = Set.map Operation.toTuple remainedPredicates
+        let chooseReachableCommand = function
+            | DeclareFun(name, argTypes, sort) when not <| Set.contains (name, argTypes, sort) remainedPredicates -> None
+            | c -> Some c
+        List.choose chooseReachableCommand decls
+
+    let removeUnreachablePredicates commands =
+        let ctx = Context ()
+        ctx.LoadTransformedCommands(commands)
+        let decls, rules = List.choose2 (function OriginalCommand c -> Choice1Of2 c | TransformedCommand r -> Choice2Of2 r) commands
+        let rules', remainedPredicates = removeUnreachablePredicatesFromRules rules
+        let decls' = removeUnreachablePredicatesFromCommands remainedPredicates decls
+        List.map OriginalCommand decls' @ List.map TransformedCommand rules'
 
 let toClauses (options : transformOptions) commands =
     let commands = filterOutSMTCommands commands
     let commands = if options.tip then TIPFixes.applyTIPfix commands else commands
-    let freeSorts = commands |> List.choose (function Command(DeclareSort(s)) -> Some s | _ -> None) |> Set.ofList
-    let hornClauses, wereDefines = DefinitionsToDeclarations.definesToDeclarations options.tip commands
-    let relHornClauses = RelativizeSymbols.relativizeSymbols wereDefines hornClauses
-    let relHornClauses = BoolAxiomatization.BoolAxiomatization().SubstituteTheory relHornClauses
+    let hornClauses = DefinitionsToDeclarations.CommandsAndClauses().TraverseOriginalCommands(commands)
+    let relHornClauses = BoolAxiomatization.BoolAxiomatization().SubstituteTheory hornClauses.Clauses
     let alreadyAddedNatPreamble, natPreamble, commandsWithoutInts, natSort = IntToNat().SubstituteTheoryDelayed relHornClauses
     let pureHornClauses, adtEqs = ADTs.SupplementaryADTAxioms.addSupplementaryAxioms commandsWithoutInts
     let pureHornClauses = if options.no_preamble then commandsWithoutInts else pureHornClauses
     let natPreamble, adtEqs = if alreadyAddedNatPreamble then natPreamble, adtEqs else ADTs.SupplementaryADTAxioms.addSupplementaryAxiomsIncremental adtEqs natPreamble
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
-    let shouldAddNatPreamble, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation freeSorts natSort adtEqs arrayTransformedClauses
+    let shouldAddNatPreamble, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation natSort adtEqs arrayTransformedClauses
     let clausesWithPreamble = if not alreadyAddedNatPreamble && shouldAddNatPreamble then natPreamble @ substFreeSortClauses else substFreeSortClauses
     let simplified = Simplify.simplify clausesWithPreamble
-    let trCtx = {commands=simplified; diseqs=snd adtEqs}
-    if options.sync_terms then
-        let syncClauses = Synchronization.synchronize clausesWithPreamble
-        {trCtx with commands = syncClauses}
-    else
-        trCtx
+    let withoutUnreach = RemoveUnreachable.removeUnreachablePredicates simplified
+    match SubstituteLemmas.substituteLemmas withoutUnreach with
+    | Choice2Of2 substed -> Simplification.simplify (snd adtEqs) substed
+    | Choice1Of2 commands ->
+    let syncClauses = if options.sync_terms then Synchronization.synchronize commands else commands
+    let ttaQuery = if options.tta_transform then TtaTransform.transform syncClauses else List.map FOLCommand.fromTransformed syncClauses
+    ttaQuery

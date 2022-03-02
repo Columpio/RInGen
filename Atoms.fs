@@ -38,6 +38,10 @@ module Atom =
 
     let substituteWith freshVarsMap = map (Term.substituteWith freshVarsMap)
 
+    let tryGetPredicate = function
+       | AApply(op, _) -> Some op
+       | _ -> None
+
     let tryGetArguments = function
        | AApply(_, ts) -> Some ts
        | Equal(t1, t2) | Distinct(t1, t2) -> Some [t1; t2]

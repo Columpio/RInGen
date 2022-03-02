@@ -2,6 +2,7 @@
 module RInGen.FSharpExtensions
 open System.Collections.Generic
 open System.IO
+open System.Text.RegularExpressions
 open System.Threading
 open System.Threading.Tasks
 
@@ -22,10 +23,12 @@ module File =
         let f2 = File.ReadLines(fn2)
         Seq.zip f1 f2 |> Seq.tryFind (fun (line1, line2) -> line1 <> line2)
 
-let private mapFirstChar x f = if x = "" then "" else $"%c{f(x.Chars(0))}%s{x.Substring(1)}"
-type System.String with
-    member x.ToLowerFirstChar() = mapFirstChar x System.Char.ToLower
-    member x.ToUpperFirstChar() = mapFirstChar x System.Char.ToUpper
+module String =
+    let inline private mapFirstChar x f = if x = "" then "" else $"%c{f(x.Chars(0))}%s{x.Substring(1)}"
+    let inline toLowerFirstChar x = mapFirstChar x System.Char.ToLower
+    let inline toUpperFirstChar x = mapFirstChar x System.Char.ToUpper
+
+    let inline hasLetters (s : string) = Regex("[a-zA-Z]").IsMatch(s)
 
 [<Struct>]
 type OptionalBuilder =
@@ -287,5 +290,6 @@ let walk_through_simultaneously originalDir transAndResultDirs transform =
 
 module Environment =
     let split (s : string) = split System.Environment.NewLine s
+    let join (xs : string list) = join System.Environment.NewLine xs
 
 exception NotSupported

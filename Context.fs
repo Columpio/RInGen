@@ -5,7 +5,7 @@ type Context() =
     let operations = Dictionary<_, _>(Operations.elementaryOperations)
     let adts = Dictionary<ident, (operation * operation * operation list) list>() // adt-sort-name |-> [tester, constructor, [selector]]
     let freeSorts = HashSet<ident>()
-    let predefinedSymbols = HashSet<ident>(["Bool"; "Int"; "Array"; "="])
+    let predefinedSymbols = HashSet<ident>(["Bool"; "Int"; "Array"; "="; "distinct"; "<"; ">"; "<="; ">="; "+"; "-"; "*"; "mod"; "div"])
 
     member x.IsPredefinedSymbol s = predefinedSymbols.Contains(s)
 
@@ -22,8 +22,6 @@ type Context() =
         | "Array", [s1; s2] -> ArraySort(s1, s2)
         | _ -> failwith $"sort {ident} with arguments {argSorts} is not known"
 
-    member x.IsDefinedOperation ident = operations.ContainsKey(ident)
-
     member x.TryFindDefinedOperation ident = Dictionary.tryFind ident operations
 
     member x.FillOperation opName argTypes =
@@ -34,6 +32,8 @@ type Context() =
         | None -> Operations.findAndInstantiateGenericOperation opName argTypes
 
     member x.AddOperation name op = operations.Add(name, op)
+
+    member x.AddFreeSort name = freeSorts.Add(name) |> ignore
 
     member x.AddRawADTSort adtname =
         adts.Add(adtname, [])
@@ -60,24 +60,24 @@ type Context() =
             let! adtOps = Dictionary.tryFind adtName adts
             return List.map snd3 adtOps
         }
-    
+
     member x.TryGetConstructors adtSort =
         opt {
             let! adtName = ADTExtensions.tryGetADTName adtSort
             let! adtOps = Dictionary.tryFind adtName adts
             return List.map fst3 adtOps
         }
-    
+
     member x.GetConstructors adtSort =
         match x.TryGetConstructors adtSort with
         | Some cs -> cs
         | None -> failwith $"no such adt sort {adtSort}"
-    
+
     member x.IsConstructor op =
         match x.TryGetConstructors (Operation.returnType op) with
         | Some symbs -> List.contains op symbs
         | None -> false
-    
+
     member x.Not =
         let notOperation op ts =
             match op, ts with
@@ -118,7 +118,7 @@ type Context() =
 //        x.m_addOperation testerName (testerOpOf testerName adtname)
 //        constr_op
 //
-    member x.m_interpretCommand c =
+    member x.AddToCTXCommand c =
         let extendDecl ((name, _) as dt) =
             x.AddRawADTSort name
             x.AddRawADTOperations name (snd <| ADTExtensions.adtDefinitionToRaw dt)
@@ -131,40 +131,17 @@ type Context() =
             x.AddOperation name (Operation.makeUserOperationFromSorts name argTypes sort)
         | _ -> ()
 
-    member x.m_interpretOriginalCommand c =
+    member x.AddToCTXOriginalCommand c =
         let extendDef (name, vars, sort, _) = x.AddOperation name (Operation.makeUserOperationFromVars name vars sort)
         match c with
         | Definition(DefineFunRec df)
         | Definition(DefineFun df) -> extendDef df
         | Definition(DefineFunsRec dfs) -> dfs |> List.iter extendDef
-        | Command c -> x.m_interpretCommand c
+        | Command c -> x.AddToCTXCommand c
         | _ -> ()
 
-    member x.m_interpretTransformedCommand = function
-        | OriginalCommand c -> x.m_interpretCommand c
+    member x.AddToCTXTransformedCommand = function
+        | OriginalCommand c -> x.AddToCTXCommand c
         | _ -> ()
-//
-//let tryTypeCheck f (ctx : Context) = Option.map Operation.returnType (ctx.tryFind f)
-//
-//let sort (_, sorts) name =
-//    match Map.tryFind name sorts with
-//    | Some s -> s
-//    | None -> name
-//
-//let sort_list ts = List.map (sort ts)
-//let sorted_var ts (v, t) = v, sort ts t
-//let sorted_var_list ts vs = List.map (sorted_var ts) vs
-//let constructor ts (c, t) = c, sorted_var_list ts t
-//let constructor_list ts cs = List.map (constructor ts) cs
-//let definition ts (name, args, ret, body) = name, sorted_var_list ts args, sort ts ret, body
-//
 
-
-let typerMapFold f z cs =
-    let ctx = Context ()
-    let rs, z = List.mapFold (fun z c -> ctx.m_interpretOriginalCommand c; f ctx z c) z cs
-    rs, z
-
-let typerMap f cs =
-    let ctx = Context ()
-    List.map (fun c -> ctx.m_interpretTransformedCommand c; f ctx c) cs
+    member x.LoadTransformedCommands = List.iter x.AddToCTXTransformedCommand

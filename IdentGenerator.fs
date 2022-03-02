@@ -13,6 +13,10 @@ type Counter () =
 type IdentGenerator() =
     let symbols = Dictionary<string, int>(Map.ofList ["x", 0])
 
+    member x.reset () =
+        symbols.Clear()
+        symbols.Add("x", 0)
+
     member x.gensym () =
         let prefixStrLow = "x"
         let v = symbols.[prefixStrLow]
@@ -29,9 +33,11 @@ type IdentGenerator() =
             symbols.[prefixStrLow] <- counter.Value + 1
         else
             symbols.Add(prefixStrLow, 1)
+        if prefixStr = "isZ" then ()
         $"%s{prefixStr}_%d{counter.Value}"
 
 let private idgen = IdentGenerator()
 
 let gensymp prefix = idgen.gensymp prefix
 let gensym () = idgen.gensym ()
+let reset () = idgen.reset ()

@@ -29,7 +29,7 @@ type FormulaTraverser () =
     default x.TraverseSort (sort : sort) = sort
 
     abstract TraverseReturnSort : sort -> sort
-    default x.TraverseReturnSort (sort : sort) = sort
+    default x.TraverseReturnSort (sort : sort) = x.TraverseSort sort
 
     member x.TraverseSorts sorts = List.map x.TraverseSort sorts
 
@@ -93,7 +93,7 @@ type FormulaTraverser () =
         let premises = x.TraverseAtoms premises
         let lemma = x.TraverseFOLFormula lemma
         (qs, (premises, lemma))
-        
+
 type FormulaMapper () =
     inherit FormulaTraverser ()
 
@@ -265,7 +265,7 @@ type MapSorts<'acc>(mapSort : 'acc -> sort -> sort * 'acc, mapReturnSorts : bool
         acc <- acc'
         let command' = x.TraverseTransformedCommand command
         command', acc
-    
+
     new (mapSort) = MapSorts(mapSort, true)
 
 [<AbstractClass>]

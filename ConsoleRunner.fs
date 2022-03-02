@@ -110,7 +110,7 @@ let private solverByName = function
     | CVC_Ind -> CVC4IndSolver() :> SolverProgramRunner
     | VeriMAP -> VeriMAPiddtSolver() :> SolverProgramRunner
     | Vampire -> VampireSolver() :> SolverProgramRunner
-    | CVC_FMF -> CVC4FiniteSolver() :> SolverProgramRunner
+    | CVC_FMF -> CVCFiniteSolver() :> SolverProgramRunner
     | RCHC -> RCHCSolver() :> SolverProgramRunner
 //    | All -> AllSolver() :> SolverProgramRunner
 
@@ -173,6 +173,7 @@ let private solve_interactive (solver : SolverProgramRunner) (transformer : Tran
 
 let private solve_from_path (solver : SolverProgramRunner) (transformer : TransformerProgram option) outputPath (options : ParseResults<SolveArguments>) path =
     let path' =
+        let outputPath = Option.filter Directory.Exists outputPath
         match transformer with
         | Some transformer -> transformer.Run path outputPath
         | None -> Some path
@@ -261,15 +262,24 @@ type SelfProgramRunner (parser : ArgumentParser<_>, generalArgs, transArgs : Par
 
     override x.TargetPath path = path
 
+type ExitCodes =
+    | Success = 0
+    | Failure = -1
+
+[<EntryPoint>]
 let main args =
     let parser = ArgumentParser.Create<CLIArguments>(programName = "ringen")
-    let parseResults = parser.ParseCommandLine(inputs = args).GetAllResults()
-    if List.contains Quiet parseResults then VERBOSITY_MODE <- QUIET_MODE
-    SECONDS_TIMEOUT <- List.tryPick (function Timelimit tl -> Some tl | _ -> None) parseResults |> Option.defaultValue 300
-    let outputPath = List.tryPick (function Output_path dir -> Some dir | _ -> None) parseResults
-    let runSame transArgs mode = SelfProgramRunner(parser, parseResults, transArgs, mode) :> ProgramRunner
-    match List.find (function Transform _ | Solve _ -> true | _ -> false) parseResults with
-    | Transform args -> transform outputPath runSame args
-    | Solve args -> solve outputPath runSame args
-    | _ -> __unreachable__()
-    0
+    try
+        let parseResults = parser.ParseCommandLine(inputs = args, raiseOnUsage = false).GetAllResults()
+        if List.contains Quiet parseResults then VERBOSITY_MODE <- QUIET_MODE
+        SECONDS_TIMEOUT <- List.tryPick (function Timelimit tl -> Some tl | _ -> None) parseResults |> Option.defaultValue 300
+        let outputPath = List.tryPick (function Output_path dir -> Some dir | _ -> None) parseResults
+        let runSame transArgs mode = SelfProgramRunner(parser, parseResults, transArgs, mode) :> ProgramRunner
+        match List.find (function Transform _ | Solve _ -> true | _ -> false) parseResults with
+        | Transform args -> transform outputPath runSame args
+        | Solve args -> solve outputPath runSame args
+        | _ -> __unreachable__()
+        int ExitCodes.Success
+    with :? ArguParseException as e ->
+        printfn $"{e.Message}"
+        int ExitCodes.Failure

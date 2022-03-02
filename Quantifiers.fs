@@ -27,7 +27,7 @@ module Quantifier =
         let qConstr, vars = unquantify q
         let vars = f vars
         qConstr vars
-    
+
     let mapFold f z q =
         let qConstr, vars = unquantify q
         let vars, z = f z vars
@@ -38,12 +38,12 @@ module Quantifier =
 module Quantifiers =
 
     let getVars = List.collect Quantifier.getVars
-    
+
     let map f (qs : quantifiers) = List.map f qs
-    
+
     let mapFold f z (qs : quantifiers) = List.mapFold f z qs
 
-    let existsp : (quantifier -> bool) -> quantifiers -> bool = List.exists
+    let hasExists = List.exists (function ExistsQuantifier _ -> true | _ -> false)
 
     let (|ForallQuantifiersOrEmpty|_|) qs =
         List.foldChoose (fun vars -> function ForallQuantifier vars' | StableForallQuantifier vars' -> Some (vars @ vars') | _ -> None) [] qs

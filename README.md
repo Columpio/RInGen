@@ -25,16 +25,18 @@ predicates
 - [x] Supports ADT selectors and testers translation to clauses
 
 ## Requirements
-- [`.NET core >= 3.1`](https://dotnet.microsoft.com/download/dotnet/3.1)
+- [`.NET core >= 6.0`](https://docs.microsoft.com/en-us/dotnet/core/install/)
 - (optionally, to run solvers) `z3`, `eldarica`, `cvc4`, `VeriMAP-iddt`, `vampire` executables accessible
 in the environment
 
 ## Build
 `~/RInGen$ dotnet build -c Release RInGen.sln`
-### Build standalone version (for specific platform from the [list](https://raw.githubusercontent.com/dotnet/runtime/main/src/libraries/Microsoft.NETCore.Platforms/pkg/runtime.json))
+### Build standalone version (for specific platform from the [list](https://raw.githubusercontent.com/dotnet/runtime/main/src/libraries/Microsoft.NETCore.Platforms/src/runtime.json))
 `dotnet publish -c Release -r <RID> -p:PublishReadyToRun=true RInGen.sln`
+For example, to build for [CHC-COMP](https://chc-comp.github.io/) (running on [StarExec](https://www.starexec.org/vmimage/), which has [RHEL 7](https://en.wikipedia.org/wiki/Red_Hat_Enterprise_Linux#RHEL_7)) call
+`dotnet publish -c Release -r rhel.7-x64 -p:PublishReadyToRun=true RInGen.sln`
 
-Executable then can be found in the `~/RInGen/bin/Release/net5.0/<RID>/publish` folder.
+Executable then can be found in the `~/RInGen/bin/Release/net6.0/<RID>/publish` folder.
 
 ## Run
 ### Standalone version

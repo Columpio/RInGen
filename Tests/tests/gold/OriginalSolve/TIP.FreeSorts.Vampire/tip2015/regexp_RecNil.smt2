@@ -1,0 +1,4 @@
+18
+51784
+880
+SAT FiniteModel

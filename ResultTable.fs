@@ -65,7 +65,7 @@ module Checkers =
     let ifSolvingResult f = function Statistics.SolvingStatus stat -> f stat.solverResult | _ -> false
 
     let isSAT = function SAT _ -> true | _ -> false
-    let isSAT_FM = function SAT FiniteModel -> true | _ -> false
+    let isSAT_FM = function SAT(FiniteModel _) -> true | _ -> false
     let isSAT_Elem = function SAT ElemFormula -> true | _ -> false
     let isSAT_SizeElem = function SAT SizeElemFormula -> true | _ -> false
     let isUNSAT = function UNSAT _ -> true | _ -> false

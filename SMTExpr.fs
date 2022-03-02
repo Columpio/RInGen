@@ -1,5 +1,6 @@
 module RInGen.SMTExpr
 open System.Collections.Generic
+open System.Text.RegularExpressions
 open Antlr4.Runtime
 open Antlr4.Runtime.Misc
 open Antlr4.Runtime.Tree
@@ -75,6 +76,7 @@ type VarEnvSaver (env : VarEnv) =
         env.LoadState ()
         r
     member x.Return o = o
+    member x.Zero () = ()
 
 and VarEnv(ctx : Context, vars2sorts) as this =
     let state = Stack<_>()
@@ -121,8 +123,8 @@ and VarEnv(ctx : Context, vars2sorts) as this =
 
     member x.Add vars = List.iter vars2sorts.Add vars
 
-    abstract member ReplaceOneVarOrConstructor : ident * sort -> Choice<operation, ident * sort>
-    default x.ReplaceOneVarOrConstructor(ident, sort) =
+    abstract member ReplaceOneVar : ident * sort -> Choice<operation, ident * sort>
+    default x.ReplaceOneVar(ident, sort) =
         match x.TryGetSorted ident with
         | Some(Choice1Of2 _ as op) -> op
         | Some(Choice2Of2 _)
@@ -130,7 +132,7 @@ and VarEnv(ctx : Context, vars2sorts) as this =
             x.AddOne ident sort
             Choice2Of2(ident, sort)
 
-    member x.ReplaceVarOrConstructor args = List.map x.ReplaceOneVarOrConstructor args
+    member x.ReplaceVars args = List.map x.ReplaceOneVar args
 
     member x.FillOperation opName argTypes = ctx.FillOperation opName argTypes
 
@@ -163,17 +165,20 @@ type private SubstVarEnv(ctx : Context, osyms2nsyms, nvars2nsorts) as this =
 
     member x.AddSymbol symbol =
         let symbol' = IdentGenerator.gensymp symbol
-        osyms2nsyms.Add(symbol, symbol')
+        osyms2nsyms.[symbol] <- symbol'
         symbol'
+
+    member x.InitWithItself symbol =
+        osyms2nsyms.[symbol] <- symbol
 
     member private x.FindOrAddSymbol symbol =
         match x.TryFindSymbol symbol with
         | Some symbol -> symbol
         | None -> x.AddSymbol symbol
 
-    override x.ReplaceOneVarOrConstructor(ident, sort) =
-        let ident = x.FindOrAddSymbol ident
-        base.ReplaceOneVarOrConstructor(ident, sort)
+    override x.ReplaceOneVar(ident, sort) =
+        let ident = x.AddSymbol ident
+        base.ReplaceOneVar(ident, sort)
 
     override x.TryFindDefinedOperation ident =
         match x.TryFindSymbol ident with
@@ -213,7 +218,9 @@ type private InteractiveReader () =
     member x.Add(line) =
         data.AddRange(line)
         x.n <- data.Count
-    member x.ResetPointer () = x.p <- 0
+    member x.ResetEverything () =
+        x.Reset()
+        data.Clear()
     member x.SetStart(i) =
         data.RemoveRange(0, i)
         x.n <- data.Count
@@ -238,6 +245,11 @@ and Parser () as this =
         parser.ErrorHandler <- BailErrorStrategy()
         parser.RemoveErrorListeners()
         parser.AddErrorListener(ThrowingErrorListener.INSTANCE)
+
+    member x.Reset () =
+        interactiveReader.ResetEverything()
+        lexer.Reset()
+        parser.Reset()
 
     member private x.ParseSymbol version (e : SMTLIBv2Parser.SymbolContext) : string =
         let symbol =
@@ -267,9 +279,7 @@ and Parser () as this =
 
     member private x.ParseQualifiedIdentifier (expr : SMTLIBv2Parser.Qual_identifierContext) =
         let ident = expr.identifier() |> x.ParseIdentifier Raw
-        if expr.ChildCount = 1
-            then ident
-            else __notImplemented__()
+        ident
 
     member private x.ParseSort version (expr : SMTLIBv2Parser.SortContext) =
         let ident = expr.identifier() |> x.ParseIdentifier version
@@ -343,10 +353,10 @@ and Parser () as this =
                     let t = e.term(0) |> x.ParseTerm
                     let typ = typeOf t
                     let extendEnvironment args = // vars are old, sorts are new
-                        let args = env.ReplaceVarOrConstructor args
+                        let args = env.ReplaceVars args
                         List.map makePrimitiveTerm args
                     let extendEnvironmentOne v typ = // v is old, typ is new
-                        let vt = env.ReplaceOneVarOrConstructor(v, typ)
+                        let vt = env.ReplaceOneVar(v, typ)
                         makePrimitiveTerm vt
                     let handle_case (e : SMTLIBv2Parser.Match_caseContext) =
                         env.InIsolation () {
@@ -386,13 +396,15 @@ and Parser () as this =
                     }
             | _ -> __unreachable__()
 
+    member private x.RegisterDatatype adtname =
+        x.AddRawADTSort adtname
+
     member private x.ParseDatatypeDeclaration adtname (dec : SMTLIBv2Parser.Datatype_decContext) =
         let parseConstr (constr : SMTLIBv2Parser.Constructor_decContext) =
             let fname = x.ParseSymbol New <| constr.symbol()
             let selectors = constr.selector_dec() |> List.ofArray |> List.map x.ParseSelector
             fname, selectors
         let constrs = dec.constructor_dec() |> List.ofArray
-        x.AddRawADTSort adtname
         let constrs = List.map parseConstr constrs
         x.AddRawADTOperations adtname constrs
 
@@ -404,37 +416,47 @@ and Parser () as this =
             x.AddOperation name (Operation.makeUserOperationFromVars name vars sort)
             env.Add vars
             let body = x.ParseTerm (e.term())
-            return Definition(defineFunTermConstr(name, vars, sort, body))
+            return defineFunTermConstr(name, vars, sort, body)
         }
 
     member private x.ParseFunctionDeclaration (e : SMTLIBv2Parser.Function_decContext) =
         e.symbol() |> x.ParseSymbol New, e.sorted_var(), x.ParseSort Old (e.sort())
 
+    member private x.ParseDefineFunsRec decls bodies =
+        let registerFunction (name, ovars, retSort) =
+            env.InIsolation () {
+                let vars = ovars |> x.ParseSortedVars
+                x.AddOperation name (Operation.makeUserOperationFromVars name vars retSort)
+            }
+        let handleFunction (name, ovars, retSort) body =
+            env.InIsolation () {
+                let vars = ovars |> x.ParseSortedVars
+                env.Add vars
+                return name, vars, retSort, x.ParseTerm body
+            }
+        let signs = decls |> List.ofArray |> List.map x.ParseFunctionDeclaration
+        List.iter registerFunction signs
+        let bodies = bodies |> List.ofArray
+        let fs = List.map2 handleFunction signs bodies
+        DefineFunsRec fs
+
     member private x.ParseCommand (e : SMTLIBv2Parser.CommandContext) =
         match e.GetChild(1) with
         | :? SMTLIBv2Parser.Cmd_exitContext -> Command Exit
-        | :? SMTLIBv2Parser.Cmd_defineFunContext -> x.ParseFunctionDefinition (e.function_def()) DefineFun
-        | :? SMTLIBv2Parser.Cmd_defineFunRecContext -> x.ParseFunctionDefinition (e.function_def()) DefineFunRec
+        | :? SMTLIBv2Parser.Cmd_defineFunContext -> Definition <| x.ParseFunctionDefinition (e.function_def()) DefineFun
+        | :? SMTLIBv2Parser.Cmd_defineFunRecContext -> Definition <| x.ParseFunctionDefinition (e.function_def()) DefineFunRec
         | :? SMTLIBv2Parser.Cmd_defineFunsRecContext ->
-            let handleFunction (name, ovars, retSort) body =
-                env.InIsolation () {
-                    let vars = ovars |> x.ParseSortedVars
-                    x.AddOperation name (Operation.makeUserOperationFromVars name vars retSort)
-                    env.Add vars
-                    return name, vars, retSort, x.ParseTerm body
-                }
-            let signs = e.function_dec() |> List.ofArray |> List.map x.ParseFunctionDeclaration
-            let bodies = e.term() |> List.ofArray
-            let fs = List.map2 handleFunction signs bodies
-            Definition <| DefineFunsRec fs
+            Definition <| x.ParseDefineFunsRec (e.function_dec()) (e.term())
         | :? SMTLIBv2Parser.Cmd_declareDatatypeContext ->
             let adtname = e.symbol(0) |> x.ParseSymbol New
+            x.RegisterDatatype adtname
             let constrs = e.datatype_dec(0) |> x.ParseDatatypeDeclaration adtname
             Command(command.DeclareDatatype(adtname, constrs))
         | :? SMTLIBv2Parser.Cmd_declareDatatypesContext ->
             let signs = e.sort_dec() |> List.ofArray
             let constr_groups = e.datatype_dec() |> List.ofArray
             let names = List.map x.ParseSortDec signs
+            List.iter x.RegisterDatatype names
             let dfs = List.map2 x.ParseDatatypeDeclaration names constr_groups
             Command(command.DeclareDatatypes(List.zip names dfs))
         | :? SMTLIBv2Parser.Cmd_checkSatContext -> Command CheckSat
@@ -447,6 +469,7 @@ and Parser () as this =
             let predName = e.symbol(0) |> x.ParseSymbol Old
             env.InIsolation () {
                 let vars = e.sorted_var() |> x.ParseSortedVars
+                env.Add(vars)
                 let lemma = x.ParseTerm (e.term(0))
                 return Lemma(predName, vars, lemma)
             }
@@ -455,6 +478,7 @@ and Parser () as this =
             env.InIsolation () { return Assert(x.ParseTerm expr) }
         | :? SMTLIBv2Parser.Cmd_declareSortContext ->
             let sort = x.ParseSymbolAndNumeralAsSort (e.symbol(0)) (e.numeral())
+            x.AddFreeSort(sort)
             DeclareSort(sort) |> Command
         | :? SMTLIBv2Parser.Cmd_declareConstContext ->
             let name = e.symbol(0) |> x.ParseSymbol New
@@ -471,6 +495,13 @@ and Parser () as this =
             SetLogic(x.ParseSymbol Raw name) |> Command
         | e -> failwithf $"{e}"
 
+    member private x.ParseModelResponse (e : SMTLIBv2Parser.Model_responseContext) =
+        match e.GetChild(1).GetText() with
+        | "define-fun" -> x.ParseFunctionDefinition (e.function_def()) DefineFun
+        | "define-fun-rec" -> x.ParseFunctionDefinition (e.function_def()) DefineFunRec
+        | "define-funs-rec" -> x.ParseDefineFunsRec (e.function_dec()) (e.term())
+        | _ -> __unreachable__()
+
     member private x.ParseCommands = List.ofArray >> List.map x.ParseCommand
 
     member x.ParseFile filename =
@@ -479,6 +510,25 @@ and Parser () as this =
         let commands = parser.start().script().command()
         let commands = x.ParseCommands commands
         commands
+
+    member private x.ParseFiniteModelDatatype line =
+        let m = Regex("^; cardinality of (?<sort>\w+) is (?<cardinality>\d+)$").Match(line)
+        if not m.Success then None else
+        let sort = m.Groups.["sort"].Value
+        let card = int <| m.Groups.["cardinality"].Value
+        Some(sort, card)
+
+    member private x.ParseFiniteModelDatatypes modelLines =
+        let sorts = List.choose x.ParseFiniteModelDatatype modelLines
+        for sort, _ in sorts do
+            env.InitWithItself(sort)
+            x.AddFreeSort(sort)
+        sorts
+
+    member x.ParseModel modelLines =
+        let sorts = x.ParseFiniteModelDatatypes modelLines
+        lexer.SetInputStream(CharStreams.fromString(Environment.join modelLines))
+        sorts, parser.get_model_response().model_response() |> List.ofArray |> List.map x.ParseModelResponse
 
     member x.ParseLine (line : string) =
         interactiveReader.Add(line)
@@ -491,5 +541,5 @@ and Parser () as this =
                 commands.Add(x.ParseCommand command)
                 let lastParsedIndex = 1 + command.Stop.StopIndex
                 interactiveReader.SetStart(lastParsedIndex)
-        with :? ParseCanceledException | :? NoViableAltException -> interactiveReader.ResetPointer()
+        with :? ParseCanceledException | :? NoViableAltException -> interactiveReader.Reset()
         List.ofSeq commands

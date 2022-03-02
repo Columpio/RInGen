@@ -18,9 +18,9 @@ dec(s(X), s(Y)) :- dec(X, Y).
 incorrect :- inc(X, Y), dec(X, Y).
 *)
 let private queryName = "incorrect" // this is hardcoded in VeriMAP-iddt (we will never obtain this term as all our idents are of the form `[a-zA-Z]+_[0-9]+`
-let private mapName (s : string) = s.ToLowerFirstChar()
+let private mapName (s : string) = String.toLowerFirstChar s
 let private mapNames = List.map mapName
-let private mapVariable (s : string) = s.ToUpperFirstChar()
+let private mapVariable (s : string) = String.toUpperFirstChar s
 let private mapSort = function
     | IntSort -> "int"
     | BoolSort -> "bool"
@@ -60,8 +60,9 @@ let private mapAtomInHead vars a =
         | _ -> None
     | a -> a
 
-let private mapRule = function
-    | Rule(Quantifiers.ForallQuantifiersOrEmpty vars, premises, head) ->
+let private mapRule vars premises head =
+    match vars with
+    | Quantifiers.ForallQuantifiersOrEmpty vars ->
         let vars = vars |> List.map fst |> Set.ofList
         let premises = List.choose (mapAtomInPremise vars) premises
         match mapAtomInHead vars head with
@@ -103,14 +104,14 @@ let private mapOriginalCommand = function
     | _ -> []
 
 let private mapTransformedCommand = function
-    | OriginalCommand cmnd -> mapOriginalCommand cmnd
-    | TransformedCommand r -> mapRule r |> Option.toList
-    | LemmaCommand _ -> __unreachable__()
+    | FOLOriginalCommand cmnd -> mapOriginalCommand cmnd
+    | FOLCommand.Rule(qs, body, head) -> mapRule qs body head |> Option.toList
+    | _ -> __unreachable__()
 
 let isFirstOrderPrologProgram commands =
-    let hasSortDecls = List.exists (function OriginalCommand (DeclareSort _) -> true | _ -> false) commands
-    let hasLemmas = List.exists (function LemmaCommand _ -> true | _ -> false) commands //TODO: support lemmas
-    not hasSortDecls && not hasLemmas
+    let hasSortDecls = List.exists (function FOLOriginalCommand (DeclareSort _) -> true | _ -> false) commands
+    let allAreRules = List.forall (function FOLOriginalCommand _ | FOLCommand.Rule _ -> true | _ -> false) commands
+    not hasSortDecls && allAreRules
 
 let toPrologFile commands =
     let preamble = mapPredicateDeclaration queryName []

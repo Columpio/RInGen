@@ -1,4 +1,5 @@
 module RInGen.Solvers
+open System.Collections.Generic
 open System.IO
 open System.Text.RegularExpressions
 open RInGen.SolverResult
@@ -26,22 +27,22 @@ type SolverProgramRunner () =
             if IN_EXTRA_VERBOSE_MODE () then printfn $"Solver obtained result: %O{compactStatus realResult}"
             elif IN_QUIET_MODE () then printfn $"%s{quietModeToString realResult}"
             true
-        with e -> print_verbose $"Exception in %s{srcPath}: %s{dstPath}"; false
+        with e -> print_verbose $"Exception in %s{srcPath}:\n{e}"; false
 
-type CVC4FiniteSolver () =
+type CVCFiniteSolver () =
     inherit SolverProgramRunner ()
 
-    override x.ShouldSearchForBinaryInEnvironment = false
+    override x.ShouldSearchForBinaryInEnvironment = true
     override x.Name = "CVC_FMF"
-    override x.BinaryName = "cvc4"
-    override x.BinaryOptions filename = $"--finite-model-find --tlimit=%d{MSECONDS_TIMEOUT ()} %s{filename}"
+    override x.BinaryName = "cvc"
+    override x.BinaryOptions filename = $"--finite-model-find --produce-models --tlimit=%d{MSECONDS_TIMEOUT ()} %s{filename}"
 
     override x.InterpretResult error raw_output =
         if error <> "" then ERROR(error) else
         let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
-        | line::_ when line = "sat" -> SAT FiniteModel
+        | line::rawModel when line = "sat" -> SAT(FiniteModels.parseCVC rawModel |> FiniteModel)
         | line::_ when line = "unsat" -> UNSAT ""
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> SOLVER_TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
@@ -75,7 +76,7 @@ type RCHCSolver () =
     override x.InterpretResult error raw_output =
         let output = Environment.split raw_output
         match output with
-        | line::_ when line = "sat" -> SAT FiniteModel
+        | line::_ when line = "sat" -> SAT(FiniteModel FiniteModels.SomeFiniteModel)
         | line::_ when line = "unsat" -> UNSAT ""
         | _ -> UNKNOWN (error + " &&& " + raw_output)
 
@@ -118,7 +119,7 @@ type MyZ3Solver () =
             match otsResult with
             | Some message ->
                 if message.StartsWith("sat")
-                    then SAT FiniteModel
+                    then SAT(FiniteModel FiniteModels.SomeFiniteModel)
                 elif message.StartsWith("unsat")
                     then UNSAT ""
                 else UNKNOWN (error + " &&& " + raw_output)
@@ -233,46 +234,69 @@ type VampireSolver () =
         let height = treeHeight refutationTree
         join "\n" refutation0
 
+    let findConfiguration moduleOutput = List.find (fun (s : string) -> s.StartsWith("% ") && String.hasLetters s) moduleOutput
+
     let proofOrRefutation moduleOutput =
         let termString = "% Termination reason: "
         let reason = pickTextAfter termString moduleOutput
+        let configuration = findConfiguration moduleOutput
         match reason with
         | "Satisfiable" ->
             match pickTextAfter "SZS output start " moduleOutput with
-            | s when s.StartsWith("Saturation") -> Saturation
-            | s when s.StartsWith("FiniteModel") -> FiniteModel
-            | _ -> __notImplemented__()
+            | s when s.StartsWith("Saturation") -> Saturation configuration
+            | s when s.StartsWith("FiniteModel") -> FiniteModel FiniteModels.SomeFiniteModel
+            | s -> failwith $"Unknown Vampire model type: {s}"
             |> SAT |> Some
         | "Refutation" ->
             let refutationAndGarbage = moduleOutput |> List.skipWhile (fun line -> not <| line.Contains("SZS output start")) |> List.tail
             let refutation = refutationAndGarbage |> List.takeWhile (fun line -> not <| line.Contains("SZS output end"))
-            Some (UNSAT <| join "\n" refutation) //TODO: rebuildRefutation refutation
-        | "Inappropriate"
-        | "Memory limit"
-        | "Time limit" -> None
-        | _ when reason.StartsWith("Refutation not found") -> None
-        | _ -> __notImplemented__()
+            Some (UNSAT <| join "\n" (configuration :: refutation)) //TODO: rebuildRefutation refutation
+        | _ -> None
 
-    let interpretResult (output : string list) raw_output =
-        match splitModules output |> List.tryPick proofOrRefutation with
+    let splitParallelRun (output : string list) =
+        let procIdRegex = Regex("% \((?<procId>\d+)\)")
+        let splitByProcessId (line : string) =
+            let gs = procIdRegex.Matches(line) |> List.ofSeq |> List.map (fun m -> m.Groups.["procId"])
+            let rs = gs |> List.map (fun g -> int(g.Value), g.Index-3, g.Index + g.Length+1)
+            let debug = rs |> List.map (fun (_, i, l) -> line.Substring(i, l-i))
+            if List.isEmpty rs then [None, line] else
+            let ss, _ = List.mapFoldBack (fun (v, ms, me) sen -> (Some v, "% " + line.Substring(me, sen-me)), ms) rs line.Length
+            ss
+        let iOptOutput = List.collect splitByProcessId output
+        let chooseProc lastProc (curProc, s) =
+            match curProc with
+            | Some curProc -> (curProc, s), curProc
+            | None -> (lastProc, s), lastProc
+        let iOutput, _ = List.mapFold chooseProc 0 iOptOutput
+        let runs = Dictionary<_, _>()
+        for i, s in iOutput do
+            match Dictionary.tryFind i runs with
+            | Some lines -> runs.[i] <- (s::lines)
+            | None -> runs.Add(i, [s])
+        let plainRuns = runs |> Dictionary.toList |> List.collect (snd >> List.rev)
+        plainRuns
+
+    let interpretResult (output : string list) raw_output error =
+        let outputSequential = splitParallelRun output
+        let outputSplit = splitModules outputSequential
+        match List.tryPick proofOrRefutation outputSplit with
         | Some result -> result
-        | None -> UNKNOWN raw_output
+        | None -> if error <> "" then ERROR(error) elif raw_output = "" then SOLVER_TIMELIMIT else UNKNOWN raw_output
 
     override x.ShouldSearchForBinaryInEnvironment = true
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        $"""--input_syntax smtlib2 --mode casc_sat --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
+        $"""--mode chccomp --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
 
     override x.InterpretResult error raw_output =
-        if error <> "" then ERROR(error) else
         let output = Environment.split raw_output
+        let output = List.filter (fun (line : string) -> not <| line.Contains("% Warning:")) output
         match output with
-        | _ when raw_output = "" -> SOLVER_TIMELIMIT
         | "unknown"::_ -> UNKNOWN ""
-        | "sat"::_ -> SAT Saturation
+        | "sat"::_ -> SAT (Saturation "")
         | "unsat"::_ -> UNSAT ""
-        | _ -> interpretResult output raw_output
+        | _ -> interpretResult output raw_output error
 
 //type AllSolver () =
 //    inherit IProgram()

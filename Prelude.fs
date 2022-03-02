@@ -22,10 +22,6 @@ type sort =
         | ArraySort(s1, s2) -> $"(Array {s1} {s2})"
 
 module Sort =
-//    let gensym = function
-//        | PrimitiveSort s -> IdentGenerator.gensymp s |> PrimitiveSort
-//        | _ -> __unreachable__()
-//
     let sortToFlatString s =
         let rec sortToFlatString = function
             | BoolSort -> ["Bool"]
@@ -81,6 +77,9 @@ module Operation =
     let opName = function
         | ElementaryOperation(n, _, _)
         | UserDefinedOperation(n, _, _) -> n
+    let toTuple = function
+        | ElementaryOperation(n, a, s)
+        | UserDefinedOperation(n, a, s) -> n, a, s
 
     let isUserOperation = function UserDefinedOperation _ -> true | _ -> false
 
@@ -346,7 +345,12 @@ type folFormula =
         match x with
         | FOLAtom a -> a.ToString()
         | FOLNot a -> $"(not {a})"
-        | FOLOr ats -> $"""(or {ats |> List.map toString |> join " "})"""
+        | FOLOr ats ->
+            match List.choose2 (function FOLNot n -> Choice2Of2 n | a -> Choice1Of2 a) ats with
+            | [head], [] -> toString head
+            | [head], [body] -> $"(=> {body} {head})"
+            | [head], body -> $"""(=> (and {body |> List.map toString |> join " "}) {head})"""
+            | _ -> $"""(or {ats |> List.map toString |> join " "})"""
         | FOLAnd ats -> $"""(and {ats |> List.map toString |> join " "})"""
         | FOLEq(a, b) -> $"(= {a} {b})"
 

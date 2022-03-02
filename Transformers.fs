@@ -1,7 +1,7 @@
 module RInGen.Transformers
-open System
 open System.IO
 open Programs
+open RInGen
 
 type TransformationFail =
     | TRANS_TIMELIMIT
@@ -37,11 +37,18 @@ type TransformerProgram (options : transformOptions) =
 
     let tryFindExistentialClauses =
         let tryFindExistentialClauses = function
-            | TransformedCommand(Rule(qs, _, _) as r) when Quantifiers.existsp (function ExistsQuantifier _ -> true | _ -> false) qs -> Some r
+            | FOLAssertion(qs, _) as r when Quantifiers.hasExists qs -> Some r
             | _ -> None
         List.tryPick tryFindExistentialClauses
 
-    abstract Transform : transformContext -> string list
+    abstract member Transform : folCommand list -> folCommand list
+    default x.Transform commands = commands
+    abstract member CommandsToStrings : folCommand list -> string list
+    default x.CommandsToStrings cs = List.map toString cs
+    abstract Logic : string
+
+    member private x.Preambulize chcSystem =
+        FOLOriginalCommand(SetLogic x.Logic) :: chcSystem @ [FOLOriginalCommand CheckSat; FOLOriginalCommand GetModel]
 
     static member FailInfoFileExtension = ".transformation_info"
 
@@ -65,12 +72,14 @@ type TransformerProgram (options : transformOptions) =
 //                files <- files + 1
         if isHighOrderBenchmark exprs then x.ReportTransformationProblem dstPath TRANS_HIGH_ORDER_PROBLEM $"%O{srcPath} will not be transformed as it has a mix of define-fun and declare-fun commands" else
 //        try
-            let trCtx = ClauseTransform.toClauses options exprs
-            match tryFindExistentialClauses trCtx.commands with
+            let commands = ClauseTransform.toClauses options exprs
+            match tryFindExistentialClauses commands with
             | Some r -> x.ReportTransformationProblem dstPath TRANS_CONTAINS_EXISTENTIALS $"Transformed %s{dstPath} contains existential subclause: %O{r}"
             | None ->
-            let transformedProgram = x.Transform trCtx
-            Program.SaveFile dstPath transformedProgram
+            let transformedProgram = x.Transform commands
+            let preambulizedProgram = x.Preambulize transformedProgram
+            let programLines = x.CommandsToStrings preambulizedProgram
+            Program.SaveFile dstPath programLines
             true
 //            total_generated <- total_generated + x.SaveClauses opts.path dst newTests
 //            successful <- successful + 1
@@ -91,66 +100,45 @@ type TransformerProgram (options : transformOptions) =
             | Some result -> result
         | Some transformer -> transformer.RunOnFile srcPath dstPath
 
-let private preambulizeCommands logic chcSystem =
-    FOLOriginalCommand(SetLogic logic) :: chcSystem @ [FOLOriginalCommand CheckSat; FOLOriginalCommand GetModel]
-
-let private preambulizeCommandsHornOrAll commands =
-    // TODO: rewrite with preambulizeCommands
-    OriginalCommand(SetLogic "HORN") :: commands @ [OriginalCommand CheckSat]
-
 type OriginalTransformerProgram (options) =
     inherit TransformerProgram(options)
 
     override x.TargetPath path = $"%s{path}.Original"
-
-    override x.Transform trCtx =
-        let commands' = preambulizeCommandsHornOrAll trCtx.commands
-        List.map toString commands'
+    override x.Logic = "HORN"
 
 type RCHCTransformerProgram (options) =
     inherit TransformerProgram(options)
 
-    let toString = function
-        | TransformedCommand(Rule(qs, body, Bot)) ->
-            match body with
-            | [] -> $"{Bot}"
-            | [y] -> $"(not {y})"
-            | _ -> $"""(not (and {body |> List.map toString |> join "\n\t\t\t"}))"""
-            |> Quantifiers.toString qs
-            |> sprintf "(assert %s)"
-        | c -> toString c
+    override x.CommandsToStrings cs =
+        let toString = function
+            | FOLCommand.Rule(qs, body, Bot) ->
+                match body with
+                | [] -> $"{Bot}"
+                | [y] -> $"(not {y})"
+                | _ -> $"""(not (and {body |> List.map toString |> join "\n\t\t\t"}))"""
+                |> Quantifiers.toString qs
+                |> sprintf "(assert %s)"
+            | c -> c.ToString()
+        List.map toString cs
 
     override x.TargetPath path = $"%s{path}.RCHC_Transform"
-
-    override x.Transform trCtx =
-        let commands' = preambulizeCommandsHornOrAll trCtx.commands
-        List.map toString commands'
+    override x.Logic = "HORN"
 
 type FreeSortsTransformerProgram (options) =
     inherit TransformerProgram(options)
 
     override x.TargetPath path = $"%s{path}.FreeSorts"
-
-    override x.Transform trCtx =
-        let commands = trCtx.commands
-        let commands =
-            if options.tta_transform then TtaTransform.transform commands
-            else
-                let commands = ClauseTransform.SubstituteLemmas.substituteLemmas commands
-                Simplification.simplify trCtx.diseqs commands
-        let commands = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
-        let commands = preambulizeCommands "UF" commands
-        List.map toString commands
+    override x.Logic = "UF"
+    override x.Transform commands = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
 
 type PrologTransformerProgram (options) =
     inherit TransformerProgram(options)
 
     override x.TargetPath path = $"%s{path}.Prolog"
-
+    override x.Logic = "HORN"
     override x.FileExtension = ".pl"
 
-    override x.Transform trCtx =
-        let commands = preambulizeCommandsHornOrAll trCtx.commands
+    override x.CommandsToStrings commands =
         if PrintToProlog.isFirstOrderPrologProgram commands
             then PrintToProlog.toPrologFile commands
             else failwith_verbose "not a first order Prolog program"

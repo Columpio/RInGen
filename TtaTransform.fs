@@ -482,7 +482,7 @@ type private ToTTATraverser(m : int) =
         | Distinct(y, z) -> Some(a, x.GetOrAddDisequalityAutomaton y z)
         | AApply(op, xs) -> Some(a, x.GetOrAddApplicationAutomaton op xs)
 
-    member private x.TraverseRule (Rule(_, body, head)) =
+    member private x.TraverseRule (rule.Rule(_, body, head)) =
         let pairHeadAndBody = List.cons
         let unpairHeadAndBody = List.uncons
         let atoms, patAutomata = List.unzip <| List.choose x.GenerateAtomAutomaton (pairHeadAndBody head body)
@@ -612,7 +612,7 @@ type private ToTTATraverser(m : int) =
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
         sortDecls @ funDecls @ rest
 
-let transform (commands : list<_>) =
+let transform (commands : list<transformedCommand>) =
     let maxConstructorWidth = List.max <| List.map (function OriginalCommand c -> Command.maxConstructorArity c | _ -> Datatype.noConstructorArity) commands
     let processer = ToTTATraverser(maxConstructorWidth)
     processer.TraverseCommands(commands)

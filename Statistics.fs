@@ -83,6 +83,10 @@ let tryCollectStatistics xs =
             tryCollectStatistics xs (fun ss -> k <| tryReadStatisticsFromList stats::ss)
     tryCollectStatistics xs id
 
+let tryReadRunSolverStatus (resultFilePath : path) =
+    use file = new StreamReader(resultFilePath)
+    tryReadStatisticsFromList [file.ReadLine(); file.ReadLine(); file.ReadLine(); file.ReadToEnd()]
+
 let tryReadStatistics (transformedFilePath : path, resultFilePath : path) =
     let transformationInfoFile = Path.ChangeExtension(transformedFilePath, TransformerProgram.FailInfoFileExtension)
     opt {
@@ -90,10 +94,7 @@ let tryReadStatistics (transformedFilePath : path, resultFilePath : path) =
         | _ when File.Exists(transformationInfoFile) ->
             let! transInfo = File.ReadAllText(transformationInfoFile) |> tryParseTransformationFail
             return TransformationStatus transInfo
-        | _ when File.Exists(resultFilePath) ->
-            use file = new StreamReader(resultFilePath)
-            let! stat = tryReadStatisticsFromList [file.ReadLine(); file.ReadLine(); file.ReadLine(); file.ReadToEnd()]
-            return stat
+        | _ when File.Exists(resultFilePath) -> return! tryReadRunSolverStatus resultFilePath
         | _ -> return! None
     }
 

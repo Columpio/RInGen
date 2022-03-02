@@ -1,0 +1,4 @@
+17
+34140
+890
+SAT FiniteModel

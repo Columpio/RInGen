@@ -40,7 +40,7 @@ type Program () =
                 | Some outputDirectory when Path.EndsInDirectorySeparator(outputDirectory) -> Path.Combine(outputDirectory, directory')
                 | Some outputPath -> failwith_verbose $"Trying to write directory to the file $s{outputPath}"
                 | None -> Path.Combine(Path.GetDirectoryName(path), directory')
-            walk_through_copy path path' (fun path path' -> x.CheckedRunOnFile path path' |> ignore)
+            walk_through_copy path path' (fun path path' -> IdentGenerator.reset (); x.CheckedRunOnFile path path' |> ignore)
             Some path'
         | _ -> failwith_verbose $"There is no such file or directory: %s{path}"
 
@@ -80,7 +80,7 @@ type ProgramRunner () =
         let statisticsFile = Path.GetTempFileName()
         File.Delete(statisticsFile)
         psinfo.FileName <- "/usr/bin/time"
-        psinfo.Arguments <- $"--quiet --output=%s{statisticsFile} --format %%M,%%e %s{executable} %s{arguments}"
+        psinfo.Arguments <- $"--output=%s{statisticsFile} --format=%%M,%%e %s{executable} %s{arguments}"
         print_verbose $"Run: %s{psinfo.FileName} %s{psinfo.Arguments}"
         psinfo.WorkingDirectory <- x.WorkingDirectory filename
         executable, statisticsFile
@@ -103,6 +103,7 @@ type ProgramRunner () =
         p.BeginErrorReadLine()                      // error is read asynchronously: if we read both stream synchronously, deadlock is possible
                                                     // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
 
+        if p.HasExited then raise(Exception($"err: {x.ErrorReceived().Trim()}; out: {x.OutputReceived().Trim()}"))
         let st = p.StartTime
         let isChildProcess (pr : Process) =
             try

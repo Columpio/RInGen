@@ -15,6 +15,13 @@ module FOL =
 
     let hence a b = folOr [folNot a; b]
 
+    let (|Rule|_|) = function
+        | FOLOr ats ->
+            match List.choose2 (function FOLNot(FOLAtom n) -> Choice2Of2 n | a -> Choice1Of2 a) ats with
+            | [FOLAtom head], body -> Some(body, head)
+            | _ -> None
+        | _ -> None
+
     let map f =
         let rec iter = function
             | FOLAtom a -> FOLAtom (f a)
@@ -101,6 +108,15 @@ module FOLCommand =
     let private aequivalence vars fromAtom toAtom = FOLAssertion(Quantifiers.forall vars, FOLEq(fromAtom, toAtom))
     let private arule vars body head = FOLAssertion(Quantifiers.forall vars, FOL.hence body head)
     let private afact vars head = FOLAssertion(Quantifiers.forall vars, FOLAtom head)
+
+    let (|Rule|_|) = function
+        | FOLAssertion(qs, FOL.Rule(body, head)) -> Some(qs, body, head)
+        | _ -> None
+
+    let fromTransformed = function
+        | TransformedCommand(rule.Rule(qs, body, head)) -> FOLAssertion(qs, FOLOr ((FOLAtom head) :: (List.map (FOLAtom >> FOLNot) body)))
+        | OriginalCommand c -> FOLOriginalCommand c
+        | LemmaCommand _ -> __unreachable__()
 
     let clAEquivalence body head =
        let freeVars = Atoms.collectFreeVars (head :: body)

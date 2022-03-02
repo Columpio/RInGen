@@ -1,0 +1,4 @@
+14
+42224
+860
+SAT FiniteModel

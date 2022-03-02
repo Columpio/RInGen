@@ -4,6 +4,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "RInGen", "RInGen.fsproj", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SMTLIB2Parser", "SMTLIB2Parser\SMTLIB2Parser.csproj", "{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Tests", "Tests\Tests.fsproj", "{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C2C26B7F-4DE1-484A-8F31-82F50D27E3D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

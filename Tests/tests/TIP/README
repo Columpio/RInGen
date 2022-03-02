@@ -1,0 +1,10 @@
+This archive contains the TIP benchmarks, converted into SMTLIB format
+version 2.6. All polymorphism has been eliminated from the problems,
+in a possibly incomplete manner.
+
+The benchmarks are organised into the following subdirectories:
+* prod - from Productive Use of Failure in Inductive Proof, Ireland & Bundy
+* isaplanner - test problems from the IsaPlanner project
+* tip2015 - the new TIP benchmarks
+* grammars - proving unambiguity of context-free grammars
+* false - false properties for benchmarking of counterexample-finding tools
