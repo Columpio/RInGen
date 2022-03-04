@@ -5,7 +5,7 @@ type Context() =
     let operations = Dictionary<_, _>(Operations.elementaryOperations)
     let adts = Dictionary<ident, (operation * operation * operation list) list>() // adt-sort-name |-> [tester, constructor, [selector]]
     let freeSorts = HashSet<ident>()
-    let predefinedSymbols = HashSet<ident>(["Bool"; "Int"; "Array"])
+    let predefinedSymbols = HashSet<ident>(["Bool"; "Int"; "Array"; "="])
 
     member x.IsPredefinedSymbol s = predefinedSymbols.Contains(s)
 

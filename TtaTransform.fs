@@ -324,17 +324,22 @@ type private ToTTATraverser(m : int) =
         let eqRec = Automaton.fromSorts m stateSort eqRelName (List.replicate arity s)
 
         let initAxiom = clAFact(eqRec.IsFinal eqRec.Init)
+
         let deltaAxiom =
             let qTerms = Terms.generateNVariablesOfSort (pown m arity) stateSort
-            let constrTerms =
-                let fTerm = Term.generateVariable s
-                List.replicate arity fTerm
-            let l = eqRec.IsFinal(eqRec.Delta(constrTerms @ qTerms))
-            let r =
-                let qTerms = Array.ofList qTerms
-                let qDiag = List.init m (fun i -> qTerms.[i*(m+1)])
-                List.map eqRec.IsFinal qDiag
-            clAEquivalence r l
+            let constrTerms = List.init arity (fun _ -> Term.generateVariable s)
+            let r = eqRec.IsFinal(eqRec.Delta(constrTerms @ qTerms))
+            let l =
+                let constrEqs =
+                    let eqOp = Operations.equal_op s
+                    let t, ts = List.uncons constrTerms
+                    List.map (fun el -> AApply(eqOp, [t; el])) ts
+                let qDiag =
+                    let qTerms = Array.ofList qTerms
+                    let diagCoof = List.init arity (fun i -> pown m i) |> List.sum
+                    List.init m (fun i -> qTerms.[i*diagCoof])
+                constrEqs @ List.map eqRec.IsFinal qDiag
+            clAEquivalence l r
         Automaton(eqRec, [initAxiom; deltaAxiom])
 
     member private x.GenerateDisqualityAutomaton s =
