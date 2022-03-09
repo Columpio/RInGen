@@ -22,6 +22,11 @@ module Term =
         | TIdent(_, typ) -> typ
         | TApply(op, _) -> Operation.returnType op
 
+    let tName = function
+        | TConst(name, _)
+        | TIdent(name, _) -> name
+        | TApply(op, _) -> Operation.opName op
+
     let rec bind f = function
         | TIdent(name, typ)
         | TConst(name, typ) as t -> f t (name, typ)

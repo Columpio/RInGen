@@ -18,6 +18,7 @@ type LocalTransformArguments =
     | [<Unique>] Tip
     | [<Unique>] Sync_terms
     | [<Unique>] Tta_transform
+    | [<Hidden>] No_preamble
 
     interface IArgParserTemplate with
         member x.Usage =
@@ -26,6 +27,7 @@ type LocalTransformArguments =
             | Tip -> "Negates the query (for TIP benchmarks)"
             | Sync_terms -> "Synchronize terms of a CHC system"
             | Tta_transform -> "Apply transformation for tuple tree automata inference"
+            | No_preamble -> "[Debug] Do not add predicate symbols for testers and selectors"
 
 let private newTransformerProgram program mode transformOptions runSame =
     let transformOptions =
@@ -34,8 +36,9 @@ let private newTransformerProgram program mode transformOptions runSame =
             {tip=options.Contains(Tip)
              sync_terms=options.Contains(Sync_terms)
              tta_transform=options.Contains(Tta_transform)
+             no_preamble = options.Contains(No_preamble)
              child_transformer=if options.Contains(No_Isolation) then None else Some(runSame transformOptions mode)}
-        | None -> {tip=false; sync_terms=false; tta_transform=false; child_transformer=None}
+        | None -> {tip=false; sync_terms=false; tta_transform=false; no_preamble=false; child_transformer=None}
     program(transformOptions) :> TransformerProgram, transformOptions
 let private modeToTransformerProgram mode =
     match mode with
