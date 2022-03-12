@@ -103,13 +103,13 @@ type SolveArguments =
             | Table -> "Generate .csv statistics table after solving"
             | Transform _ -> "Apply additional transformations to the problem (default: disabled; the solver is run on the original)"
 
-let private solverByName = function
+let private solverByName options = function
     | MyZ3 -> MyZ3Solver() :> SolverProgramRunner
     | Z3 -> Z3Solver() :> SolverProgramRunner
     | Eldarica -> EldaricaSolver() :> SolverProgramRunner
     | CVC_Ind -> CVC4IndSolver() :> SolverProgramRunner
     | VeriMAP -> VeriMAPiddtSolver() :> SolverProgramRunner
-    | Vampire -> VampireSolver() :> SolverProgramRunner
+    | Vampire -> VampireSolver(options) :> SolverProgramRunner
     | CVC_FMF -> CVCFiniteSolver() :> SolverProgramRunner
     | RCHC -> RCHCSolver() :> SolverProgramRunner
 //    | All -> AllSolver() :> SolverProgramRunner
@@ -190,13 +190,14 @@ let private solve_from_path (solver : SolverProgramRunner) (transformer : Transf
 
 let private solve outputPath runSame (options : ParseResults<SolveArguments>) =
     let solver_name = options.GetResult(Solver)
-    let solver = solverByName solver_name
-    let transformer =
+    let transformer, opts =
         match options.TryGetResult(Transform) with
         | Some _ as transformOptions ->
             let mode = solverNameToTransformMode solver_name
-            modeToTransformerProgram mode transformOptions runSame |> fst |> Some
-        | None -> None
+            let t, opts = modeToTransformerProgram mode transformOptions runSame
+            Some t, Some opts
+        | None -> None, None
+    let solver = solverByName opts solver_name
     match options.TryGetResult(Path) with
     | None ->
         match options.Contains(In) with

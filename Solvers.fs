@@ -166,8 +166,14 @@ type VeriMAPiddtSolver () =
 
 type private refutationSource = Axiom | Inference of string * string list
 
-type VampireSolver () =
+type VampireSolver (options : transformOptions option) =
     inherit SolverProgramRunner ()
+
+    let isRunOnTTATransform =
+        match options with
+        | Some options -> options.tta_transform
+        | None -> false
+    let mode = if isRunOnTTATransform then "-sa fmb" else "--mode chccomp"
 
     let splitModules output =
         let reDelimiter = Regex("^(% )?[-]+$")
@@ -287,7 +293,7 @@ type VampireSolver () =
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        $"""--mode chccomp --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
+        $"""{mode} --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
 
     override x.InterpretResult error raw_output =
         let output = Environment.split raw_output
