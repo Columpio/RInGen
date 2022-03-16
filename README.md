@@ -98,8 +98,7 @@ Run a specific solver after processing. Available options:
 - [CVC4 in finite model find mode](https://cvc4.github.io/papers/cav2013-fmf) (`cvc_fmf`)
 - [CVC4 in inductive mode](http://lara.epfl.ch/~reynolds/VMCAI2015-ind/) (`cvc_ind`)
 - [VeriMAP (for inductively defined data types)](https://fmlab.unich.it/iclp2018/) (`verimap`)
-- [Vampire in SMTLIB2 mode](https://vprover.github.io/) (`vampire`)
-- all the above solvers (`all`)
+- [CHC-COMP-optimized fork of Vampire](https://github.com/Columpio/vampire) (`vampire`)
 > Note that in order to run `Z3`, `Eldarica`, `CVC4`, `Vampire` and `VeriMAP` one should have
 > `z3`, `eld`, `cvc4`, `vampire` and `VeriMAP-iddt` executables accessible in the environment.
 > The easiest way to do that is to prefix tool running with:
