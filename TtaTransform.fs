@@ -190,18 +190,15 @@ module private State =
 
     let freeVars = foldAutomatonApplies (fun free _ -> Pattern.collectFreeVars >> Set.ofList >> Set.union free) Set.empty
 
-    let abstractAutomatonApplies isBottom s =
+    let abstractAutomatonApplies s =
         let vars2states = Dictionary<_, _>()
         let states2vars = Dictionary<_, _>()
-        let helper name (Pattern(pat)) =
-            let a = AutomatonApply(name, Pattern(pat))
+        let helper name pat =
+            let a = AutomatonApply(name, pat)
             match Dictionary.tryFind a states2vars with
             | Some ident -> SVar ident
             | None ->
-                let freshName =
-                    match (List.forall isBottom pat) with
-                    | true -> name.Init.ToString()
-                    | false -> IdentGenerator.gensym ()
+                let freshName = IdentGenerator.gensym ()
                 vars2states.Add(freshName, a)
                 states2vars.Add(a, freshName)
                 SVar freshName
@@ -256,9 +253,9 @@ module private PatternAutomatonGenerator =
         let A'' = State.unfoldAutomatonApplyRec isBottom bottomize A'
         A'', B'
 
-    let finalStatesAndInvariant isBottom A B =
+    let finalStatesAndInvariant A B =
         // returns $"""Fb := {{ (({freeConstrsStr}), ({abstrVars |> List.map toString |> join ", "})) |{"\n\t"}{abstrState} \in Fa }}"""
-        let abstrState, (abstrVarsMap, _) = State.abstractAutomatonApplies isBottom A
+        let abstrState, (abstrVarsMap, _) = State.abstractAutomatonApplies A
         let abstrVars = abstrVarsMap |> Dictionary.toList |> List.map fst
         let freeConstrs = State.freeConstructors abstrState
         let inv = Invariant.fromConstructorsAndStates freeConstrs (List.map (Dictionary.findOrApply SVar abstrVarsMap) abstrVars)
@@ -278,8 +275,8 @@ module private PatternAutomatonGenerator =
         let invariantA'' = Invariant.unfoldAutomatonApplyRec isBottom bottomize invariantA'
         sideB, invariantA''
 
-    let inductionSchema isBottom leftSide rightSide =
-        let abstrLeftSide, (_, state2vars) = State.abstractAutomatonApplies isBottom leftSide
+    let inductionSchema leftSide rightSide =
+        let abstrLeftSide, (_, state2vars) = State.abstractAutomatonApplies leftSide
         let abstrRightSide =
             let mapper name pat =
                 let a = AutomatonApply(name, pat)
@@ -386,11 +383,6 @@ type private ToTTATraverser(m : int) =
         | Some name -> Operation.opName op = name
         | None -> false
 
-    member private x.TermIsBottom t =
-        match Dictionary.tryFind (Term.typeOf t) botSymbols with
-        | Some name -> Term.tName t = name
-        | None -> false
-
     member private x.GeneratePatternAutomaton (baseAutomaton : Automaton) pattern =
         let linearizedPattern, vars2vars = Pattern.linearizeVariables pattern
         let newVars = Map.toList vars2vars |> List.map fst |> List.unique
@@ -401,9 +393,9 @@ type private ToTTATraverser(m : int) =
             let record = Automaton.fromPattern m stateSort pattern'
             record, AutomatonApply(record, pattern')
         let A, B = PatternAutomatonGenerator.instantiate x.IsBottom x.BottomizeTerms instantiator A B
-        let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant x.TermIsBottom A B
+        let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant A B
         let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.IsBottom x.BottomizeTerms m B invariantA
-        let delta = PatternAutomatonGenerator.inductionSchema x.TermIsBottom leftSide rightSide
+        let delta = PatternAutomatonGenerator.inductionSchema leftSide rightSide
         let patAutomaton = x.AutomatonFromDeltaAndFinals baseAutomaton.Record patternRec delta finalStates
 //        let equalityAutomaton = buildEqualityAutomaton newVars
 //        let intersectionAutomaton = intersect equalityAutomaton patAutomaton
@@ -446,7 +438,7 @@ type private ToTTATraverser(m : int) =
         let vars = Terms.collectFreeVars pattern |> List.sortWith SortedVar.compare
         let renameMap = List.mapi (fun i (_, s as v) -> (v, TIdent ($"x_{i}", s))) vars |> Map.ofList
         let pattern = List.map (Term.substituteWith renameMap) pattern
-        Dictionary.getOrInitWith (baseAutomaton, pattern) patternAutomata (fun () -> x.GeneratePatternAutomaton baseAutomaton (Pattern pattern))
+        Dictionary.getOrInitWith pattern patternAutomata (fun () -> x.GeneratePatternAutomaton baseAutomaton (Pattern pattern))
 
     member private x.Delay(constrs, states) =
         assert(List.forall (fun t -> Term.typeOf t = stateSort) states)
@@ -501,21 +493,13 @@ type private ToTTATraverser(m : int) =
             let r = x.Product inits
             clAFact (equalStates l r)
         let deltaAxiom =
-            let stateTerms =
-                let helper vars (a : Automaton) =
-                    match vars with
-                    | [] -> [a.Init]
-                    | _ -> Terms.generateNVariablesOfSort (pown m (List.length vars)) stateSort
-                List.map2 helper atomsVars patAutomata
+            let stateTerms = List.map (fun vars -> (Terms.generateNVariablesOfSort (pown m (List.length vars)) stateSort)) atomsVars
             let atomsTerms = List.map (List.map TIdent) atomsVars
             let rs = List.map3 (fun (r : Automaton) vs s -> r.Delta(vs @ s)) patAutomata atomsTerms stateTerms
             let r = x.Product rs
             let l =
                 // helper functions
-                let genQMask aVars =
-                    match List.isEmpty aVars with
-                    | true -> [true]
-                    | false -> List.map (fun v -> List.contains v aVars) clauseVars
+                let genQMask aVars = List.map (fun v -> List.contains v aVars) clauseVars
                 let applyMask combination mask =
                     List.zip combination mask
                  |> List.filter snd
@@ -528,10 +512,7 @@ type private ToTTATraverser(m : int) =
                     example: if clauseVars= [f1; f2; f3], atomVars=[f1;f3] then mask=[T; F; T]
                 *)
                 let posMasks = List.map genQMask atomsVars
-                let combinations =
-                    match List.isEmpty clauseVars with
-                    | true -> [[0]]
-                    | false -> Numbers.allNumbersBaseM (List.length clauseVars) m
+                let combinations = Numbers.allNumbersBaseM (List.length clauseVars) m
                 (*
                     generate from [q0*; q1*] (n=1) -> [q0*; q0*; q1*; q1*] which can be used in prod
                     with [q00; q01; q10; q11] (n=2)
@@ -542,13 +523,7 @@ type private ToTTATraverser(m : int) =
                 cRecord.Delta(clauseVarsTerms @ lStates)
             clAFact (equalStates l r)
         let finalAxiom =
-            let stateTerms =
-                let helper vars (a : Automaton) =
-                    match vars with
-                    | [] -> a.Init
-                    | _ -> Term.generateVariable stateSort
-                List.map2 helper atomsVars patAutomata
-
+            let stateTerms = Terms.generateNVariablesOfSort (List.length patAutomata) stateSort
             let li = x.Product stateTerms
             let l = FOLAtom <| cRecord.IsFinal li
             let rs = List.map2 (fun (r : Automaton) -> r.IsFinal >> FOLAtom) patAutomata stateTerms
@@ -584,9 +559,6 @@ type private ToTTATraverser(m : int) =
     member private x.GeneratePatternDeclarations () =
         patternAutomata |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
 
-    member private x.GenerateEqDeclarations () =
-        equalities |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
-
     member private x.TraverseCommand = function
         | DeclareFun(name, args, BoolSort) ->
             let op = Operation.makeUserRelationFromSorts name args
@@ -606,8 +578,7 @@ type private ToTTATraverser(m : int) =
         let prodDecls = x.GenerateProductDeclarations ()
         let delayDecls = x.GenerateDelayDeclarations ()
         let patDecls = x.GeneratePatternDeclarations ()
-        let eqDecls = x.GenerateEqDeclarations ()
-        let all = header :: eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
+        let all = header :: patDecls @ prodDecls @ delayDecls @ commands'
         let sortDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareSort _) as s -> Choice1Of2 s | c -> Choice2Of2 c) all
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
         sortDecls @ funDecls @ rest
