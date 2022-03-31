@@ -1,5 +1,6 @@
 module Tests.Transformations
 open NUnit.Framework
+open RInGen
 
 [<TestFixture>]
 type SamplesTests () =
@@ -29,3 +30,39 @@ type TIPTests () =
         let name = "OriginalTrans"
         let config origPath outPath = $"-o {outPath} transform --mode original {origPath} -t --tip --no-isolation"
         x.RunTest name config
+
+[<TestFixture>]
+type TTATests () =
+    [<Test>]
+    member x.evenEmptyPattern () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(1)
+        let natAdt = ADTSort("nat")
+        let zConstr = Operation.makeElementaryOperationFromSorts "Z" [] natAdt
+        let pred = Operation.makeUserRelationFromSorts "isEven" [natAdt]
+        let xs = [TApply(zConstr, [])]
+        let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
+        let decls = List.map toString automaton.Declarations
+        ()
+
+    [<Test>]
+    member x.patternDelayNode () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(2)
+        let treeAdt = ADTSort("tree")
+        let nodeConstr = Operation.makeElementaryOperationFromSorts "Node" [treeAdt; treeAdt] treeAdt
+        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
+        let xs = [TIdent("x", treeAdt); TApply(nodeConstr, [TIdent("y", treeAdt); TIdent("z", treeAdt)])]
+        let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
+        let decls = List.map toString automaton.Declarations
+        ()
+
+    [<Test>]
+    member x.patternLeafNode () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(2)
+        let treeAdt = ADTSort("tree")
+        let leafConstr =  Operation.makeElementaryOperationFromSorts "Leaf" [] treeAdt
+        let nodeConstr = Operation.makeElementaryOperationFromSorts "Node" [treeAdt; treeAdt] treeAdt
+        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
+        let xs = [TApply(leafConstr, []); TApply(nodeConstr, [TIdent("x", treeAdt); TIdent("y", treeAdt)])]
+        let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
+        let decls = List.map toString automaton.Declarations
+        ()

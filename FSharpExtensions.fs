@@ -237,9 +237,10 @@ module Counter =
 
 module Numbers =
     let allNumbersBaseM n m =
+        // little-endian e.g. allNumbersBaseM 2 2 = [0; 0] [1;0] [0; 1] [1; 1]
         let rec f n m acc =
             match n with
-            | 0 -> List.rev acc
+            | 0 -> acc
             | _ ->
                 let helper = f (n-1) m
                 let iList = List.init m (fun i -> i::acc)

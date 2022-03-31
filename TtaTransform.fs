@@ -3,13 +3,13 @@ module RInGen.TtaTransform
 open System.Collections.Generic
 open FOLCommand
 
-type private pattern =
+type pattern =
      | Pattern of term list
      override x.ToString() =
          let (Pattern(pat)) = x
          pat |> List.map toString |> join ", "
 
-type private AutomatonRecord(name : ident, init : operation, isFinal : operation, delta : operation, reach: operation) =
+type AutomatonRecord(name : ident, init : operation, isFinal : operation, delta : operation, reach: operation) =
     member r.Name = name
     member r.Init = Term.apply0 init
     member r.IsFinal = Atom.apply1 isFinal
@@ -17,7 +17,7 @@ type private AutomatonRecord(name : ident, init : operation, isFinal : operation
     member r.Reach = Atom.apply1 reach
     member r.Declarations = List.map (Command.declareOp >> FOLOriginalCommand) [init; isFinal; delta; reach]
 
-type private Automaton(r : AutomatonRecord, tr) =
+type Automaton(r : AutomatonRecord, tr) =
     member x.Record = r
     member x.Name = r.Name
     member x.Init = r.Init
@@ -26,7 +26,7 @@ type private Automaton(r : AutomatonRecord, tr) =
     member x.Reach = r.Reach
     member x.Declarations = r.Declarations @ tr
 
-module private Automaton =
+module Automaton =
     let fromSorts m stateSort name sortList =
         let initStateName = IdentGenerator.gensymp ("init_" + name)
         let isFinalName = IdentGenerator.gensymp ("isFinal_" + name)
@@ -286,7 +286,7 @@ module private PatternAutomatonGenerator =
             Invariant.mapAutomatonApplies mapper rightSide
         abstrLeftSide, abstrRightSide
 
-type private ToTTATraverser(m : int) =
+type ToTTATraverser(m : int) =
     let stateSortName = IdentGenerator.gensymp "State"
     let stateSort = FreeSort stateSortName
 
@@ -356,11 +356,11 @@ type private ToTTATraverser(m : int) =
         let baseAutomaton = Dictionary.getOrInitWith s disequalities (fun () -> x.GenerateDisqualityAutomaton s)
         x.GetOrAddPatternAutomaton baseAutomaton (Pattern [y; z])
 
-    member private x.GetOrAddApplicationAutomaton op xs =
+    member x.GetOrAddApplicationAutomaton op xs =
         let baseAutomaton = x.GetOrAddOperationAutomaton op
         x.GetOrAddPatternAutomaton baseAutomaton (Pattern xs)
 
-    member private x.TraverseDatatype (sName, xs) =
+    member x.TraverseDatatype (sName, xs) =
         let s = ADTSort sName
         let constructors = x.getBotSymbol s :: List.map (fst3 >> Operation.opName) xs
         let constrDecls = List.map (fun name -> DeclareConst(name, s)) constructors

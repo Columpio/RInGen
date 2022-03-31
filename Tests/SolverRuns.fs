@@ -47,3 +47,8 @@ type SampleSolverTests () =
     member x.even_OnCVC1sec () =
         let config origPath outPath = $"-o {outPath} --timelimit 1 solve --solver cvc_fmf --path {origPath} -t --no-isolation"
         x.RunTest "even.smt2" "" config
+
+    [<Test>]
+    member x.evenTtaTest () =
+        let config origPath outPath = $"-o {outPath} --timelimit 30 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
+        x.RunTest "even.smt2" ".tta" config
