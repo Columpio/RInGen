@@ -559,6 +559,9 @@ type private ToTTATraverser(m : int) =
     member private x.GeneratePatternDeclarations () =
         patternAutomata |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
 
+    member private x.GenerateEqDeclarations () =
+        equalities |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
+
     member private x.TraverseCommand = function
         | DeclareFun(name, args, BoolSort) ->
             let op = Operation.makeUserRelationFromSorts name args
@@ -578,7 +581,8 @@ type private ToTTATraverser(m : int) =
         let prodDecls = x.GenerateProductDeclarations ()
         let delayDecls = x.GenerateDelayDeclarations ()
         let patDecls = x.GeneratePatternDeclarations ()
-        let all = header :: patDecls @ prodDecls @ delayDecls @ commands'
+        let eqDecls = x.GenerateEqDeclarations ()
+        let all = header :: eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
         let sortDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareSort _) as s -> Choice1Of2 s | c -> Choice2Of2 c) all
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
         sortDecls @ funDecls @ rest
