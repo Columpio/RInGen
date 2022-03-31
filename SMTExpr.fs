@@ -51,9 +51,6 @@ let rec private typeOf = function
     | Let(_, t) -> typeOf t
     | Match(_, []) -> __unreachable__()
 
-//    let forall vars e = Quantifiers.simplify Forall falsehood truth e vars
-//    let exists vars e = Quantifiers.simplify Exists falsehood truth e vars
-
 let private makePrimitiveTerm = function
     | Choice1Of2 op -> Apply(op, []) // user-defined constant
     | Choice2Of2(ident, sort) -> Ident(ident, sort)
@@ -136,12 +133,12 @@ and VarEnv(ctx : Context, vars2sorts) as this =
 
     member x.FillOperation opName argTypes = ctx.FillOperation opName argTypes
 
-type private SubstVarEnv(ctx : Context, osyms2nsyms, nvars2nsorts) as this =
+type private SubstVarEnv(ctx : Context, osyms2nsyms, nvars2nsorts, qualIdToId) as this =
     inherit VarEnv(ctx, nvars2nsorts)
 
     let state = Stack<_>()
     let saver = VarEnvSaver(this)
-    new (ctx : Context) = SubstVarEnv(ctx, Dictionary<ident, ident>(), Dictionary<ident, sort>())
+    new (ctx : Context) = SubstVarEnv(ctx, Dictionary<ident, ident>(), Dictionary<ident, sort>(), Dictionary<ident * sort, ident>())
 
     override x.SaveState () =
         base.SaveState ()
@@ -171,10 +168,15 @@ type private SubstVarEnv(ctx : Context, osyms2nsyms, nvars2nsorts) as this =
     member x.InitWithItself symbol =
         osyms2nsyms.[symbol] <- symbol
 
+    member x.FindOrAddQualifiedIdent ((v, s) as vs) =
+        Dictionary.getOrInitWith vs qualIdToId (fun () ->
+        let ident' = IdentGenerator.gensymp(v + Sort.sortToFlatString s)
+        x.InitWithItself ident'
+        x.AddOne ident' s
+        ident')
+
     member private x.FindOrAddSymbol symbol =
-        match x.TryFindSymbol symbol with
-        | Some symbol -> symbol
-        | None -> x.AddSymbol symbol
+        Dictionary.getOrInitWith symbol osyms2nsyms (fun () -> IdentGenerator.gensymp symbol)
 
     override x.ReplaceOneVar(ident, sort) =
         let ident = x.AddSymbol ident
@@ -241,6 +243,7 @@ and Parser () as this =
     let lexer = SMTLIBv2Lexer(interactiveReader)
     let parser = SMTLIBv2Parser(CommonTokenStream(lexer))
     let mutable env = SubstVarEnv(this)
+    let mutable redefine = true // whether to rename all identifiers from the input
     do
         parser.ErrorHandler <- BailErrorStrategy()
         parser.RemoveErrorListeners()
@@ -262,8 +265,8 @@ and Parser () as this =
             | _ -> __unreachable__()
         match version with
         | Raw -> symbol
-        | Old -> env.FindSymbol symbol
-        | New -> env.AddSymbol symbol
+        | Old -> if redefine then env.FindSymbol symbol else symbol
+        | New -> if redefine then env.AddSymbol symbol else env.InitWithItself symbol; symbol
 
     member private x.ParseIndex version (e : SMTLIBv2Parser.IndexContext) =
         match e.GetChild(0) with
@@ -279,7 +282,9 @@ and Parser () as this =
 
     member private x.ParseQualifiedIdentifier (expr : SMTLIBv2Parser.Qual_identifierContext) =
         let ident = expr.identifier() |> x.ParseIdentifier Raw
-        ident
+        if expr.ChildCount = 1 then ident else
+        let sort = expr.sort() |> x.ParseSort Raw
+        env.FindOrAddQualifiedIdent(ident, sort)
 
     member private x.ParseSort version (expr : SMTLIBv2Parser.SortContext) =
         let ident = expr.identifier() |> x.ParseIdentifier version
@@ -518,16 +523,27 @@ and Parser () as this =
         let card = int <| m.Groups.["cardinality"].Value
         Some(sort, card)
 
+    member private x.ParseRepresentative line =
+        let m = Regex("^; rep: (?<qid>.*)$").Match(line)
+        if not m.Success then None else
+        let qid = m.Groups.["qid"].Value
+        Some qid
+
     member private x.ParseFiniteModelDatatypes modelLines =
         let sorts = List.choose x.ParseFiniteModelDatatype modelLines
         for sort, _ in sorts do
-            env.InitWithItself(sort)
             x.AddFreeSort(sort)
-        sorts
+        let reps = $"({List.choose x.ParseRepresentative modelLines |> Environment.join})"
+        lexer.SetInputStream(CharStreams.fromString(reps))
+        let reps = parser.get_assertions_response().term() |> List.ofArray |> List.map x.ParseTerm |> List.choose (function Ident(v, FreeSort s) -> Some(v, s) | _ -> None)
+        let sortsWithReps = List.chunkBySecond reps
+        sortsWithReps
 
     member x.ParseModel modelLines =
+        redefine <- false
         let sorts = x.ParseFiniteModelDatatypes modelLines
         lexer.SetInputStream(CharStreams.fromString(Environment.join modelLines))
+        parser.TokenStream <- CommonTokenStream(lexer)
         sorts, parser.get_model_response().model_response() |> List.ofArray |> List.map x.ParseModelResponse
 
     member x.ParseLine (line : string) =

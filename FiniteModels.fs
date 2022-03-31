@@ -4,7 +4,14 @@ open RInGen.SMTExpr
 
 type finModel =
     | SomeFiniteModel
-    | ConcreteFiniteModel of (symbol * int) list * definition list // (sort * cardinality) list * model
+    | ConcreteFiniteModel of (symbol * symbol list) list * definition list // (sort * cardinality) list * model
+    override x.ToString() =
+        match x with
+        | SomeFiniteModel -> "SomeFiniteModel"
+        | ConcreteFiniteModel(sorts, defs) ->
+            let sortLines = sorts |> List.map (fun (s, reps) -> $"""; {s} = {{{reps |> List.map toString |> List.sort |> join ", "}}}""")
+            let defLines = List.map toString defs
+            Environment.join (sortLines @ defLines)
 
 let parseCVC modelLines =
     let p = Parser()

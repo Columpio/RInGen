@@ -10,7 +10,7 @@ type Model =
         match x with
         | ElemFormula -> "ElemFormula"
         | SizeElemFormula -> "SizeElemFormula"
-        | FiniteModel _ -> "FiniteModel"
+        | FiniteModel f -> toStringHeadAndBody "FiniteModel" (f.ToString())
         | Saturation s -> toStringHeadAndBody "Saturation" s
         | NoModel -> "NoModel"
 type SolverResult =

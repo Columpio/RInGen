@@ -82,6 +82,29 @@ module Map =
             let y = f x
             y, Map.add x y map
 
+module Dictionary =
+    let ofList l = Dictionary(List.map KeyValuePair.Create l)
+
+    let toList (d : IDictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
+
+    let copy (d : IDictionary<_,_>) = Dictionary<_, _>(d)
+
+    let copyContents (toD : IDictionary<_,_>) (fromD : IDictionary<_,_>) = Seq.iter toD.Add fromD
+
+    let tryFind (key : 'key) (d : IDictionary<'key, 'value>) =
+        let dummy = ref Unchecked.defaultof<'value>
+        if d.TryGetValue(key, dummy) then Some dummy.Value else None
+
+    let findOrApply f map x = tryFind x map |> Option.defaultWith (fun () -> f x)
+
+    let getOrInitWith (key : 'key) (d : IDictionary<'key, 'value>) (init : unit -> 'value) =
+        match tryFind key d with
+        | Some value -> value
+        | None ->
+            let value = init ()
+            d.Add(key, value)
+            value
+
 module List =
     let cons x xs = x :: xs
 
@@ -190,6 +213,14 @@ module List =
 
     let initial xs = List.take (List.length xs - 1) xs
 
+    let chunkBySecond xs =
+        let d = Dictionary<_, _>()
+        for f, s in xs do
+            match Dictionary.tryFind s d with
+            | Some fs -> d.[s] <- f::fs
+            | None -> d.Add(s, [f])
+        Dictionary.toList d
+
 module Counter =
     let empty : Map<'a, int> = Map.empty
 
@@ -224,29 +255,6 @@ module Seq =
                 yield! Seq.map (fun y -> y, x) xs
                 yield! nondiag xs
             }
-
-module Dictionary =
-    let ofList l = Dictionary(List.map KeyValuePair.Create l)
-
-    let toList (d : IDictionary<_,_>) = d |> List.ofSeq |> List.map (fun kvp -> kvp.Key, kvp.Value)
-
-    let copy (d : IDictionary<_,_>) = Dictionary<_, _>(d)
-
-    let copyContents (toD : IDictionary<_,_>) (fromD : IDictionary<_,_>) = Seq.iter toD.Add fromD
-
-    let tryFind (key : 'key) (d : IDictionary<'key, 'value>) =
-        let dummy = ref Unchecked.defaultof<'value>
-        if d.TryGetValue(key, dummy) then Some dummy.Value else None
-
-    let findOrApply f map x = tryFind x map |> Option.defaultWith (fun () -> f x)
-
-    let getOrInitWith (key : 'key) (d : IDictionary<'key, 'value>) (init : unit -> 'value) =
-        match tryFind key d with
-        | Some value -> value
-        | None ->
-            let value = init ()
-            d.Add(key, value)
-            value
 
 type path = string
 
