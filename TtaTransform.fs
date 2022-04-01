@@ -16,6 +16,9 @@ type AutomatonRecord(name : ident, init : operation, isFinal : operation, delta 
     member r.Delta = Term.apply delta
     member r.Reach = Atom.apply1 reach
     member r.Declarations = List.map (Command.declareOp >> FOLOriginalCommand) [init; isFinal; delta; reach]
+    member r.isEmpty =
+        match delta with
+        | ElementaryOperation(_, xs, _) | UserDefinedOperation(_, xs, _) -> List.length xs = 1
 
 type Automaton(r : AutomatonRecord, tr) =
     member x.Record = r
@@ -27,6 +30,9 @@ type Automaton(r : AutomatonRecord, tr) =
     member x.Declarations = r.Declarations @ tr
 
 module Automaton =
+    let isEmpty (aut: Automaton) = aut.Record.isEmpty
+    let notEmpty (aut: Automaton) = not aut.Record.isEmpty
+
     let fromSorts m stateSort name sortList =
         let initStateName = IdentGenerator.gensymp ("init_" + name)
         let isFinalName = IdentGenerator.gensymp ("isFinal_" + name)
@@ -61,6 +67,7 @@ module MetaConstructor =
     let toTerm op = if isMetaConstructor op then Operations.operationToIdent op else Term.apply0 op
 
 type private state =
+    | SInit
     | SVar of ident
     | CombinedState of operation list * state list // ``Delay'' states
     | AutomatonApply of AutomatonRecord * pattern
@@ -68,6 +75,7 @@ type private state =
 
     override x.ToString() =
         match x with
+        | SInit -> "init"
         | SVar i -> i
         | AutomatonApply(a, pat) -> $"%s{a.Name}[{pat}]"
         | CombinedState(constrs, states) ->
@@ -88,6 +96,8 @@ type private invariant =
             $"""(({freeConstrsStr}), ({abstrValues |> List.map toString |> join ", "}))"""
 
 module private Pattern =
+    let isEmpty (Pattern pat) = (pat = [])
+    let isBottoms tester (Pattern pat) = List.forall tester pat
     let collectFreeVars (Pattern pat) = Terms.collectFreeVars pat
     let collectFreeVarsCounter (Pattern pat) = Terms.collectFreeVarsCounter pat
     let linearizeVariables (Pattern pat) =
@@ -136,6 +146,7 @@ module private Pattern =
 module private State =
     let mapAutomatonApplies f =
         let rec mapPattern = function
+            | SInit -> SInit
             | SVar _ as v -> v
             | AutomatonApply(name, pattern) -> f name pattern
             | DeltaApply(name, constrs, states) -> DeltaApply(name, constrs, List.map mapPattern states)
@@ -144,7 +155,7 @@ module private State =
 
     let foldAutomatonApplies f =
         let rec fold z = function
-            | SVar _ -> z
+            | SInit | SVar _ -> z
             | AutomatonApply(name, pattern) -> f z name pattern
             | CombinedState(_, states)
             | DeltaApply(_, _, states) -> List.fold fold z states
@@ -152,6 +163,7 @@ module private State =
 
     let mapFoldAutomatonApplies f =
         let rec mapFold z = function
+            | SInit -> SInit, z
             | SVar _ as v -> v, z
             | AutomatonApply(name, pattern) -> f z name pattern
             | DeltaApply(name, heads, states) ->
@@ -181,7 +193,10 @@ module private State =
                 let states = List.product bodies |> List.map (fun pat -> AutomatonApply(name, Pattern pat))
                 let states = List.map mapChild states
                 DeltaApply(name, heads, states)
-            | None -> AutomatonApply(name, pattern)
+            | None ->
+                match pattern with
+                | Pattern(pat) ->
+                    if List.exists Term.isIdent pat then AutomatonApply(name, pattern) else SInit
         mapAutomatonApplies unfoldAutomatonApply
 
     let unfoldAutomatonApplyOnce isBottom bottomize = unfoldAutomatonApplyGeneric isBottom bottomize id
@@ -198,6 +213,7 @@ module private State =
             match Dictionary.tryFind a states2vars with
             | Some ident -> SVar ident
             | None ->
+                if Pattern.isEmpty pat then SInit else
                 let freshName = IdentGenerator.gensym ()
                 vars2states.Add(freshName, a)
                 states2vars.Add(a, freshName)
@@ -224,6 +240,7 @@ module private Invariant =
 
     let rewrite state (rewriteFromState, Invariant(rewriteToConstrs, rewriteToStates)) =
         let rec rewrite = function
+            | SInit -> SInit
             | AutomatonApply _ as a ->
                 match matchAutomatonApplyStates rewriteFromState a with
                 | Some(substConstrs, substStates) ->
@@ -408,6 +425,7 @@ type ToTTATraverser(m : int) =
         let rec constrStatesToTerm constrs states =
             x.Delay(constrsToTerms constrs, List.map State_toTerm states)
         and State_toTerm = function
+            | SInit -> baseAutomaton.Init
             | SVar name -> TIdent(name, stateSort)
             | DeltaApply(record, constrs, states) ->
                 let terms = List.map State_toTerm states
@@ -419,12 +437,13 @@ type ToTTATraverser(m : int) =
         let initDecls =
             clAFact(Equal(patternRec.Init, baseAutomaton.Init))
         let deltaDecls =
+            let r = Invariant_toTerm deltaRight
             let l =
                 let t = State_toTerm deltaLeft
                 match Term.tryCut t with
-                | Some(_, ts) -> patternRec.Delta(ts)
+                | Some(_, ts) ->
+                    if List.isEmpty ts then patternRec.Delta([r]) else patternRec.Delta(ts)
                 | None -> patternRec.Delta([t])
-            let r = Invariant_toTerm deltaRight
             clAFact(Equal(l, r))
         let finalDecls = // """Fb(freeConstrs, abstrVars) <=> Fa(abstrState)"""
             let r = baseAutomaton.IsFinal(State_toTerm finalState)
@@ -443,6 +462,7 @@ type ToTTATraverser(m : int) =
     member private x.Delay(constrs, states) =
         assert(List.forall (fun t -> Term.typeOf t = stateSort) states)
         match constrs, states with
+        | [], [] -> Term.generateVariable stateSort
         | [], [state] -> state
         | _ ->
         let constrsSorts = List.map Term.typeOf constrs
@@ -457,6 +477,7 @@ type ToTTATraverser(m : int) =
     member private x.Product terms =
         assert(List.forall (fun t -> Term.typeOf t = stateSort) terms)
         match terms with
+        | [] -> Term.generateVariable stateSort
         | [t] -> t
         | _ ->
         let n = List.length terms
@@ -477,6 +498,7 @@ type ToTTATraverser(m : int) =
     member private x.TraverseRule (rule.Rule(_, body, head)) =
         let pairHeadAndBody = List.cons
         let unpairHeadAndBody = List.uncons
+        let headIsEmpty = Atom.collectFreeVars head = []
         let atoms, patAutomata = List.unzip <| List.choose x.GenerateAtomAutomaton (pairHeadAndBody head body)
 
         let clauseName = IdentGenerator.gensymp "clause"
@@ -484,7 +506,8 @@ type ToTTATraverser(m : int) =
         let cRecord = Automaton.fromSorts m stateSort clauseName (List.map snd clauseVars)
 
         // process rule
-        let atomsVars = atoms |> List.map Atom.collectFreeVars |> List.map SortedVars.sort
+        let atomsVars = atoms |> List.map Atom.collectFreeVars |> List.map SortedVars.sort |> List.filter (List.notEmpty)
+        let emptyAutomata, patAutomata = patAutomata |> List.choose2 (fun a -> if Automaton.isEmpty a then Choice1Of2 a else Choice2Of2 a)
         let clauseVarsTerms = clauseVars |> List.map TIdent
 
         let initAxiom =
@@ -526,7 +549,10 @@ type ToTTATraverser(m : int) =
             let stateTerms = Terms.generateNVariablesOfSort (List.length patAutomata) stateSort
             let li = x.Product stateTerms
             let l = FOLAtom <| cRecord.IsFinal li
-            let rs = List.map2 (fun (r : Automaton) -> r.IsFinal >> FOLAtom) patAutomata stateTerms
+            let rs =
+                let empties = List.map (fun (r : Automaton) -> FOLAtom(r.IsFinal(Term.generateVariable stateSort))) emptyAutomata
+                let nonEmpties = List.map2 (fun (r : Automaton) -> r.IsFinal >> FOLAtom) patAutomata stateTerms
+                if headIsEmpty then empties @ nonEmpties else nonEmpties @ empties
             let rs =
                 match head with
                 | Bot -> rs
@@ -544,7 +570,9 @@ type ToTTATraverser(m : int) =
         let condition = // negation of the clause: each reachable is not final
             let qTerm = Term.generateVariable stateSort
             clARule [cRecord.Reach qTerm; cRecord.IsFinal qTerm] Bot
-        let tCommands = [initAxiom; deltaAxiom; finalAxiom; reachInit; reachDelta; condition]
+        let tCommands =
+            let common = [finalAxiom; reachInit; reachDelta; condition]
+            if List.isEmpty clauseVars then common else [initAxiom; deltaAxiom] @ common
 
         cRecord.Declarations @ tCommands
 

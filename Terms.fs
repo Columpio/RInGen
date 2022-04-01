@@ -17,10 +17,19 @@ module Term =
     let generateVariable sort = TIdent <| SortedVar.freshFromSort sort
     let generateVariableWithPrefix vs = TIdent <| SortedVar.freshFromVar vs
 
+    let isIdent = function
+        | TIdent _ -> true
+        | _ -> false
+
     let typeOf = function
         | TConst(_, typ)
         | TIdent(_, typ) -> typ
         | TApply(op, _) -> Operation.returnType op
+
+    let tName = function
+        | TConst(name, _)
+        | TIdent(name, _) -> name
+        | TApply(op, _) -> Operation.opName op
 
     let rec bind f = function
         | TIdent(name, typ)

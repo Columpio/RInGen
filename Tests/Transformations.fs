@@ -45,6 +45,29 @@ type TTATests () =
         ()
 
     [<Test>]
+    member x.evenSSPattern () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(1)
+        let natAdt = ADTSort("nat")
+        let sConstr = Operation.makeElementaryOperationFromSorts "S" [natAdt] natAdt
+        let pred = Operation.makeUserRelationFromSorts "isEven" [natAdt]
+        let xs = [TApply(sConstr, [TApply(sConstr, [TIdent("x", natAdt)])])]
+        let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
+        let decls = List.map toString automaton.Declarations
+        ()
+
+    [<Test>]
+    member x.ltZSPattern () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(1)
+        let natAdt = ADTSort("nat")
+        let zConstr = Operation.makeElementaryOperationFromSorts "Z" [] natAdt
+        let sConstr = Operation.makeElementaryOperationFromSorts "S" [natAdt] natAdt
+        let pred = Operation.makeUserRelationFromSorts "isEven" [natAdt]
+        let xs = [TApply(zConstr, []); TApply(sConstr, [TApply(sConstr, [TIdent("x", natAdt)])])]
+        let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
+        let decls = List.map toString automaton.Declarations
+        ()
+
+    [<Test>]
     member x.patternDelayNode () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
         let treeAdt = ADTSort("tree")
@@ -63,6 +86,17 @@ type TTATests () =
         let nodeConstr = Operation.makeElementaryOperationFromSorts "Node" [treeAdt; treeAdt] treeAdt
         let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
         let xs = [TApply(leafConstr, []); TApply(nodeConstr, [TIdent("x", treeAdt); TIdent("y", treeAdt)])]
+        let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
+        let decls = List.map toString automaton.Declarations
+        ()
+
+    [<Test>]
+    member x.patternLeafLeaf () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(2)
+        let treeAdt = ADTSort("tree")
+        let leafConstr =  Operation.makeElementaryOperationFromSorts "Leaf" [] treeAdt
+        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
+        let xs = [TApply(leafConstr, []); TApply(leafConstr, [])]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()

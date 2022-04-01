@@ -673,8 +673,8 @@ let toClauses (options : transformOptions) commands =
     let arrayTransformedClauses = ArrayTransformations.substituteArraySorts adtEqs pureHornClauses
     let shouldAddNatPreamble, substFreeSortClauses = SubstituteFreeSortsWithNat.transformation natSort adtEqs arrayTransformedClauses
     let clausesWithPreamble = if not alreadyAddedNatPreamble && shouldAddNatPreamble then natPreamble @ substFreeSortClauses else substFreeSortClauses
-//    let simplified = Simplify.simplify clausesWithPreamble
-    let withoutUnreach = RemoveUnreachable.removeUnreachablePredicates clausesWithPreamble
+    let simplified = Simplify.simplify clausesWithPreamble
+    let withoutUnreach = RemoveUnreachable.removeUnreachablePredicates simplified
     match SubstituteLemmas.substituteLemmas withoutUnreach with
     | Choice2Of2 substed -> Simplification.simplify (snd adtEqs) substed
     | Choice1Of2 commands ->
