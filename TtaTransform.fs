@@ -3,6 +3,11 @@ module RInGen.TtaTransform
 open System.Collections.Generic
 open FOLCommand
 
+let adtConstructorSortName = IdentGenerator.gensymp "adtConstr"
+let adtConstructorSort = ADTSort adtConstructorSortName
+let adtToConstrSort s = adtConstructorSort
+//let adtToConstrSort s = s
+
 type pattern =
      | Pattern of term list
      override x.ToString() =
@@ -34,6 +39,7 @@ module Automaton =
     let notEmpty (aut: Automaton) = not aut.Record.isEmpty
 
     let fromSorts m stateSort name sortList =
+        let sortList = List.map adtToConstrSort sortList
         let initStateName = IdentGenerator.gensymp ("init_" + name)
         let isFinalName = IdentGenerator.gensymp ("isFinal_" + name)
         let deltaName = IdentGenerator.gensymp ("delta_" + name)
@@ -256,7 +262,9 @@ module private PatternAutomatonGenerator =
     let private mkApplyNary N prefix sort init = TApply(MetaConstructor.generate prefix sort, List.init N init)
 
     let mkFullTree width height sort = //TODO: this is not general enough! works only for single sort ADTs
-        let rec iter height = if height <= 0 then Term.generateVariable sort else mkApplyNary width "f" sort (fun _ -> iter (height - 1))
+        let rec iter height =
+            if height <= 0 then Term.generateVariable (adtToConstrSort sort)
+                           else mkApplyNary width "f" (adtToConstrSort sort) (fun _ -> iter (height - 1))
         iter height
 
     let linearInstantiator width pattern =
@@ -378,13 +386,14 @@ type ToTTATraverser(m : int) =
         x.GetOrAddPatternAutomaton baseAutomaton (Pattern xs)
 
     member x.TraverseDatatype (sName, xs) =
-        let s = ADTSort sName
-        let constructors = x.getBotSymbol s :: List.map (fst3 >> Operation.opName) xs
+        let s = adtToConstrSort (ADTSort sName)
+        let bot = x.getBotSymbol s
+        let constructors = List.map (fst3 >> Operation.opName) xs
         let constrDecls = List.map (fun name -> DeclareConst(name, s)) constructors
         List.map FOLOriginalCommand (DeclareSort(sName) :: constrDecls)
 
     member private x.BottomizeTerms op ts =
-        let s = Operation.returnType op //TODO: it works only for single sorted ADTs
+        let s = adtToConstrSort (Operation.returnType op) //TODO: it works only for single sorted ADTs
         let bottom = Term.apply0 <| Operation.makeElementaryOperationFromSorts (x.getBotSymbol s) [] s
         let ts' = List.map x.BottomizeTerm ts
         let ts'' = List.replicate (m - List.length ts') bottom
@@ -501,13 +510,14 @@ type ToTTATraverser(m : int) =
         let headIsEmpty = Atom.collectFreeVars head = []
         let atoms, patAutomata = List.unzip <| List.choose x.GenerateAtomAutomaton (pairHeadAndBody head body)
 
-        let clauseName = IdentGenerator.gensymp "clause"
-        let clauseVars = Atoms.collectFreeVars atoms |> SortedVars.sort
-        let cRecord = Automaton.fromSorts m stateSort clauseName (List.map snd clauseVars)
-
         // process rule
         let atomsVars = atoms |> List.map Atom.collectFreeVars |> List.map SortedVars.sort |> List.filter (List.notEmpty)
+                        |> List.map (List.map (fun (vname, vsort) -> (vname, adtToConstrSort vsort)))
         let emptyAutomata, patAutomata = patAutomata |> List.choose2 (fun a -> if Automaton.isEmpty a then Choice1Of2 a else Choice2Of2 a)
+
+        let clauseName = IdentGenerator.gensymp "clause"
+        let clauseVars = List.concat atomsVars |> List.unique |> SortedVars.sort
+        let cRecord = Automaton.fromSorts m stateSort clauseName (List.map snd clauseVars)
         let clauseVarsTerms = clauseVars |> List.map TIdent
 
         let initAxiom =
@@ -581,6 +591,8 @@ type ToTTATraverser(m : int) =
     member private x.GetOrAddOperationAutomaton op =
         Dictionary.getOrInitWith op applications (fun () -> Automaton(Automaton.fromOperation m stateSort op, []))
 
+    member private x.GenerateBotDeclarations () =
+        botSymbols |> Dictionary.toList |> List.map (fun (s, n) -> FOLOriginalCommand(DeclareFun(n, [], s)))
     member private x.GenerateProductDeclarations () = dumpOpDictionary products
     member private x.GenerateDelayDeclarations () = dumpOpDictionary delays
 
@@ -600,17 +612,18 @@ type ToTTATraverser(m : int) =
 
     member private x.TraverseTransformedCommand = function
         | OriginalCommand o -> x.TraverseCommand o
-        | TransformedCommand rule -> x.TraverseRule rule
+        | TransformedCommand rule -> rule |> Rule.linearize |> x.TraverseRule
         | LemmaCommand _ -> __unreachable__()
 
     member x.TraverseCommands commands =
-        let header = FOLOriginalCommand(DeclareSort(stateSortName))
+        let header = List.map (DeclareSort >> FOLOriginalCommand) [stateSortName; adtConstructorSortName]
         let commands' = List.collect x.TraverseTransformedCommand commands
+        let botDecls = x.GenerateBotDeclarations ()
         let prodDecls = x.GenerateProductDeclarations ()
         let delayDecls = x.GenerateDelayDeclarations ()
         let patDecls = x.GeneratePatternDeclarations ()
         let eqDecls = x.GenerateEqDeclarations ()
-        let all = header :: eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
+        let all = header @ botDecls @ eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
         let sortDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareSort _) as s -> Choice1Of2 s | c -> Choice2Of2 c) all
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
         sortDecls @ funDecls @ rest
