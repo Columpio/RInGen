@@ -593,6 +593,8 @@ type ToTTATraverser(m : int) =
 
     member private x.GenerateBotDeclarations () =
         botSymbols |> Dictionary.toList |> List.map (fun (s, n) -> FOLOriginalCommand(DeclareFun(n, [], s)))
+    member private x.GenerateFunDeclarations () =
+        applications |> Dictionary.toList |> List.collect (fun (_, aut)-> aut.Declarations)
     member private x.GenerateProductDeclarations () = dumpOpDictionary products
     member private x.GenerateDelayDeclarations () = dumpOpDictionary delays
 
@@ -603,27 +605,26 @@ type ToTTATraverser(m : int) =
         equalities |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
 
     member private x.TraverseCommand = function
-        | DeclareFun(name, args, BoolSort) ->
-            let op = Operation.makeUserRelationFromSorts name args
-            (x.GetOrAddOperationAutomaton op).Declarations
+        | DeclareFun(_, _, BoolSort) -> []
         | DeclareDatatype dt -> x.TraverseDatatype dt
         | DeclareDatatypes dts -> List.collect x.TraverseDatatype dts
         | c -> [FOLOriginalCommand c]
 
     member private x.TraverseTransformedCommand = function
         | OriginalCommand o -> x.TraverseCommand o
-        | TransformedCommand rule -> rule |> Rule.linearize |> x.TraverseRule
+        | TransformedCommand rule -> rule |> x.TraverseRule
         | LemmaCommand _ -> __unreachable__()
 
     member x.TraverseCommands commands =
         let header = List.map (DeclareSort >> FOLOriginalCommand) [stateSortName; adtConstructorSortName]
         let commands' = List.collect x.TraverseTransformedCommand commands
         let botDecls = x.GenerateBotDeclarations ()
+        let funDecls = x.GenerateFunDeclarations ()
         let prodDecls = x.GenerateProductDeclarations ()
         let delayDecls = x.GenerateDelayDeclarations ()
         let patDecls = x.GeneratePatternDeclarations ()
         let eqDecls = x.GenerateEqDeclarations ()
-        let all = header @ botDecls @ eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
+        let all = header @ botDecls @ funDecls @ eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
         let sortDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareSort _) as s -> Choice1Of2 s | c -> Choice2Of2 c) all
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
         sortDecls @ funDecls @ rest
