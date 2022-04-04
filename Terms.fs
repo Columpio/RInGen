@@ -137,7 +137,7 @@ module Terms =
             |> List.sortWith (fun (v1, _) (v2, _) -> SortedVar.compare v1 v2)
         let newVars =
             oldVars
-            |> List.map (fun ((_, s) as v, n) -> v, SortedVars.generateNVariablesOfSort n s |> List.rev |> Array.ofList)
+            |> List.map (fun ((_, s) as v, n) -> v, v :: SortedVars.generateNVariablesOfSort (n-1) s |> List.rev |> Array.ofList)
             |> Dictionary.ofList
         let oldVarsCount = Dictionary.ofList oldVars
         let findNewVar oldV =
@@ -146,8 +146,8 @@ module Terms =
             let newVar = newVars.[oldV].[count]
             TIdent newVar
         let ts' = List.map (Term.mapVars findNewVar) ts
-        let newVars' = newVars |> Dictionary.toList |> List.collect (fun (v, newVs) -> List.map (fun v' -> v', v) <| List.ofArray newVs) |> Map.ofList
-        ts', newVars'
+        let equalVars = newVars |> Dictionary.toList |> List.map (snd >> List.ofArray)
+        ts', equalVars
 
     let instantiate instantiator = List.map (Term.instantiate instantiator)
 

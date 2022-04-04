@@ -371,7 +371,7 @@ type ToTTATraverser(m : int) =
         __notImplemented__()
 
     member private x.GetOrAddEqualityAutomaton ts =
-        let s = List.head ts |> Term.typeOf
+        let s = List.head ts |> Term.typeOf |> adtToConstrSort
         let n = List.length ts
         let baseAutomaton = Dictionary.getOrInitWith (s, n) equalities (fun () -> x.GenerateEqualityAutomaton s n)
         x.GetOrAddPatternAutomaton baseAutomaton (Pattern ts)
@@ -410,8 +410,8 @@ type ToTTATraverser(m : int) =
         | None -> false
 
     member private x.GeneratePatternAutomaton (baseAutomaton : Automaton) pattern =
-        let linearizedPattern, vars2vars = Pattern.linearizeVariables pattern
-        let newVars = Map.toList vars2vars |> List.map fst |> List.unique
+        let linearizedPattern, equalVars = Pattern.linearizeVariables pattern
+        let newVars = List.concat equalVars |> List.unique
         let instantiator = PatternAutomatonGenerator.linearInstantiator m linearizedPattern
         let A = AutomatonApply(baseAutomaton.Record, linearizedPattern)
         let patternRec, B =
@@ -612,7 +612,7 @@ type ToTTATraverser(m : int) =
 
     member private x.TraverseTransformedCommand = function
         | OriginalCommand o -> x.TraverseCommand o
-        | TransformedCommand rule -> rule |> x.TraverseRule
+        | TransformedCommand rule -> rule |> Rule.linearize |> x.TraverseRule
         | LemmaCommand _ -> __unreachable__()
 
     member x.TraverseCommands commands =
