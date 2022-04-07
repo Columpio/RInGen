@@ -173,7 +173,7 @@ type VampireSolver (options : transformOptions option) =
         match options with
         | Some options -> options.tta_transform
         | None -> false
-    let mode = if isRunOnTTATransform then "-sa fmb" else "--mode chccomp"
+    let mode = if isRunOnTTATransform then "-sa fmb -av off" else "--mode chccomp"
 
     let splitModules output =
         let reDelimiter = Regex("^(% )?[-]+$")
@@ -293,7 +293,7 @@ type VampireSolver (options : transformOptions option) =
     override x.Name = "Vampire"
     override x.BinaryName = "vampire"
     override x.BinaryOptions filename =
-        $"""{mode} --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
+        $"""{mode} --input_syntax smtlib2 --memory_limit {MEMORY_LIMIT_MB} --time_limit {SECONDS_TIMEOUT}s %s{filename}"""
 
     override x.InterpretResult error raw_output =
         let output = Environment.split raw_output
