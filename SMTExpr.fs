@@ -531,13 +531,17 @@ and Parser () as this =
 
     member private x.ParseFiniteModelDatatypes modelLines =
         let sorts = List.choose x.ParseFiniteModelDatatype modelLines
-        for sort, _ in sorts do
-            x.AddFreeSort(sort)
+        let singletonSorts = [
+            for sort, card in sorts do
+                x.AddFreeSort(sort)
+                if card = 1 then // CVC does not output representatives for cardinality 1, so we should init them manually
+                    yield sort, [env.FindOrAddQualifiedIdent("@a0", FreeSort sort)] // "@a0" is a hardcoded prefix of CVC representatives
+        ]
         let reps = $"({List.choose x.ParseRepresentative modelLines |> Environment.join})"
         lexer.SetInputStream(CharStreams.fromString(reps))
         let reps = parser.get_assertions_response().term() |> List.ofArray |> List.map x.ParseTerm |> List.choose (function Ident(v, FreeSort s) -> Some(v, s) | _ -> None)
         let sortsWithReps = List.chunkBySecond reps
-        sortsWithReps
+        singletonSorts @ sortsWithReps
 
     member x.ParseModel modelLines =
         redefine <- false

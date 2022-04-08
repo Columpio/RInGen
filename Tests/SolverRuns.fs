@@ -49,6 +49,21 @@ type SampleSolverTests () =
         x.RunTest "even.smt2" "" config
 
     [<Test>]
+    member x.test_OnCVC1sec () =
+        let config origPath outPath = $"-o {outPath} --timelimit 1 solve --solver cvc_fmf --path {origPath} -t --no-isolation"
+        x.RunTest "test.smt2" ".models" config
+
+    [<Test>]
     member x.evenTtaTest () =
         let config origPath outPath = $"-o {outPath} --timelimit 30 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
         x.RunTest "even.smt2" ".tta" config
+
+    [<Test>]
+    member x.evenSatTtaVampireTest () =
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver vampire --path {origPath} -t --no-isolation --tta-transform"
+        x.RunTest "even.smt2" ".tta_sat" config
+
+    [<Test>]
+    member x.evenUnsatTtaVampireTest () =
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver vampire --path {origPath} -t --no-isolation --tta-transform"
+        x.RunTest "even.unsat.smt2" ".tta_unsat" config
