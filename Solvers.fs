@@ -42,7 +42,7 @@ type CVCFiniteSolver () =
         let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
-        | line::rawModel when line = "sat" -> SAT(FiniteModels.parseCVC rawModel |> FiniteModel)
+        | line::rawModel when line = "sat" -> FiniteModels.SomeFiniteModel |> FiniteModel |> SAT //TODO: temporary disabled as unstable: FiniteModels.parseCVC rawModel
         | line::_ when line = "unsat" -> UNSAT ""
         | line::reason::_ when line = "unknown" && reason = "(:reason-unknown timeout)" -> SOLVER_TIMELIMIT
         | line::reason::_ when line = "unknown" -> UNKNOWN reason
