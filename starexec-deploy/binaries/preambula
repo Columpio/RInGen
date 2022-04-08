@@ -1,0 +1,19 @@
+#!/bin/bash
+
+if [ -z "$VERBOSE_MODE" ]
+then
+	VERBOSE_MODE_OPTION="--quiet"
+else
+	set -x
+	VERBOSE_MODE_OPTION=""
+fi
+
+HERE="$(pwd)"
+input="$1"
+output="$2/$(basename $1 smt2)out"
+tlimit="$STAREXEC_WALLCLOCK_LIMIT"
+publish="$(dirname "$HERE")"/publish
+export cvc=$publish/cvc
+
+$publish/RInGen --timelimit $tlimit $VERBOSE_MODE_OPTION -o "$2/" solve --solver $SOLVER_TO_BE_RUN_BY_RINGEN --path "$input" -t --no-isolation >"$output" 2>/dev/null
+cat "$output"

@@ -1,0 +1,6 @@
+#!/bin/bash
+set -x
+
+export VERBOSE_MODE=""
+export SOLVER_TO_BE_RUN_BY_RINGEN="vampire"
+./preambula "$@"
