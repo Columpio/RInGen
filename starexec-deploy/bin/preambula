@@ -15,5 +15,5 @@ tlimit="$STAREXEC_WALLCLOCK_LIMIT"
 publish="$(dirname "$HERE")"/publish
 export cvc=$publish/cvc
 
-$publish/RInGen --timelimit $tlimit $VERBOSE_MODE_OPTION -o "$2/" solve --solver $SOLVER_TO_BE_RUN_BY_RINGEN --path "$input" -t --tip --no-isolation >"$output" 2>/dev/null
+$publish/RInGen --timelimit $tlimit $VERBOSE_MODE_OPTION -o "$2/" solve --solver $SOLVER_TO_BE_RUN_BY_RINGEN --path "$input" -t --tip --tta-transform --no-isolation >"$output" 2>/dev/null
 cat "$output"

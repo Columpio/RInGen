@@ -127,7 +127,8 @@ type RCHCTransformerProgram (options) =
 type FreeSortsTransformerProgram (options) =
     inherit TransformerProgram(options)
 
-    override x.TargetPath path = $"%s{path}.FreeSorts"
+    override x.TargetPath path =
+        if options.tta_transform then $"%s{path}.tta" else $"%s{path}.FreeSorts" 
     override x.Logic = "UF"
     override x.Transform commands = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
 

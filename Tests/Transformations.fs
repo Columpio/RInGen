@@ -79,6 +79,16 @@ type TTATests () =
         ()
 
     [<Test>]
+    member x.patternNodeNode () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(2)
+        let treeAdt = ADTSort("tree")
+        let nodeConstr = Operation.makeElementaryOperationFromSorts "Node" [treeAdt; treeAdt] treeAdt
+        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
+        let xs = [TApply(nodeConstr, [TIdent("v", treeAdt); TIdent("w", treeAdt)]); TApply(nodeConstr, [TIdent("x", treeAdt); TIdent("y", treeAdt)])]
+        let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
+        let decls = List.map toString automaton.Declarations
+        ()
+    [<Test>]
     member x.patternLeafNode () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
         let treeAdt = ADTSort("tree")
