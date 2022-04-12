@@ -67,3 +67,18 @@ type SampleSolverTests () =
     member x.evenUnsatTtaVampireTest () =
         let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver vampire --path {origPath} -t --no-isolation --tta-transform"
         x.RunTest "even.unsat.smt2" ".tta_unsat" config
+
+    [<Test>]
+    member x.mod_same () =
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
+        x.RunTest "mod_same.smt2" ".tta_unsat" config
+
+    [<Test>]
+    member x.tta_ltlt () =
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
+        x.RunTest "ltlt.smt2" ".tta" config
+        
+    [<Test>]
+    member x.tta_ltlt_unsat () =
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
+        x.RunTest "ltlt_unsat.smt2" ".tta_unsat" config

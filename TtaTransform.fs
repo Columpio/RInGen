@@ -443,7 +443,7 @@ type ToTTATraverser(m : int) =
     member private x.patternDeltaAndFinals (baseAutomaton : AutomatonRecord) (patternRec : AutomatonRecord) (deltaLeft, deltaRight) (finalConstrs, finalIdents, finalState) =
         let constrsToTerms = List.map MetaConstructor.toTerm
         let rec constrStatesToTerm constrs states =
-            x.Delay(constrsToTerms constrs, List.map State_toTerm states)
+            x.Delay (constrsToTerms constrs) (List.map State_toTerm states) patternRec
         and State_toTerm = function
             | SInit -> baseAutomaton.Init
             | SVar name -> TIdent(name, stateSort)
@@ -468,7 +468,7 @@ type ToTTATraverser(m : int) =
         let finalDecls = // """Fb(freeConstrs, abstrVars) <=> Fa(abstrState)"""
             let r = baseAutomaton.IsFinal(State_toTerm finalState)
             let finalTerms = List.map (fun name -> TIdent(name, stateSort)) finalIdents
-            let l = patternRec.IsFinal(x.Delay(constrsToTerms finalConstrs, finalTerms))
+            let l = patternRec.IsFinal(x.Delay (constrsToTerms finalConstrs) finalTerms patternRec)
             clAEquivalence [l] r
         let decls = initDecls :: deltaDecls :: finalDecls :: []
         decls
@@ -479,7 +479,7 @@ type ToTTATraverser(m : int) =
         let pattern = List.map (Term.substituteWith renameMap) pattern
         Dictionary.getOrInitWith pattern patternAutomata (fun () -> x.GeneratePatternAutomaton baseAutomaton (Pattern pattern))
 
-    member private x.Delay(constrs, states) =
+    member private x.Delay constrs states patRec =
         assert(List.forall (fun t -> Term.typeOf t = stateSort) states)
         match constrs, states with
         | [], [] -> Term.generateVariable stateSort
@@ -489,9 +489,12 @@ type ToTTATraverser(m : int) =
         let n = List.length states
         let generateDelayOperation () =
             let name = IdentGenerator.gensymp "delay"
-            Operation.makeElementaryOperationFromSorts name (constrsSorts @ List.replicate n stateSort) stateSort
-
-        let op = Dictionary.getOrInitWith (constrsSorts, n) delays generateDelayOperation
+            let op = Operation.makeElementaryOperationFromSorts name (constrsSorts @ List.replicate n stateSort) stateSort
+            let axiom =
+                let r = Term.apply op ((List.map (Term.typeOf >> x.getBottom) constrs) @ (List.map (fun _ -> patRec.Init) states))
+                clAFact(equalStates patRec.Init r)
+            op, axiom
+        let op = fst (Dictionary.getOrInitWith (constrsSorts, n) delays generateDelayOperation)
         Term.apply op (constrs @ states)
 
     member private x.Product terms =
@@ -608,7 +611,8 @@ type ToTTATraverser(m : int) =
     member private x.GenerateFunDeclarations () =
         applications |> Dictionary.toList |> List.collect (fun (_, aut)-> aut.Declarations)
     member private x.GenerateProductDeclarations () = dumpOpDictionary products
-    member private x.GenerateDelayDeclarations () = dumpOpDictionary delays
+    member private x.GenerateDelayDeclarations () =
+        delays |> Dictionary.toList |> List.collect (fun (_, (op, axiom)) -> [FOLOriginalCommand(Command.declareOp op); axiom])        
 
     member private x.GeneratePatternDeclarations () =
         patternAutomata |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
