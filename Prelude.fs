@@ -43,9 +43,10 @@ module SortedVar =
     let freshFromVar ((v, s) : sorted_var) : sorted_var = IdentGenerator.gensymp v, s
 
     let compare ((v1, s1) : sorted_var) ((v2, s2) : sorted_var) =
-        let cmpSorts = Sort.compare s1 s2
+        //let cmpSorts = Sort.compare s1 s2
         // prioritize sort name in comparison
-        if cmpSorts = 0 then v1.CompareTo(v2) else cmpSorts
+        //if cmpSorts = 0 then v1.CompareTo(v2) else cmpSorts
+        v1.CompareTo(v2)
 
 module SortedVars =
     let mapFold = List.mapFold
