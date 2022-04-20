@@ -477,7 +477,7 @@ type ToTTATraverser(m : int) =
         let vars = Terms.collectFreeVars pattern |> List.sortWith SortedVar.compare
         let renameMap = List.mapi (fun i (_, s as v) -> (v, TIdent ($"x_{i}", s))) vars |> Map.ofList
         let pattern = List.map (Term.substituteWith renameMap) pattern
-        Dictionary.getOrInitWith pattern patternAutomata (fun () -> x.GeneratePatternAutomaton baseAutomaton (Pattern pattern))
+        Dictionary.getOrInitWith (baseAutomaton, pattern) patternAutomata (fun () -> x.GeneratePatternAutomaton baseAutomaton (Pattern pattern))
 
     member private x.Delay constrs states patRec =
         assert(List.forall (fun t -> Term.typeOf t = stateSort) states)

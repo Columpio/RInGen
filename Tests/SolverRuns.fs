@@ -70,7 +70,7 @@ type SampleSolverTests () =
 
     [<Test>]
     member x.mod_same () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tip --no-isolation --tta-transform"
         x.RunTest "mod_same.smt2" ".tta_unsat" config
 
     [<Test>]
