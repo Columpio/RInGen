@@ -551,7 +551,6 @@ type ToTTATraverser(m : int) =
                 let applyMask combination mask =
                     List.zip combination mask
                  |> List.filter snd
-                 |> List.rev
                  |> List.mapi (fun i (el,_) -> el * (pown m i))
                  |> List.sum
 
