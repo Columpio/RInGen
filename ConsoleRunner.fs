@@ -14,7 +14,6 @@ type TransformMode =
     | [<Hidden>] RCHCTransform
 
 type LocalTransformArguments =
-    | [<Unique; Hidden>] No_Isolation
     | [<Unique>] Tip
     | [<Unique>] Sync_terms
     | [<Unique>] Tta_transform
@@ -22,7 +21,6 @@ type LocalTransformArguments =
     interface IArgParserTemplate with
         member x.Usage =
             match x with
-            | No_Isolation -> "Perform transformation without monitoring"
             | Tip -> "Negates the query (for TIP benchmarks)"
             | Sync_terms -> "Synchronize terms of a CHC system"
             | Tta_transform -> "Apply transformation for tuple tree automata inference"
@@ -34,7 +32,7 @@ let private newTransformerProgram program mode transformOptions runSame =
             {tip=options.Contains(Tip)
              sync_terms=options.Contains(Sync_terms)
              tta_transform=options.Contains(Tta_transform)
-             child_transformer=if options.Contains(No_Isolation) then None else Some(runSame transformOptions mode)}
+             child_transformer=if options.Contains(Sync_terms) then Some(runSame transformOptions mode) else None}
         | None -> {tip=false; sync_terms=false; tta_transform=false; child_transformer=None}
     program(transformOptions) :> TransformerProgram, transformOptions
 let private modeToTransformerProgram mode =
@@ -226,7 +224,6 @@ type SelfProgramRunner (parser : ArgumentParser<_>, generalArgs, transArgs : Par
         match transArgs with
         | Some transArgs -> transArgs.GetAllResults()
         | None -> []
-    let transArgs = No_Isolation :: transArgs
     let ltaParser = ArgumentParser.Create<LocalTransformArguments>()
     let transOpts = transArgs |> ltaParser.ToParseResults |> Transform_options
     let taParser = ArgumentParser.Create<TransformArguments>()

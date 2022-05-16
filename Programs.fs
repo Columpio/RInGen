@@ -12,8 +12,7 @@ type Program () =
     abstract FileExtension : string
     default x.FileExtension = ".smt2"
 
-    abstract IsExtensionOK : string -> bool
-    default x.IsExtensionOK ext = ext = x.FileExtension
+    member private x.IsExtensionOK ext = ext = x.FileExtension
 
     static member SaveFile (dst : path) (lines : string list) =
         Directory.CreateDirectory(Path.GetDirectoryName(dst)) |> ignore
@@ -55,18 +54,12 @@ type ProgramRunner () =
     abstract BinaryOptions : path -> string
     abstract BinaryName : string
 
-    abstract HandleErrorLineReceived : string -> unit
-    abstract HandleOutputLineReceived : string -> unit
-    default x.HandleErrorLineReceived line = error.AppendLine(line) |> ignore
-    default x.HandleOutputLineReceived line = output.AppendLine(line) |> ignore
-    abstract ErrorReceived : unit -> string
-    abstract OutputReceived : unit -> string
-    default x.ErrorReceived () = error.ToString()
-    default x.OutputReceived () = output.ToString()
-    abstract ResetErrorReceiver : unit -> unit
-    abstract ResetOutputReceiver : unit -> unit
-    default x.ResetErrorReceiver () = error.Clear() |> ignore
-    default x.ResetOutputReceiver () = output.Clear() |> ignore
+    member private x.HandleErrorLineReceived(line : string) = error.AppendLine(line) |> ignore
+    member private x.HandleOutputLineReceived(line : string) = output.AppendLine(line) |> ignore
+    member private x.ErrorReceived () = error.ToString()
+    member private x.OutputReceived () = output.ToString()
+    member private x.ResetErrorReceiver () = error.Clear() |> ignore
+    member private x.ResetOutputReceiver () = output.Clear() |> ignore
 
     member private x.WorkingDirectory (filename : path) =
         if x.ShouldSearchForBinaryInEnvironment
