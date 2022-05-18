@@ -4,6 +4,7 @@ open NUnit.Framework
 open System.IO
 open System.Text.RegularExpressions
 open RInGen
+open RInGen.Solvers
 
 type IComparator =
     abstract member Compare : path -> path -> unit
@@ -71,6 +72,8 @@ type Tester<'filenameEntry> (c : IComparator) =
     abstract member GoldPath : 'filenameEntry -> path
     abstract member RealGeneratedPath : path -> path
 
+    member x.Compare = c.Compare
+
     member x.Test (fe : 'filenameEntry) config =
         let path = x.FullPath fe
         let outPath = x.OutputPath path
@@ -98,6 +101,16 @@ type FileTester (fc : FileComparator, fileFolder) =
 
     member x.RunTest name postfix config =
         x.Test (name, postfix) (fun (path, _) -> config path)
+
+    member x.RunSolver name postfix timelimit (solver : Program) =
+        let (origPath, _) as path = x.FullPath(name, postfix)
+        let outPath = x.OutputPath path
+        Options.SECONDS_TIMEOUT <- timelimit
+        match solver.Run origPath (Some outPath) with
+        | None -> Assert.Fail("Congiguration run halted with an error")
+        | Some targetPath ->
+        let gold = x.GoldPath path
+        x.Compare gold targetPath
 
 type DirectoryTester (c : DirectoryComparator, directoryFolder) =
     inherit Tester<path * string>(c)

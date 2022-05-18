@@ -11,19 +11,18 @@ type TransformMode =
     | Original
     | FreeSorts
     | Prolog
+    | TTATransform
     | [<Hidden>] RCHCTransform
 
 type LocalTransformArguments =
     | [<Unique>] Tip
     | [<Unique>] Sync_terms
-    | [<Unique>] Tta_transform
 
     interface IArgParserTemplate with
         member x.Usage =
             match x with
             | Tip -> "Negates the query (for TIP benchmarks)"
             | Sync_terms -> "Synchronize terms of a CHC system"
-            | Tta_transform -> "Apply transformation for tuple tree automata inference"
 
 let private newTransformerProgram program mode transformOptions runSame =
     let transformOptions =
@@ -31,14 +30,14 @@ let private newTransformerProgram program mode transformOptions runSame =
         | Some (options : ParseResults<_>) ->
             {tip=options.Contains(Tip)
              sync_terms=options.Contains(Sync_terms)
-             tta_transform=options.Contains(Tta_transform)
              child_transformer=if options.Contains(Sync_terms) then Some(runSame transformOptions mode) else None}
-        | None -> {tip=false; sync_terms=false; tta_transform=false; child_transformer=None}
+        | None -> {tip=false; sync_terms=false; child_transformer=None}
     program(transformOptions) :> TransformerProgram, transformOptions
 let private modeToTransformerProgram mode =
     match mode with
     | Original -> newTransformerProgram OriginalTransformerProgram
     | FreeSorts -> newTransformerProgram FreeSortsTransformerProgram
+    | TTATransform -> newTransformerProgram TTATransformerProgram
     | Prolog -> newTransformerProgram PrologTransformerProgram
     | RCHCTransform -> newTransformerProgram RCHCTransformerProgram
     <| mode
@@ -73,6 +72,7 @@ type SolverName =
     | Z3
     | Eldarica
     | CVC_FMF
+    | CVC_FMF_TTA
     | CVC_Ind
     | VeriMAP
     | Vampire
@@ -107,6 +107,7 @@ let private solverByName options = function
     | Vampire -> VampireSolver(options) :> SolverProgramRunner
     | CVC_FMF -> CVCFiniteSolver() :> SolverProgramRunner
     | RCHC -> RCHCSolver() :> SolverProgramRunner
+    | CVC_FMF_TTA -> __unreachable__()
 //    | All -> AllSolver() :> SolverProgramRunner
 
 let private solverNameToTransformMode = function
@@ -118,32 +119,26 @@ let private solverNameToTransformMode = function
     | Vampire
     | CVC_FMF -> FreeSorts
     | RCHC -> RCHCTransform
+    | CVC_FMF_TTA -> __unreachable__()
 
 let private solve_interactive (solver : SolverProgramRunner) (transformer : TransformerProgram option) (outputPath : path option) =
-    let tmpFileCounter = IdentGenerator.Counter()
-    let tmpFileName () = Path.Combine(Path.GetTempPath(), $"iteration_%d{tmpFileCounter.Count ()}.tmp")
     let tmpFileName =
-        match outputPath with
-        | Some outputDirectory when Path.EndsInDirectorySeparator(outputDirectory) ->
-            fun () -> Path.Combine(outputDirectory, Path.GetFileName(tmpFileName ()))
-        | Some path -> fun () -> path
-        | None -> tmpFileName
-        >> fun dstPath -> Path.ChangeExtension(dstPath, solver.FileExtension)
-    let performTransformation performer commands =
+        let tmpFileCounter = IdentGenerator.Counter()
+        FileSystem.createTempFile {namer=Some(fun () -> $"iteration_{tmpFileCounter.Count()}"); extension=Some(solver.FileExtension); outputDir=outputPath}
+    let transformer =
+        match transformer with
+        | Some transformer ->
+            fun commands _ dstPath -> if transformer.PerformTransform InteractiveRun commands dstPath then Some dstPath else None
+        | None -> fun _ srcPath _ -> Some srcPath
+    let performTransformation commands =
         let dstPath = tmpFileName ()
         let srcPath = Path.ChangeExtension(dstPath, $".input%s{solver.FileExtension}")
         let lines = List.map toString commands
         Program.SaveFile srcPath lines
-        performer commands srcPath dstPath
-    let runTransformation =
-        let performer commands srcPath dstPath =
-            match transformer with
-            | Some transformer -> if transformer.PerformTransform InteractiveRun commands dstPath then Some dstPath else None
-            | None -> Some srcPath
-        performTransformation performer
+        transformer commands srcPath dstPath
     let runOn commands =
         opt {
-            let! transformedPath = runTransformation commands
+            let! transformedPath = performTransformation commands
             let! path'' = solver.Run transformedPath outputPath
             print_verbose $"%s{solver.Name} run on %s{transformedPath} and the result is saved at %s{path''}"
             return ()
@@ -166,6 +161,9 @@ let private solve_interactive (solver : SolverProgramRunner) (transformer : Tran
     |> Seq.fold foldInputStream []
     |> ignore
 
+let private printSolverSuccess name runPath resultPath =
+    print_verbose $"{name} run on %s{runPath} and the result is saved at %s{resultPath}"
+
 let private solve_from_path (solver : SolverProgramRunner) (transformer : TransformerProgram option) outputPath (options : ParseResults<SolveArguments>) path =
     let path' =
         let outputPath = Option.filter Directory.Exists outputPath
@@ -178,13 +176,28 @@ let private solve_from_path (solver : SolverProgramRunner) (transformer : Transf
     match solver.Run path' outputPath with
     | None -> printfn "unknown"
     | Some path'' ->
-    print_verbose $"%s{solver.Name} run on %s{path'} and the result is saved at %s{path''}"
+    printSolverSuccess solver.Name path' path''
     if not <| options.Contains(Table) then () else
     let table_path = solver.AddResultsToTable path path' path''
     print_verbose $"Saved run result at %s{table_path}"
 
+let private runPortfolioSolver origPath outputPath =
+    let config = {tip=false; sync_terms=false; child_transformer=None}
+    let transformations = [
+        FreeSortsTransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
+        TTATransformerProgram(config), CVCFiniteSolver()
+    ]
+    let solver = PortfolioSolver(transformations)
+    match solver.Run origPath outputPath with
+    | None -> print_err_verbose $"Congiguration run halted with an error on portfolio on {origPath}"
+    | Some targetPath -> printSolverSuccess CVC_FMF_TTA origPath targetPath
+
 let private solve outputPath runSame (options : ParseResults<SolveArguments>) =
     let solver_name = options.GetResult(Solver)
+    match solver_name with
+    | CVC_FMF_TTA ->
+        runPortfolioSolver (options.GetResult(Path)) outputPath
+    | _ ->
     let transformer, opts =
         match options.TryGetResult(Transform) with
         | Some _ as transformOptions ->
@@ -255,8 +268,6 @@ type SelfProgramRunner (parser : ArgumentParser<_>, generalArgs, transArgs : Par
         Printf.eprintfn_nonempty error
         hasFinished && File.Exists(dstPath)
 
-    override x.TargetPath path = path
-
 type ExitCodes =
     | Success = 0
     | Failure = -1
@@ -267,7 +278,7 @@ let main args =
     try
         let parseResults = parser.ParseCommandLine(inputs = args, raiseOnUsage = false).GetAllResults()
         if List.contains Quiet parseResults then VERBOSITY_MODE <- QUIET_MODE
-        SECONDS_TIMEOUT <- List.tryPick (function Timelimit tl -> Some tl | _ -> None) parseResults |> Option.defaultValue 300
+        SECONDS_TIMEOUT <- List.tryPick (function Timelimit tl -> Some tl | _ -> None) parseResults |> Option.defaultValue SECONDS_TIMEOUT
         let outputPath = List.tryPick (function Output_path dir -> Some dir | _ -> None) parseResults
         let runSame transArgs mode = SelfProgramRunner(parser, parseResults, transArgs, mode) :> ProgramRunner
         match List.find (function Transform _ | Solve _ -> true | _ -> false) parseResults with

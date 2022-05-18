@@ -297,6 +297,27 @@ let walk_through_simultaneously originalDir transAndResultDirs transform =
             walk (Path.Combine(relName, subDirName)) subDir subDirs
     walk "" (Directory.CreateDirectory(originalDir)) transAndResultDirs
 
+module FileSystem =
+    let isDirectory path =
+        if File.Exists(path) then File.GetAttributes(path).HasFlag(FileAttributes.Directory)
+        else Directory.CreateDirectory(path) |> ignore; true
+
+    type tmpFileConfig = {namer: (unit -> string) option; outputDir: path option; extension: string option}
+    let createTempFile (config : tmpFileConfig) =
+        let outputDir =
+            match config.outputDir with
+            | Some outputDirectory when isDirectory outputDirectory -> outputDirectory
+            | _ -> Path.GetTempPath()
+        let outputName =
+            match config.namer with
+            | Some namer -> namer
+            | None -> fun () -> Path.GetFileNameWithoutExtension(Path.GetTempFileName())
+        let ext =
+            match config.extension with
+            | Some ext -> ext
+            | None -> "tmp"
+        fun () -> Path.Combine(outputDir, $"{outputName ()}.{ext}")
+
 module Environment =
     let split (s : string) = split System.Environment.NewLine s
     let join (xs : string list) = join System.Environment.NewLine xs

@@ -37,12 +37,14 @@ type TransformerProgram (options : transformOptions) =
 
     let tryFindExistentialClauses =
         let tryFindExistentialClauses = function
-            | FOLAssertion(qs, _) as r when Quantifiers.hasExists qs -> Some r
+            | TransformedCommand(Rule(qs, _, _) as r) when Quantifiers.hasExists qs -> Some r
             | _ -> None
         List.tryPick tryFindExistentialClauses
 
-    abstract member Transform : folCommand list -> folCommand list
-    default x.Transform commands = commands
+    abstract member Transform : transformedCommand list -> folCommand list
+    default x.Transform commands = FOLCommands.fromTransformed commands
+    abstract member PostTransform : folCommand list -> folCommand list
+    default x.PostTransform commands = commands
     abstract member CommandsToStrings : folCommand list -> string list
     default x.CommandsToStrings cs = List.map toString cs
     abstract Logic : string
@@ -72,11 +74,12 @@ type TransformerProgram (options : transformOptions) =
 //                files <- files + 1
         if isHighOrderBenchmark exprs then x.ReportTransformationProblem dstPath TRANS_HIGH_ORDER_PROBLEM $"%O{srcPath} will not be transformed as it has a mix of define-fun and declare-fun commands" else
 //        try
-            let commands = ClauseTransform.toClauses options exprs
+            let commands = if options.tip then ClauseTransform.TIPFixes.applyTIPfix exprs else exprs
+            let commands = ClauseTransform.toClauses commands
             match tryFindExistentialClauses commands with
             | Some r -> x.ReportTransformationProblem dstPath TRANS_CONTAINS_EXISTENTIALS $"Transformed %s{dstPath} contains existential subclause: %O{r}"
             | None ->
-            let transformedProgram = x.Transform commands
+            let transformedProgram = x.PostTransform(x.Transform(commands))
             let preambulizedProgram = x.Preambulize transformedProgram
             let programLines = x.CommandsToStrings preambulizedProgram
             Program.SaveFile dstPath programLines
@@ -103,7 +106,6 @@ type TransformerProgram (options : transformOptions) =
 type OriginalTransformerProgram (options) =
     inherit TransformerProgram(options)
 
-    override x.TargetPath path = $"%s{path}.Original"
     override x.Logic = "HORN"
 
 type RCHCTransformerProgram (options) =
@@ -121,21 +123,24 @@ type RCHCTransformerProgram (options) =
             | c -> c.ToString()
         List.map toString cs
 
-    override x.TargetPath path = $"%s{path}.RCHC_Transform"
     override x.Logic = "HORN"
 
 type FreeSortsTransformerProgram (options) =
     inherit TransformerProgram(options)
 
-    override x.TargetPath path =
-        if options.tta_transform then $"%s{path}.tta" else $"%s{path}.FreeSorts" 
     override x.Logic = "UF"
-    override x.Transform commands = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
+    override x.PostTransform commands = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
+
+type TTATransformerProgram (options) =
+    inherit TransformerProgram(options)
+
+    override x.Logic = "UF"
+    override x.Transform commands = TtaTransform.transform commands
+    override x.PostTransform commands = ClauseTransform.DatatypesToSorts.datatypesToSorts commands
 
 type PrologTransformerProgram (options) =
     inherit TransformerProgram(options)
 
-    override x.TargetPath path = $"%s{path}.Prolog"
     override x.Logic = "HORN"
     override x.FileExtension = ".pl"
 

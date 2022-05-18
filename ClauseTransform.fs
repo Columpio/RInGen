@@ -413,7 +413,7 @@ module private DefinitionsToDeclarations =
             | Assert e -> expressionToDeclarations assertsToQueries ctx e
             | Command c -> [OriginalCommand c]
 
-module private TIPFixes =
+module TIPFixes =
     let rec private invertMatchesInExpr = function
         | Match(e, pats) ->
             let e = invertMatchesInExpr e
@@ -662,9 +662,8 @@ module private RemoveUnreachable =
         let decls' = removeUnreachablePredicatesFromCommands remainedPredicates decls
         List.map OriginalCommand decls' @ List.map TransformedCommand rules'
 
-let toClauses (options : transformOptions) commands =
+let toClauses commands =
     let commands = filterOutSMTCommands commands
-    let commands = if options.tip then TIPFixes.applyTIPfix commands else commands
     let hornClauses = DefinitionsToDeclarations.CommandsAndClauses().TraverseOriginalCommands(commands)
     let relHornClauses = BoolAxiomatization.BoolAxiomatization().SubstituteTheory hornClauses.Clauses
     let alreadyAddedNatPreamble, natPreamble, commandsWithoutInts, natSort = IntToNat().SubstituteTheoryDelayed relHornClauses
@@ -675,9 +674,4 @@ let toClauses (options : transformOptions) commands =
     let clausesWithPreamble = if not alreadyAddedNatPreamble && shouldAddNatPreamble then natPreamble @ substFreeSortClauses else substFreeSortClauses
     let simplified = Simplify.simplify clausesWithPreamble
     let withoutUnreach = RemoveUnreachable.removeUnreachablePredicates simplified
-    match SubstituteLemmas.substituteLemmas withoutUnreach with
-    | Choice2Of2 substed -> Simplification.simplify (snd adtEqs) substed
-    | Choice1Of2 commands ->
-    let syncClauses = if options.sync_terms then Synchronization.synchronize commands else commands
-    let ttaQuery = if options.tta_transform then TtaTransform.transform syncClauses else List.map FOLCommand.fromTransformed syncClauses
-    ttaQuery
+    withoutUnreach

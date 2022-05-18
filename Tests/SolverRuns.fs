@@ -1,5 +1,8 @@
 module Tests.SolverRuns
 open NUnit.Framework
+open RInGen
+open RInGen.Transformers
+open RInGen.Solvers
 
 [<TestFixture>]
 type TIPSolverTests () =
@@ -80,10 +83,17 @@ type SampleSolverTests () =
 
     [<Test>]
     member x.fmf_with_tta_ltlt () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver FMF_WITH_TTA --path {origPath} -t"
-        x.RunTest "ltlt.smt2" ".fmf_with_tta" config
+        let config = {tip=false; sync_terms=false; child_transformer=None}
+        let transformations = [
+            FreeSortsTransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
+            TTATransformerProgram(config), CVCFiniteSolver()
+        ]
+        let ps = PortfolioSolver(transformations)
+        x.RunSolver "ltlt.smt2" ".fmf_with_tta" 3 ps
 
     [<Test>]
     member x.tta_ltlt_unsat () =
         let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tta-transform"
         x.RunTest "ltlt_unsat.smt2" ".tta_unsat" config
+    
+    

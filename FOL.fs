@@ -139,6 +139,9 @@ module FOLCommand =
         | FOLAtom Top -> None
         | _ -> Some (FOLAssertion(qs, e))
 
+module FOLCommands =
+    let fromTransformed = List.map FOLCommand.fromTransformed
+
 module Conj =
     let singleton x = Conjunction [x]
     let exponent (Conjunction cs : 'a disjunction conjunction) : 'a conjunction disjunction =

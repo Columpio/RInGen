@@ -2,8 +2,10 @@ module RInGen.Solvers
 open System.Collections.Generic
 open System.IO
 open System.Text.RegularExpressions
+open System.Threading.Tasks
 open RInGen.SolverResult
 open Programs
+open RInGen.Transformers
 
 [<AbstractClass>]
 type SolverProgramRunner () =
@@ -11,7 +13,10 @@ type SolverProgramRunner () =
 
     abstract Name : string
     abstract InterpretResult : string -> string -> SolverResult
-    override x.TargetPath(path) = $"%s{path}.%s{x.Name}"
+
+    static member PrintResult(result) =
+        if IN_EXTRA_VERBOSE_MODE () then printfn $"Solver obtained result: {result}"
+        elif IN_QUIET_MODE () then printfn $"{quietModeToString result}"
 
     member x.AddResultsToTable originalDirectory transDirectory resultsDirectory =
         let tablePath = Path.ChangeExtension(originalDirectory, ".csv")
@@ -24,8 +29,7 @@ type SolverProgramRunner () =
             let statisticsFile, hasFinished, error, output = x.RunProcessOn srcPath
             let result = if hasFinished then x.InterpretResult error output else SOLVER_TIMELIMIT
             let realResult = Statistics.report dstPath srcPath statisticsFile result
-            if IN_EXTRA_VERBOSE_MODE () then printfn $"Solver obtained result: %O{compactStatus realResult}"
-            elif IN_QUIET_MODE () then printfn $"%s{quietModeToString realResult}"
+            SolverProgramRunner.PrintResult(realResult)
             true
         with e -> print_verbose $"Exception in %s{srcPath}:\n{e}"; false
 
@@ -169,11 +173,7 @@ type private refutationSource = Axiom | Inference of string * string list
 type VampireSolver (options : transformOptions option) =
     inherit SolverProgramRunner ()
 
-    let isRunOnTTATransform =
-        match options with
-        | Some options -> options.tta_transform
-        | None -> false
-    let mode = if isRunOnTTATransform then "-sa fmb -av off" else "--mode chccomp"
+    let mode = "--mode chccomp"
 
     let splitModules output =
         let reDelimiter = Regex("^(% )?[-]+$")
@@ -304,41 +304,20 @@ type VampireSolver (options : transformOptions option) =
         | "unsat"::_ -> UNSAT ""
         | _ -> interpretResult output raw_output error
 
-//type AllSolver () =
-//    inherit IProgram()
-//    let solvers : SolverProgramRunner list = [Z3Solver(); EldaricaSolver(); CVC4IndSolver(); CVC4FiniteSolver(); VeriMAPiddtSolver(); VampireSolver()]
-//
-//    override x.Run path = for solver in solvers do solver.Run(srcPath)
-//
-//    override x.Name = "AllSolvers"
-//    override x.BinaryName = "AllSolvers"
-//    override x.BinaryOptions _ = __unreachable__()
-//    override x.InterpretResult _ _ = __unreachable__()
-//    override x.TransformClauses _ _ = __unreachable__()
-//    override x.AddResultsToTable _ _ = __notImplemented__()
-//
-//    override x.Solve filename =
-//        for solver in solvers do (solver :> ISolver).Solve(filename) |> ignore
-//        UNKNOWN "All solvers"
-//
-//    override x.GenerateClauses opts =
-//        let forceGenerateClauses (solver : SolverProgramRunner) =
-//            if IN_VERBOSE_MODE () then printfn $"Generating clauses for %s{solver.Name}"
-//            solver.GenerateClauses opts // {opts with force = false}
-//        let paths =
-//            if false //opts.force
-//                then solvers |> List.map forceGenerateClauses
-//                else solvers |> List.map (fun solver -> solver.DirectoryForTransformed opts.path)
-//        paths
-//
-//    override x.RunOnBenchmarkSet overwrite runs =
-//        let results =
-//            if overwrite
-//                then List.map2 (fun (solver : SolverProgramRunner) path -> solver.RunOnBenchmarkSet false path) solvers runs
-//                else List.map2 (fun (solver : SolverProgramRunner) path -> solver.AnswersDirectory path) solvers runs
-////        let names = solvers |> List.map (fun solver -> solver.Name)
-////        let exts = solvers |> List.map (fun solver -> solver.FileExtension)
-////        let directory = ResultTable.GenerateReadableResultTable names exts results
-////        if IN_VERBOSE_MODE () then printfn "LaTeX table: %s" <| ResultTable.GenerateLaTeXResultTable names exts results
-////        directory
-//        "" //TODO
+type PortfolioSolver(transformersAndSolvers : (TransformerProgram * SolverProgramRunner) list) =
+    inherit Program()
+
+    override x.RunOnFile _ _ = __unreachable__()
+
+    override x.Run path outputPath =
+        let inputs =
+            transformersAndSolvers
+            |> List.map (fun (transformer, solver) -> transformer.Run path outputPath, solver)
+        let task =
+            inputs
+            |> List.map (fun (input, solver) -> Task.Factory.StartNew(fun () -> Option.bind (fun input -> solver.Run input outputPath) input))
+            |> Task.WhenAny
+        let success = task.Wait(MSECONDS_TIMEOUT ())
+        if not success then None else
+        let result = task.Result.Result
+        result

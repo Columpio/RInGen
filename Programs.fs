@@ -8,7 +8,6 @@ open System.IO
 [<AbstractClass>]
 type Program () =
     abstract RunOnFile : path -> path -> bool
-    abstract TargetPath : path -> path
     abstract FileExtension : string
     default x.FileExtension = ".smt2"
 
@@ -19,27 +18,19 @@ type Program () =
         File.WriteAllLines(dst, lines)
 
     member private x.CheckedRunOnFile (path : path) path' =
+        IdentGenerator.reset ()
         if x.IsExtensionOK <| Path.GetExtension(path) then x.RunOnFile path (Path.ChangeExtension(path', x.FileExtension)) else false
 
-    member x.Run (path : path) (outputPath : path option) =
+    abstract Run : path -> path option -> path option
+    default x.Run (path : path) (outputPath : path option) =
         match () with
         | _ when File.Exists(path) ->
-            let filename' = Path.ChangeExtension(Path.GetFileName(path), $"""%s{x.TargetPath ""}%s{Path.GetExtension(path)}""")
-            let path' =
-                match outputPath with
-                | Some outputDirectory when Path.EndsInDirectorySeparator(outputDirectory) -> Path.Combine(outputDirectory, filename')
-                | Some outputPath -> outputPath
-                | None -> Path.Combine(Path.GetDirectoryName(path), filename')
+            let path' = FileSystem.createTempFile {outputDir=outputPath; extension=Some(Path.GetExtension(path)); namer=None} ()
             File.Delete(path')
             if x.CheckedRunOnFile path path' then Some path' else None
         | _ when Directory.Exists(path) ->
-            let directory' = x.TargetPath(Path.GetFileName(path))
-            let path' =
-                match outputPath with
-                | Some outputDirectory when Path.EndsInDirectorySeparator(outputDirectory) -> Path.Combine(outputDirectory, directory')
-                | Some outputPath -> failwith_verbose $"Trying to write directory to the file $s{outputPath}"
-                | None -> Path.Combine(Path.GetDirectoryName(path), directory')
-            walk_through_copy path path' (fun path path' -> IdentGenerator.reset (); x.CheckedRunOnFile path path' |> ignore)
+            let path' = FileSystem.createTempFile {outputDir=outputPath; extension=None; namer=None} ()
+            walk_through_copy path path' (fun path path' -> x.CheckedRunOnFile path path' |> ignore)
             Some path'
         | _ -> failwith_verbose $"There is no such file or directory: %s{path}"
 
@@ -105,7 +96,7 @@ type ProgramRunner () =
         let child_solver = Process.GetProcesses() |> List.ofArray |> List.filter isChildProcess |> List.tryHead
 
         let hasFinished = p.WaitForExit(MSECONDS_TIMEOUT ())
-        if hasFinished then () else // p.WaitForExit() else
+        if hasFinished then p.WaitForExit() else
             try match child_solver with
                 | Some child_solver -> child_solver.Kill(true)
                 | _ -> p.Kill(true)
@@ -115,6 +106,6 @@ type ProgramRunner () =
         let output = x.OutputReceived().Trim()
         statisticsFile, hasFinished, error, output
 
-type transformOptions = {tip: bool; sync_terms: bool; tta_transform: bool; child_transformer: ProgramRunner option}
+type transformOptions = {tip: bool; sync_terms: bool; child_transformer: ProgramRunner option}
 type solvingOptions = {keep_exists: bool; table: bool}
 type transformContext = {commands: transformedCommand list; diseqs: Map<sort, operation>}
