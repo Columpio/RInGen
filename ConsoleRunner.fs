@@ -181,8 +181,8 @@ let private solve_from_path (solver : SolverProgramRunner) (transformer : Transf
     let table_path = solver.AddResultsToTable path path' path''
     print_verbose $"Saved run result at %s{table_path}"
 
-let private runPortfolioSolver origPath outputPath =
-    let config = {tip=false; sync_terms=false; child_transformer=None}
+let private runPortfolioSolver tipFlag origPath outputPath =
+    let config = {tip=tipFlag; sync_terms=false; child_transformer=None}
     let transformations = [
         FreeSortsTransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
         TTATransformerProgram(config), CVCFiniteSolver()
@@ -196,7 +196,11 @@ let private solve outputPath runSame (options : ParseResults<SolveArguments>) =
     let solver_name = options.GetResult(Solver)
     match solver_name with
     | CVC_FMF_TTA ->
-        runPortfolioSolver (options.GetResult(Path)) outputPath
+        let tipFlag =
+            match options.TryGetResult(Transform) with
+            | Some (options : ParseResults<_>) -> options.Contains(Tip)
+            | _ -> false
+        runPortfolioSolver tipFlag (options.GetResult(Path)) outputPath
     | _ ->
     let transformer, opts =
         match options.TryGetResult(Transform) with
