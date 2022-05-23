@@ -1,5 +1,6 @@
 [<AutoOpen>]
 module Tests.Testers
+open System
 open NUnit.Framework
 open System.IO
 open System.Text.RegularExpressions
@@ -16,7 +17,11 @@ type FileComparator () =
     interface IComparator with
         member x.Compare truthFile candidateFile =
             if not <| File.Exists(candidateFile) then Assert.Fail($"{candidateFile} does not exist so cannot compare it with {truthFile}")
-            elif not <| File.Exists(truthFile) then Assert.Fail($"{truthFile} does not exist so cannot compare it with {candidateFile}")
+            elif not <| File.Exists(truthFile) then
+                let content = File.ReadAllText(candidateFile)
+                Console.WriteLine("\nThe output is:")
+                Console.Write(content)
+                Assert.Fail($"{truthFile} does not exist so cannot compare it with {candidateFile}")
             else x.CompareContents truthFile candidateFile
 
 type FileTransformationComparator () =

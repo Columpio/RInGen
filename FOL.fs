@@ -122,6 +122,10 @@ module FOLCommand =
        let freeVars = Atoms.collectFreeVars (head :: body)
        aequivalence freeVars (FOL.folAnd <| List.map FOLAtom body) (FOLAtom head)
 
+    let clAxor body head =
+       let freeVars = Atoms.collectFreeVars (head :: body)
+       aequivalence freeVars (FOL.folAnd <| List.map FOLAtom body) (FOL.folNot <| FOLAtom head)
+
     let clAEquivalenceFromFOL body head =
        let freeVars = FOL.collectFreeVarsOfList (head :: body)
        aequivalence freeVars (FOL.folAnd body) head

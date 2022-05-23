@@ -371,6 +371,22 @@ type ToTTATraverser(m : int) =
 
     member private x.GenerateDisqualityAutomaton s =
         __notImplemented__()
+//        let n = 2
+//        let eqAutomaton = Dictionary.getOrInitWith (s, n) equalities (fun () -> x.GenerateEqualityAutomaton s n)
+//        let diseqRelName = x.getDiseqRelName s
+//        let diseqRec = Automaton.fromSorts m stateSort diseqRelName (List.replicate n s)
+//        let initAxiom = clAFact(equalStates diseqRec.Init eqAutomaton.Init)
+//        let deltaAxiom =
+//            let qTerms = Terms.generateNVariablesOfSort (pown m n) stateSort
+//            let constrs = Terms.generateNVariablesOfSort n s
+//            let args = constrs @ qTerms
+//            clAFact (equalStates (diseqRec.Delta args) (eqAutomaton.Delta args))
+//        let isFinalAxiom =
+//            let q = Term.generateVariable stateSort
+//            let l = [diseqRec.IsFinal q]
+//            let r = eqAutomaton.IsFinal q
+//            clAxor l r
+//        Automaton(diseqRec, [initAxiom; deltaAxiom; isFinalAxiom])
 
     member private x.GetOrAddEqualityAutomaton ts =
         let s = List.head ts |> Term.typeOf |> adtToConstrSort
@@ -379,7 +395,7 @@ type ToTTATraverser(m : int) =
         x.GetOrAddPatternAutomaton baseAutomaton (Pattern ts)
 
     member private x.GetOrAddDisequalityAutomaton y z =
-        let s = Term.typeOf y
+        let s = adtToConstrSort (Term.typeOf y)
         let baseAutomaton = Dictionary.getOrInitWith s disequalities (fun () -> x.GenerateDisqualityAutomaton s)
         x.GetOrAddPatternAutomaton baseAutomaton (Pattern [y; z])
 
@@ -618,6 +634,8 @@ type ToTTATraverser(m : int) =
 
     member private x.GenerateEqDeclarations () =
         equalities |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
+    member private x.GenerateDiseqDeclarations () =
+        disequalities |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
 
     member private x.TraverseCommand = function
         | DeclareFun(_, _, BoolSort) -> []
@@ -628,6 +646,7 @@ type ToTTATraverser(m : int) =
     member private x.TraverseTransformedCommand = function
         | OriginalCommand o -> x.TraverseCommand o
         | TransformedCommand rule -> rule |> Rule.linearize |> x.TraverseRule
+//        | TransformedCommand rule -> rule |> Rule.normalize |> Rule.linearize |> x.TraverseRule
         | LemmaCommand _ -> __unreachable__()
 
     member x.TraverseCommands commands =
@@ -638,7 +657,7 @@ type ToTTATraverser(m : int) =
         let prodDecls = x.GenerateProductDeclarations ()
         let delayDecls = x.GenerateDelayDeclarations ()
         let patDecls = x.GeneratePatternDeclarations ()
-        let eqDecls = x.GenerateEqDeclarations ()
+        let eqDecls = x.GenerateEqDeclarations () @ x.GenerateDiseqDeclarations ()
         let all = header @ botDecls @ funDecls @ eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
         let sortDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareSort _) as s -> Choice1Of2 s | c -> Choice2Of2 c) all
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest

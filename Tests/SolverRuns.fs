@@ -93,7 +93,15 @@ type SampleSolverTests () =
 
     [<Test>]
     member x.tta_ltlt_unsat () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tta-transform"
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
         x.RunTest "ltlt_unsat.smt2" ".tta_unsat" config
-    
-    
+        
+    [<Test>]
+    member x.tta_mccarthy () =
+        let config origPath outPath = $"-o {outPath} --timelimit 600 solve --solver cvc_fmf --path {origPath} -t --tip --no-isolation --tta-transform"
+        x.RunTest "mccarthy91_M2.smt2" ".tta" config
+
+    [<Test>]
+    member x.tta_prop20 () =
+        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tip --no-isolation --tta-transform"
+        x.RunTest "prop_20.smt2" ".tta" config
