@@ -82,7 +82,9 @@ type Tester<'filenameEntry> (c : IComparator) =
     member x.Test (fe : 'filenameEntry) config =
         let path = x.FullPath fe
         let outPath = x.OutputPath path
-        Assert.Zero(ConsoleRunner.main(Regex("\s+").Split(config path outPath)), "Congiguration run halted with an error")
+        let runCommand = config path outPath
+        printfn $"TEST run with: ringen {runCommand}"
+        Assert.Zero(ConsoleRunner.main(Regex("\s+").Split(runCommand)), "Congiguration run halted with an error")
         let targetPath = x.RealGeneratedPath outPath
         let gold = x.GoldPath path
         c.Compare gold targetPath
