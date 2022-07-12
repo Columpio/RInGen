@@ -42,7 +42,10 @@ type CVCFiniteSolver () =
     override x.BinaryOptions filename = $"--finite-model-find --produce-models --tlimit=%d{MSECONDS_TIMEOUT ()} %s{filename}"
 
     override x.InterpretResult error raw_output =
-        if error <> "" then ERROR(error) else
+        match error with
+        | _ when error.EndsWith("interrupted by timeout.") -> SOLVER_TIMELIMIT
+        | _ when error <> "" -> ERROR(error)
+        | _ ->
         let output = Environment.split raw_output
         match output with
         | line::_ when line.StartsWith("(error ") -> ERROR(raw_output)
@@ -317,7 +320,7 @@ type PortfolioSolver(transformersAndSolvers : (TransformerProgram * SolverProgra
             inputs
             |> List.map (fun (input, solver) -> Task.Factory.StartNew(fun () -> Option.bind (fun input -> solver.Run input outputPath) input))
             |> Task.WhenAny
-        let success = task.Wait(MSECONDS_TIMEOUT ())
+        let success = task.Wait(MSECONDS_TIMEOUT_WITH_DELAY ())
         if not success then None else
         let result = task.Result.Result
         result

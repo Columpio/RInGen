@@ -6,6 +6,7 @@ open System.IO
 open System.Text.RegularExpressions
 open RInGen
 open RInGen.Solvers
+open RInGen.Transformers
 
 type IComparator =
     abstract member Compare : path -> path -> unit
@@ -83,7 +84,7 @@ type Tester<'filenameEntry> (c : IComparator) =
         let path = x.FullPath fe
         let outPath = x.OutputPath path
         let runCommand = config path outPath
-        printfn $"TEST run with: ringen {runCommand}"
+        print_extra_verbose $"TEST run with: ringen {runCommand}"
         Assert.Zero(ConsoleRunner.main(Regex("\s+").Split(runCommand)), "Congiguration run halted with an error")
         let targetPath = x.RealGeneratedPath outPath
         let gold = x.GoldPath path
@@ -114,10 +115,28 @@ type FileTester (fc : FileComparator, fileFolder) =
         let outPath = x.OutputPath path
         Options.SECONDS_TIMEOUT <- timelimit
         match solver.Run origPath (Some outPath) with
-        | None -> Assert.Fail("Congiguration run halted with an error")
+        | None -> Assert.Fail("Configuration run halted with an error")
         | Some targetPath ->
         let gold = x.GoldPath path
         x.Compare gold targetPath
+
+    member private x.RunTTAPortfolioWithConfigs name postfix timelimit configs =
+        let config = {tip=false; sync_terms=false; child_transformer=None}
+        let ps = PortfolioSolver(configs config)
+        x.RunSolver name postfix timelimit ps
+
+    member x.RunTTAAlone name postfix timelimit =
+        let transformations config = [
+            TTATransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
+        ]
+        x.RunTTAPortfolioWithConfigs name postfix timelimit transformations
+
+    member x.RunTTAPortfolio name postfix timelimit =
+        let transformations config = [
+            FreeSortsTransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
+            TTATransformerProgram(config), CVCFiniteSolver()
+        ]
+        x.RunTTAPortfolioWithConfigs name postfix timelimit transformations
 
 type DirectoryTester (c : DirectoryComparator, directoryFolder) =
     inherit Tester<path * string>(c)

@@ -83,13 +83,15 @@ type SampleSolverTests () =
 
     [<Test>]
     member x.fmf_with_tta_ltlt () =
-        let config = {tip=false; sync_terms=false; child_transformer=None}
-        let transformations = [
-            FreeSortsTransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
-            TTATransformerProgram(config), CVCFiniteSolver()
-        ]
-        let ps = PortfolioSolver(transformations)
-        x.RunSolver "ltlt.smt2" ".fmf_with_tta" 3 ps
+        x.RunTTAPortfolio "ltlt.smt2" ".fmf_with_tta" 3
+
+    [<Test>]
+    member x.only_tta_ltlt () =
+        x.RunTTAAlone "ltlt.smt2" ".only_tta" 3
+
+    [<Test>]
+    member x.only_tta_sublist () =
+        x.RunTTAAlone "sublist.smt2" ".only_tta" 3
 
     [<Test>]
     member x.tta_ltlt_unsat () =
