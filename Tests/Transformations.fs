@@ -31,15 +31,35 @@ type TIPTests () =
         let config origPath outPath = $"-o {outPath} transform --mode original {origPath} -t --tip"
         x.RunTest name config
 
+module private PatternConstructor =
+    let constructor = Operation.makeElementaryOperationFromSorts
+    let zeroaryTerm name sort = Term.apply0 <| constructor name [] sort
+    let unaryConstr name argSort retSort = Term.apply1 <| constructor name [argSort] retSort
+    let binaryConstr name argSort1 argSort2 retSort =
+        Term.apply2 <| constructor name [argSort1; argSort2] retSort
+
+    let predicate name argSorts = Operation.makeUserRelationFromSorts name argSorts
+
+    let nat = ADTSort("nat")
+    let Z = zeroaryTerm "Z" nat
+    let S = unaryConstr "S" nat nat
+
+    let tree = ADTSort("tree")
+    let leaf = zeroaryTerm "Leaf" tree
+    let node = binaryConstr "Node" tree tree tree
+
+    let nNat = TIdent("n", nat)
+    let xTree, yTree, zTree = TIdent("x", tree), TIdent("y", tree), TIdent("z", tree)
+    let vTree, wTree = TIdent("v", tree), TIdent("w", tree)
+
+open PatternConstructor
 [<TestFixture>]
 type TTATests () =
     [<Test>]
     member x.evenEmptyPattern () =
         let ttaTraverser = TtaTransform.ToTTATraverser(1)
-        let natAdt = ADTSort("nat")
-        let zConstr = Operation.makeElementaryOperationFromSorts "Z" [] natAdt
-        let pred = Operation.makeUserRelationFromSorts "isEven" [natAdt]
-        let xs = [TApply(zConstr, [])]
+        let pred = predicate "isEven" [nat]
+        let xs = [Z]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
@@ -47,10 +67,8 @@ type TTATests () =
     [<Test>]
     member x.evenSSPattern () =
         let ttaTraverser = TtaTransform.ToTTATraverser(1)
-        let natAdt = ADTSort("nat")
-        let sConstr = Operation.makeElementaryOperationFromSorts "S" [natAdt] natAdt
-        let pred = Operation.makeUserRelationFromSorts "isEven" [natAdt]
-        let xs = [TApply(sConstr, [TApply(sConstr, [TIdent("x", natAdt)])])]
+        let pred = predicate "isEven" [nat]
+        let xs = [S (S nNat)]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
@@ -58,11 +76,8 @@ type TTATests () =
     [<Test>]
     member x.ltZSPattern () =
         let ttaTraverser = TtaTransform.ToTTATraverser(1)
-        let natAdt = ADTSort("nat")
-        let zConstr = Operation.makeElementaryOperationFromSorts "Z" [] natAdt
-        let sConstr = Operation.makeElementaryOperationFromSorts "S" [natAdt] natAdt
-        let pred = Operation.makeUserRelationFromSorts "isEven" [natAdt]
-        let xs = [TApply(zConstr, []); TApply(sConstr, [TApply(sConstr, [TIdent("x", natAdt)])])]
+        let pred = predicate "isEven" [nat]
+        let xs = [Z; S (S nNat)]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
@@ -70,10 +85,8 @@ type TTATests () =
     [<Test>]
     member x.patternDelayNode () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
-        let treeAdt = ADTSort("tree")
-        let nodeConstr = Operation.makeElementaryOperationFromSorts "Node" [treeAdt; treeAdt] treeAdt
-        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
-        let xs = [TIdent("x", treeAdt); TApply(nodeConstr, [TIdent("y", treeAdt); TIdent("z", treeAdt)])]
+        let pred = predicate "ltlefttree" [tree; tree]
+        let xs = [xTree; node yTree zTree]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
@@ -81,21 +94,16 @@ type TTATests () =
     [<Test>]
     member x.patternNodeNode () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
-        let treeAdt = ADTSort("tree")
-        let nodeConstr = Operation.makeElementaryOperationFromSorts "Node" [treeAdt; treeAdt] treeAdt
-        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
-        let xs = [TApply(nodeConstr, [TIdent("v", treeAdt); TIdent("w", treeAdt)]); TApply(nodeConstr, [TIdent("x", treeAdt); TIdent("y", treeAdt)])]
+        let pred = predicate "ltlefttree" [tree; tree]
+        let xs = [node vTree wTree; node xTree yTree]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
     [<Test>]
     member x.patternLeafNode () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
-        let treeAdt = ADTSort("tree")
-        let leafConstr =  Operation.makeElementaryOperationFromSorts "Leaf" [] treeAdt
-        let nodeConstr = Operation.makeElementaryOperationFromSorts "Node" [treeAdt; treeAdt] treeAdt
-        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
-        let xs = [TApply(leafConstr, []); TApply(nodeConstr, [TIdent("x", treeAdt); TIdent("y", treeAdt)])]
+        let pred = predicate "ltlefttree" [tree; tree]
+        let xs = [leaf; node xTree yTree]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
@@ -103,10 +111,8 @@ type TTATests () =
     [<Test>]
     member x.patternLeafLeaf () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
-        let treeAdt = ADTSort("tree")
-        let leafConstr =  Operation.makeElementaryOperationFromSorts "Leaf" [] treeAdt
-        let pred = Operation.makeUserRelationFromSorts "ltlefttree" [treeAdt; treeAdt]
-        let xs = [TApply(leafConstr, []); TApply(leafConstr, [])]
+        let pred = predicate "ltlefttree" [tree; tree]
+        let xs = [leaf; leaf]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()

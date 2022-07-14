@@ -11,7 +11,7 @@ type Program () =
     abstract FileExtension : string
     default x.FileExtension = ".smt2"
 
-    member private x.IsExtensionOK ext = ext = x.FileExtension
+    member private x.IsExtensionOK ext = ext = ".smt2"
 
     static member SaveFile (dst : path) (lines : string list) =
         Directory.CreateDirectory(Path.GetDirectoryName(dst)) |> ignore
@@ -19,7 +19,10 @@ type Program () =
 
     member private x.CheckedRunOnFile (path : path) path' =
         IdentGenerator.reset ()
-        if x.IsExtensionOK <| Path.GetExtension(path) then x.RunOnFile path (Path.ChangeExtension(path', x.FileExtension)) else false
+        if x.IsExtensionOK <| Path.GetExtension(path) then
+            let path' = Path.ChangeExtension(path', x.FileExtension)
+            if x.RunOnFile path path' then Some path' else None
+        else None
 
     abstract Run : path -> path option -> path option
     default x.Run (path : path) (outputPath : path option) =
@@ -27,7 +30,7 @@ type Program () =
         | _ when File.Exists(path) ->
             let path' = FileSystem.createTempFile {outputDir=outputPath; extension=Some(Path.GetExtension(path)); namer=None} ()
             File.Delete(path')
-            if x.CheckedRunOnFile path path' then Some path' else None
+            x.CheckedRunOnFile path path'
         | _ when Directory.Exists(path) ->
             let path' = FileSystem.createTempFile {outputDir=outputPath; extension=None; namer=None} ()
             walk_through_copy path path' (fun path path' -> x.CheckedRunOnFile path path' |> ignore)
