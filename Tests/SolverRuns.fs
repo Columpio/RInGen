@@ -67,8 +67,7 @@ type SampleSolverTests () =
 
     [<Test>]
     member x.mod_same () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tip --tta-transform"
-        x.RunTTAAloneCVC "mod_same.smt2" ".tta_unsat"
+        x.RunTTAAloneCVCTIP "mod_same.smt2" ".tta_unsat" 10
 
     [<Test>]
     member x.tta_ltlt () =
@@ -92,10 +91,8 @@ type SampleSolverTests () =
         
     [<Test>]
     member x.tta_mccarthy () =
-        let config origPath outPath = $"-o {outPath} --timelimit 600 solve --solver cvc_fmf --path {origPath} -t --tip --no-isolation --tta-transform"
-        x.RunTTAAloneCVC "mccarthy91_M2.smt2" ".tta" 600
+        x.RunTTAAloneCVCTIP "mccarthy91_M2.smt2" ".tta" 600
 
     [<Test>]
     member x.tta_prop20 () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tip --no-isolation --tta-transform"
-        x.RunTTAAloneCVC "prop_20.smt2" ".tta" 10
+        x.RunTTAAloneCVCTIP "prop_20.smt2" ".tta" 10

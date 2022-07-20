@@ -122,29 +122,37 @@ type FileTester (fc : FileComparator, fileFolder) =
         let gold = x.GoldPath path
         x.Compare gold targetPath
 
-    member private x.RunTTAPortfolioWithConfigs name postfix timelimit configs =
-        let config = {tip=false; sync_terms=false; child_transformer=None}
+    member private x.RunTTAPortfolioWithConfigs name postfix timelimit tip configs =
+        let config = {tip=tip; sync_terms=false; child_transformer=None}
         let ps = PortfolioSolver(configs config)
         x.RunSolver name postfix timelimit ps
 
-    member x.RunTTAAloneCVC name postfix timelimit =
-        x.RunTTAAloneWith name postfix timelimit (CVCFiniteSolver() :> SolverProgramRunner)
+    member private x.RunTTAAloneCVCWithTip name postfix timelimit tip =
+        x.RunTTAAloneWith name postfix timelimit tip (CVCFiniteSolver() :> SolverProgramRunner)
 
-    member x.RunTTAAloneVampire name postfix timelimit =
-        x.RunTTAAloneWith name postfix timelimit (VampireSolver() :> SolverProgramRunner)
+    member x.RunTTAAloneCVC name postfix timelimit = x.RunTTAAloneCVCWithTip name postfix timelimit false
+    member x.RunTTAAloneCVCTIP name postfix timelimit = x.RunTTAAloneCVCWithTip name postfix timelimit true
 
-    member x.RunTTAAloneWith name postfix timelimit solver =
+    member private x.RunTTAAloneVampireWithTip name postfix timelimit tip =
+        x.RunTTAAloneWith name postfix timelimit tip (VampireSolver() :> SolverProgramRunner)
+
+    member x.RunTTAAloneVampire name postfix timelimit = x.RunTTAAloneVampireWithTip name postfix timelimit false
+    member x.RunTTAAloneVampireTIP name postfix timelimit = x.RunTTAAloneVampireWithTip name postfix timelimit true
+
+    member private x.RunTTAAloneWith name postfix timelimit tip solver =
         let transformations config = [
             TTATransformerProgram(config) :> TransformerProgram, solver
         ]
-        x.RunTTAPortfolioWithConfigs name postfix timelimit transformations
+        x.RunTTAPortfolioWithConfigs name postfix timelimit tip transformations
 
-    member x.RunTTAPortfolio name postfix timelimit =
+    member private x.RunTTAPortfolioWithTip name postfix timelimit tip =
         let transformations config = [
             FreeSortsTransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
             TTATransformerProgram(config), CVCFiniteSolver()
         ]
-        x.RunTTAPortfolioWithConfigs name postfix timelimit transformations
+        x.RunTTAPortfolioWithConfigs name postfix timelimit tip transformations
+
+    member x.RunTTAPortfolio name postfix timelimit = x.RunTTAPortfolioWithTip name postfix timelimit false
 
 type DirectoryTester (c : DirectoryComparator, directoryFolder) =
     inherit Tester<path * string>(c)

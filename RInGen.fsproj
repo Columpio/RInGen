@@ -46,8 +46,4 @@
         <Compile Include="Solvers.fs" />
         <Compile Include="ConsoleRunner.fs" />
     </ItemGroup>
-
-    <ItemGroup>
-      <ProjectReference Include="SMTLIB2\SMTLIB2.fsproj" />
-    </ItemGroup>
 </Project>
