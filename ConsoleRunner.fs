@@ -4,6 +4,7 @@ open System
 open RInGen.Programs
 open RInGen.Transformers
 open RInGen.Solvers
+open SMTLIB2
 open Argu
 open System.IO
 
@@ -144,7 +145,7 @@ let private solve_interactive (solver : SolverProgramRunner) (transformer : Tran
             return ()
         } |> Option.defaultWith (fun () -> print_verbose "unknown")
 
-    let parser = SMTExpr.Parser()
+    let parser = Parser.Parser()
     let prompt = if IN_QUIET_MODE () then fun () -> () else fun () -> printf "smt2> "
     let foldInputStream commands = function
         | Command CheckSat -> runOn (List.rev commands); commands

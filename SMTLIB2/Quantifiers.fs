@@ -1,5 +1,5 @@
 [<AutoOpen>]
-module RInGen.Quantifiers
+module SMTLIB2.Quantifiers
 
 module Quantifier =
     let negate = function

@@ -13,35 +13,18 @@
     <ItemGroup>
         <PackageReference Include="Argu" Version="6.1.1" />
         <PackageReference Include="CsvHelper" Version="15.0.5" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.1.0" />
-        <PackageReference Include="NUnit" Version="3.13.2" />
-        <PackageReference Include="NUnit3TestAdapter" Version="4.2.1" />
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="SMTLIB2Parser\SMTLIB2Parser.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <Content Include="samples\**\*" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <Compile Include="IdentGenerator.fs" />
-        <Compile Include="FSharpExtensions.fs" />
         <Compile Include="Prelude.fs" />
         <Compile Include="Terms.fs" />
         <Compile Include="Atoms.fs" />
-        <Compile Include="Quantifiers.fs" />
         <Compile Include="FOL.fs" />
         <Compile Include="Rule.fs" />
-        <Compile Include="Operations.fs" />
         <Compile Include="Options.fs" />
         <Compile Include="Programs.fs" />
-        <Compile Include="ADTExtensions.fs" />
-        <Compile Include="Context.fs" />
-        <Compile Include="SMTExpr.fs" />
         <Compile Include="Relativization.fs" />
+        <Compile Include="Operations.fs" />
         <Compile Include="SubstituteOperations.fs" />
         <Compile Include="BoolAxiomatization.fs" />
         <Compile Include="IntToNat.fs" />
@@ -53,6 +36,8 @@
         <Compile Include="FiniteModels.fs" />
         <Compile Include="SolverResult.fs" />
         <Compile Include="TtaTransform.fs" />
+        <Compile Include="ADTExtensions.fs" />
+        <Compile Include="Context.fs" />
         <Compile Include="ClauseTransform.fs" />
         <Compile Include="PrintToProlog.fs" />
         <Compile Include="Transformers.fs" />
@@ -60,5 +45,9 @@
         <Compile Include="ResultTable.fs" />
         <Compile Include="Solvers.fs" />
         <Compile Include="ConsoleRunner.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="SMTLIB2\SMTLIB2.fsproj" />
     </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-module RInGen.IdentGenerator
+module SMTLIB2.IdentGenerator
 
 open System.Collections.Generic
 open System.Text.RegularExpressions
@@ -33,7 +33,6 @@ type IdentGenerator() =
             symbols.[prefixStrLow] <- counter.Value + 1
         else
             symbols.Add(prefixStrLow, 1)
-        if prefixStr = "isZ" then ()
         $"%s{prefixStr}_%d{counter.Value}"
 
 let private idgen = IdentGenerator()

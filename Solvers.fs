@@ -1,4 +1,5 @@
 module RInGen.Solvers
+open SMTLIB2
 open System.Collections.Generic
 open System.IO
 open System.Text.RegularExpressions

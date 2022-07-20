@@ -1,4 +1,5 @@
 module RInGen.Transformers
+open SMTLIB2
 open System.IO
 open Programs
 open RInGen
@@ -64,7 +65,7 @@ type TransformerProgram (options : transformOptions) =
         x.ReportTransformationProblem dstPath TRANS_TIMELIMIT $"Transformation of %s{srcPath} halted due to a timelimit"
 
     member private x.ParseAndTransform (srcPath : string) dstPath =
-        let exprs = SMTExpr.Parser().ParseFile srcPath
+        let exprs = Parser.Parser().ParseFile srcPath
         x.PerformTransform (PathRun srcPath) exprs dstPath
 
     member x.PerformTransform (srcPath : RunConfig) exprs dstPath =

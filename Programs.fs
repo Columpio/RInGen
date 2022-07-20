@@ -4,6 +4,7 @@ open System
 open System.Diagnostics
 open System.Text
 open System.IO
+open SMTLIB2
 
 [<AbstractClass>]
 type Program () =

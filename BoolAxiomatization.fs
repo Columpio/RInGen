@@ -1,10 +1,10 @@
 module RInGen.BoolAxiomatization
 open RInGen.SubstituteOperations
-open IdentGenerator
+open SMTLIB2
 
 type BoolAxiomatization () =
     inherit TheorySubstitutor ()
-    let new_bool_sort_name = gensymp "Bool"
+    let new_bool_sort_name = IdentGenerator.gensymp "Bool"
     let new_bool_sort = ADTSort new_bool_sort_name
 
     let (false_constr, _, _) as falseEntry = ADTExtensions.generateConstructorAndTesterOps "false" [] new_bool_sort

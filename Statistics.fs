@@ -1,4 +1,5 @@
 module RInGen.Statistics
+open SMTLIB2
 open System.IO
 open System.Text.RegularExpressions
 open RInGen.SolverResult

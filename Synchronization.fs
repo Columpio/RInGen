@@ -1,6 +1,7 @@
 module RInGen.Synchronization
 open System.Collections.Generic
-open RInGen.IdentGenerator
+open SMTLIB2
+open SMTLIB2.IdentGenerator
 
 type private POB = term list list
 

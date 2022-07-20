@@ -1,6 +1,7 @@
 module RInGen.Arrays
 open RInGen.Operations
-open RInGen.IdentGenerator
+open SMTLIB2
+open SMTLIB2.IdentGenerator
 open Rule
 
 module private V =

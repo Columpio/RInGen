@@ -1,6 +1,5 @@
 module RInGen.FiniteModels
-open Antlr4.Runtime
-open RInGen.SMTExpr
+open SMTLIB2
 
 type finModel =
     | SomeFiniteModel
@@ -14,6 +13,6 @@ type finModel =
             Environment.join (sortLines @ defLines)
 
 let parseCVC modelLines =
-    let p = Parser()
+    let p = Parser.Parser()
     let sorts, model = p.ParseModel(modelLines)
     ConcreteFiniteModel(sorts, model)

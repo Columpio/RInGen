@@ -1,6 +1,7 @@
 module Tests.Transformations
 open NUnit.Framework
 open RInGen
+open SMTLIB2
 
 [<TestFixture>]
 type SamplesTests () =

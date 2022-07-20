@@ -1,4 +1,5 @@
 module RInGen.Unifier
+open SMTLIB2
 
 type private unifier = Map<sorted_var, term>
 type private unificationStatus = UnificationSuccess of unifier | UnificationFailure | UnificationUnknown of term * term

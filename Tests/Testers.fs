@@ -93,7 +93,7 @@ type Tester<'filenameEntry> (c : IComparator) =
 type FileTester (fc : FileComparator, fileFolder) =
     inherit Tester<path * string>(fc)
 
-    let ringenFolder = Path.GetDirectoryName(__SOURCE_DIRECTORY__)
+    let ringenFolder = __SOURCE_DIRECTORY__
     let testsFolder = Path.Join(ringenFolder, fileFolder)
 
     override x.FullPath fe =

@@ -1,11 +1,11 @@
-module RInGen.SMTExpr
+module SMTLIB2.Parser
 open System.Collections.Generic
 open System.Text.RegularExpressions
 open Antlr4.Runtime
 open Antlr4.Runtime.Misc
 open Antlr4.Runtime.Tree
 open Context
-open RInGen
+open SMTLIB2
 open SMTLIB2Parser
 
 let truth = BoolConst true
@@ -66,7 +66,7 @@ module private Env =
         let var' = SortedVar.freshFromVar vs
         var', Map.add var var' env
 
-type VarEnvSaver (env : VarEnv) =
+type VarEnvSaver<'ctx when 'ctx :> Context> (env : VarEnv<'ctx>) =
     member x.Delay f =
         env.SaveState ()
         let r = f ()
@@ -75,10 +75,10 @@ type VarEnvSaver (env : VarEnv) =
     member x.Return o = o
     member x.Zero () = ()
 
-and VarEnv(ctx : Context, vars2sorts) as this =
+and VarEnv<'ctx when 'ctx :> Context>(ctx : 'ctx, vars2sorts) as this =
     let state = Stack<_>()
     let saver = VarEnvSaver(this)
-    new (ctx : Context) = VarEnv(ctx, Dictionary<ident, sort>())
+    new (ctx : 'ctx) = VarEnv(ctx, Dictionary<ident, sort>())
 
     member x.WithVars vars = x.Add vars; x
 
@@ -134,7 +134,7 @@ and VarEnv(ctx : Context, vars2sorts) as this =
     member x.FillOperation opName argTypes = ctx.FillOperation opName argTypes
 
 type private SubstVarEnv(ctx : Context, osyms2nsyms, nvars2nsorts, qualIdToId) as this =
-    inherit VarEnv(ctx, nvars2nsorts)
+    inherit VarEnv<Context>(ctx, nvars2nsorts)
 
     let state = Stack<_>()
     let saver = VarEnvSaver(this)
@@ -470,14 +470,14 @@ and Parser () as this =
         | :? SMTLIBv2Parser.Cmd_setOptionContext -> Command (SetOption(e.option().children |> Seq.map (fun t -> t.GetText()) |> join " "))
         | :? SMTLIBv2Parser.Cmd_getInfoContext -> Command (GetInfo(e.info_flag().GetText()))
         | :? SMTLIBv2Parser.Cmd_setInfoContext -> Command (SetInfo(parseAttribute <| e.attribute()))
-        | :? SMTLIBv2Parser.Cmd_lemmaContext ->
-            let predName = e.symbol(0) |> x.ParseSymbol Old
-            env.InIsolation () {
-                let vars = e.sorted_var() |> x.ParseSortedVars
-                env.Add(vars)
-                let lemma = x.ParseTerm (e.term(0))
-                return Lemma(predName, vars, lemma)
-            }
+//        | :? SMTLIBv2Parser.Cmd_lemmaContext ->
+//            let predName = e.symbol(0) |> x.ParseSymbol Old
+//            env.InIsolation () {
+//                let vars = e.sorted_var() |> x.ParseSortedVars
+//                env.Add(vars)
+//                let lemma = x.ParseTerm (e.term(0))
+//                return Lemma(predName, vars, lemma)
+//            }
         | :? SMTLIBv2Parser.Cmd_assertContext ->
             let expr = e.GetChild<SMTLIBv2Parser.TermContext>(0)
             env.InIsolation () { return Assert(x.ParseTerm expr) }

@@ -1,8 +1,9 @@
 module RInGen.ClauseTransform
+open SMTLIB2
 open RInGen
 open RInGen.IntToNat
 open RInGen.Context
-open RInGen.SMTExpr
+open SMTLIB2.Parser
 open SubstituteOperations
 open Operations
 open System.Collections.Generic
@@ -137,14 +138,14 @@ module private DefinitionsToDeclarations =
             let! vs, cs, rs = toRuleProduct tes ts
             return vs, cs, constructor rs
         }
-    and private exprToRule (env : SMTExpr.VarEnv, subst as tes) = function
+    and private exprToRule (env : Parser.VarEnv<_>, subst as tes) = function
         | Apply(op, ts) -> toRuleHandleProduct tes (fun ts -> Apply(op, ts)) ts
         | Ident(name, sort) when sort = BoolSort && Map.containsKey name subst -> Map.find name subst
         | Ident _
         | Number _
         | BoolConst _ as e -> [Quantifiers.empty, [], e]
-        | And fs -> toRuleHandleProduct tes SMTExpr.ande fs
-        | Or fs -> toRuleHandleProduct tes SMTExpr.ore fs
+        | And fs -> toRuleHandleProduct tes Parser.ande fs
+        | Or fs -> toRuleHandleProduct tes Parser.ore fs
         | Hence(a, b) ->
             collector {
                 let! avs, acs, ar = exprToRule tes a
@@ -154,7 +155,7 @@ module private DefinitionsToDeclarations =
         | Not e ->
             collector {
                 let! vs, cs, r = exprToRule tes e
-                return Quantifiers.negate vs, cs, SMTExpr.note r
+                return Quantifiers.negate vs, cs, Parser.note r
             }
         | QuantifierApplication(qs, body) ->
             env.InIsolation () {
@@ -165,7 +166,7 @@ module private DefinitionsToDeclarations =
                 }
             }
         | Let(assignments, body) ->
-            let handleAssignment (te : VarEnv, subst) (v, expr) =
+            let handleAssignment (te : VarEnv<_>, subst) (v, expr) =
                 v ||> te.AddOne
                 match v with
                 | name, BoolSort ->
@@ -215,7 +216,7 @@ module private DefinitionsToDeclarations =
                 let thenBranchQuantifiers = Quantifiers.combine ivs tvs
                 let elseBranchQuantifiers = Quantifiers.combine ivs evs
                 let! Conjunction thenBranchConditions = exprToAtoms env.ctx true ir |> Disj.get
-                let! Conjunction elseBranchConditions = exprToAtoms env.ctx true (SMTExpr.note ir) |> Disj.get
+                let! Conjunction elseBranchConditions = exprToAtoms env.ctx true (Parser.note ir) |> Disj.get
                 let thenBranch = thenBranchQuantifiers, thenBranchConditions @ ics @ tcs, tr
                 let elseBranch = elseBranchQuantifiers, elseBranchConditions @ ics @ ecs, er
                 return! [thenBranch; elseBranch]
@@ -281,7 +282,7 @@ module private DefinitionsToDeclarations =
                 | ts -> failwithf $"Too many atoms in head: {ts}"
         let rec eatResultTerm conds = function
             | Hence(cond, body) -> eatResultTerm (eatCondition cond @ conds) body
-            | Not cond -> eatResultTerm (eatCondition cond @ conds) SMTExpr.falsehood
+            | Not cond -> eatResultTerm (eatCondition cond @ conds) Parser.falsehood
             | And _ as ts ->
                 let ts = eatCondition ts
                 List.map (fun t -> conds, t) ts
@@ -290,10 +291,10 @@ module private DefinitionsToDeclarations =
             | QuantifierApplication(ForallQuantifier vars'::qs', body') -> eat (vars @ vars') conds (QuantifierApplication(qs', body'))
             | Or es ->
                 let apps, rest = List.partition (function Apply(UserDefinedOperation(_, _, s), _) when s = BoolSort -> true | _ -> false) es
-                let body = List.map SMTExpr.note rest
+                let body = List.map Parser.note rest
                 match apps with
-                | [] -> eat vars conds (SMTExpr.hence body SMTExpr.falsehood)
-                | [app] -> eat vars conds (SMTExpr.hence body app)
+                | [] -> eat vars conds (Parser.hence body Parser.falsehood)
+                | [app] -> eat vars conds (Parser.hence body app)
                 | _ -> failwithf $"Disjunction in clause head: %O{apps}"
             | Hence(cond, body) -> eat vars (eatCondition cond @ conds) body
             | And es -> List.collect (eat vars conds) es
@@ -301,8 +302,8 @@ module private DefinitionsToDeclarations =
                 let tes = VarEnv(ctx).WithVars(vars), Map.empty
                 collector {
                     let! appVars, appConditions, appResult = exprToRule tes app
-                    let! bodyAddition = if assertsToQueries then exprToAtoms ctx assertsToQueries (SMTExpr.note appResult) else DNF.empty
-                    let! headConds, head = if assertsToQueries then [[], SMTExpr.falsehood] else eatResultTerm [] appResult
+                    let! bodyAddition = if assertsToQueries then exprToAtoms ctx assertsToQueries (Parser.note appResult) else DNF.empty
+                    let! headConds, head = if assertsToQueries then [[], Parser.falsehood] else eatResultTerm [] appResult
                     let! bodyVars, bodyConditions, bodyResult = toRuleProduct tes (conds @ headConds)
                     let! bodyResult = List.map (exprToAtoms ctx assertsToQueries) bodyResult |> Disj.conj
                     let! headConstraints, head_atom = exprToAtoms ctx assertsToQueries head |> takeHead
@@ -398,18 +399,18 @@ module private DefinitionsToDeclarations =
                 let names, defs = List.map definitionToDeclaration dfs |> List.unzip
                 wereDefines.UnionWith(names)
                 defs @ List.collect (definitionToAssertion ctx) dfs
-            | Lemma(pred, vars, lemma) ->
-                let tes = VarEnv(ctx).WithVars(vars), Map.empty
-                collector {
-                    let! lemmaQs, lemmaConds, lemmaBody = exprToRule tes lemma
-                    let lemma = exprToAtoms ctx assertsToQueries lemmaBody
-                    let lemmaFOL = lemma |> DNF.toFOL
-                    let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals ctx vars lemmaQs lemmaConds lemmaFOL
-                    let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
-                    let doubleNegatedLemma = doubleNegateLemma ctx strongLemma
-                    let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
-                    return LemmaCommand(pred, vars, bodyLemma, headCube)
-                }
+//            | Lemma(pred, vars, lemma) ->
+//                let tes = VarEnv(ctx).WithVars(vars), Map.empty
+//                collector {
+//                    let! lemmaQs, lemmaConds, lemmaBody = exprToRule tes lemma
+//                    let lemma = exprToAtoms ctx assertsToQueries lemmaBody
+//                    let lemmaFOL = lemma |> DNF.toFOL
+//                    let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals ctx vars lemmaQs lemmaConds lemmaFOL
+//                    let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
+//                    let doubleNegatedLemma = doubleNegateLemma ctx strongLemma
+//                    let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
+//                    return LemmaCommand(pred, vars, bodyLemma, headCube)
+//                }
             | Assert e -> expressionToDeclarations assertsToQueries ctx e
             | Command c -> [OriginalCommand c]
 
@@ -427,9 +428,9 @@ module TIPFixes =
             let defs = List.map (fun (v, e) -> v, invertMatchesInExpr e) defs
             Let(defs, invertMatchesInExpr body)
         | Ite(i, t, e) -> Ite(invertMatchesInExpr i, invertMatchesInExpr t, invertMatchesInExpr e)
-        | And es -> es |> invertMatchesInExprList |> SMTExpr.ande
-        | Or es -> es |> invertMatchesInExprList |> SMTExpr.ore
-        | Not e -> e |> invertMatchesInExpr |> SMTExpr.note
+        | And es -> es |> invertMatchesInExprList |> Parser.ande
+        | Or es -> es |> invertMatchesInExprList |> Parser.ore
+        | Not e -> e |> invertMatchesInExpr |> Parser.note
         | Hence(a, b) -> Hence(invertMatchesInExpr a, invertMatchesInExpr b)
         | QuantifierApplication(qs, body) -> QuantifierApplication(qs, invertMatchesInExpr body)
     and private invertMatchesInExprList = List.map invertMatchesInExpr
@@ -442,7 +443,7 @@ module TIPFixes =
 
     let private invertMatches = function
         | Assert e -> e |> invertMatchesInExpr |> Assert
-        | Lemma _
+//        | Lemma _
         | Command _ as c -> c
         | Definition df -> df |> invertMatchesInDefinition |> Definition
 

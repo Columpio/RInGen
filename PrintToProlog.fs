@@ -1,4 +1,5 @@
 module RInGen.PrintToProlog
+open SMTLIB2
 
 let private arithmeticOperations = Operations.arithmeticOperations |> List.map (fun (a, _, n) -> a, n) |> Map.ofList
 

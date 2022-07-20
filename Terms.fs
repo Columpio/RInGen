@@ -1,6 +1,7 @@
 [<AutoOpen>]
 module RInGen.Terms
 open System.Collections.Generic
+open SMTLIB2
 
 module Term =
     let truth = TConst("true", BoolSort)

@@ -1,5 +1,6 @@
 [<AutoOpen>]
 module RInGen.FOL
+open SMTLIB2
 
 module FOL =
     let apply op xs = FOLAtom <| Atom.apply op xs

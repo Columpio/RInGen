@@ -1,4 +1,5 @@
 module RInGen.Simplification
+open SMTLIB2
 
 let simplifyConditional isConstructor unpreferredSet qs conds substituteWithInHead =
     let conds, eqs = List.choose2 (function Equal(t1, t2) -> Choice2Of2(t1, t2) | a -> Choice1Of2 a) conds

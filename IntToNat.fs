@@ -1,7 +1,8 @@
 module RInGen.IntToNat
+open SMTLIB2
+open SMTLIB2.IdentGenerator
 open RInGen.SubstituteOperations
-open RInGen.Operations
-open RInGen.IdentGenerator
+open SMTLIB2.Operations
 open Rule
 
 type IntToNat () =

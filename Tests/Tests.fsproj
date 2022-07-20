@@ -19,6 +19,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <Content Include="samples\**\*" />
+    </ItemGroup>
+
+    <ItemGroup>
         <Content Include="tests\**\*" />
     </ItemGroup>
 

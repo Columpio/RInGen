@@ -1,6 +1,7 @@
 module RInGen.TtaTransform
 
 open System.Collections.Generic
+open SMTLIB2
 open FOLCommand
 
 let adtConstructorSortName = IdentGenerator.gensymp "adtConstr"

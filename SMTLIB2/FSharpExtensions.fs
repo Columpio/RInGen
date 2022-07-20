@@ -1,5 +1,5 @@
 [<AutoOpen>]
-module RInGen.FSharpExtensions
+module SMTLIB2.FSharpExtensions
 open System.Collections.Generic
 open System.IO
 open System.Text.RegularExpressions
@@ -16,12 +16,6 @@ module ThisProcess =
 module Printf =
     let printfn_nonempty s = if s <> "" then printfn $"%s{s}"
     let eprintfn_nonempty s = if s <> "" then eprintfn $"%s{s}"
-
-module File =
-    let tryFindDistinctLines fn1 fn2 =
-        let f1 = File.ReadLines(fn1)
-        let f2 = File.ReadLines(fn2)
-        Seq.zip f1 f2 |> Seq.tryFind (fun (line1, line2) -> line1 <> line2)
 
 module String =
     let inline private mapFirstChar x f = if x = "" then "" else $"%c{f(x.Chars(0))}%s{x.Substring(1)}"
@@ -256,67 +250,6 @@ module Seq =
                 yield! Seq.map (fun y -> y, x) xs
                 yield! nondiag xs
             }
-
-type path = string
-
-let private walk_through (srcDir : path) targetDir gotoFile gotoDirectory transform =
-    let rec walk sourceFolder destFolder =
-        for file in Directory.GetFiles(sourceFolder) do
-            let name = Path.GetFileName(file)
-            let dest = gotoFile destFolder name
-            transform file dest
-        for folder in Directory.GetDirectories(sourceFolder) do
-            let name = Path.GetFileName(folder)
-            let dest = gotoDirectory destFolder name
-            walk folder dest
-    walk srcDir targetDir
-
-let walk_through_copy srcDir targetDir transform =
-    let gotoFile folder name = Path.Combine(folder, name)
-    let gotoDirectory folder name =
-            let dest = Path.Combine(folder, name)
-            Directory.CreateDirectory(dest) |> ignore
-            dest
-    walk_through srcDir targetDir gotoFile gotoDirectory transform
-
-let walk_through_relative srcDir transform =
-    let gotoInside folder name = Path.Combine(folder, name)
-    walk_through srcDir "" gotoInside gotoInside (fun _ -> transform)
-
-let walk_through_simultaneously originalDir transAndResultDirs transform =
-    let addPathFragment fragment (dir1, dir2) = Path.Combine(dir1, fragment), Path.Combine(dir2, fragment)
-    let rec walk relName (baseDir : DirectoryInfo) (dirs : (path * path) list) =
-        for f in baseDir.EnumerateFiles() do
-            let fileName = f.Name
-            let relName = Path.Combine(relName, fileName)
-            let files = dirs |> List.map (addPathFragment fileName)
-            transform relName files
-        for subDir in baseDir.EnumerateDirectories() do
-            let subDirName = subDir.Name
-            let subDirs = dirs |> List.map (addPathFragment subDirName)
-            walk (Path.Combine(relName, subDirName)) subDir subDirs
-    walk "" (Directory.CreateDirectory(originalDir)) transAndResultDirs
-
-module FileSystem =
-    let isDirectory path =
-        if File.Exists(path) then File.GetAttributes(path).HasFlag(FileAttributes.Directory)
-        else Directory.CreateDirectory(path) |> ignore; true
-
-    type tmpFileConfig = {namer: (unit -> string) option; outputDir: path option; extension: string option}
-    let createTempFile (config : tmpFileConfig) =
-        let outputDir =
-            match config.outputDir with
-            | Some outputDirectory when isDirectory outputDirectory -> outputDirectory
-            | _ -> Path.GetTempPath()
-        let outputName =
-            match config.namer with
-            | Some namer -> namer
-            | None -> fun () -> Path.GetFileNameWithoutExtension(Path.GetTempFileName())
-        let ext =
-            match config.extension with
-            | Some ext -> ext
-            | None -> "tmp"
-        fun () -> Path.Combine(outputDir, $"{outputName ()}.{ext}")
 
 module Environment =
     let split (s : string) = split System.Environment.NewLine s

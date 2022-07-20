@@ -1,8 +1,5 @@
 module Tests.SolverRuns
 open NUnit.Framework
-open RInGen
-open RInGen.Transformers
-open RInGen.Solvers
 
 [<TestFixture>]
 type TIPSolverTests () =

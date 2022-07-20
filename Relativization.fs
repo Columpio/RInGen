@@ -1,5 +1,5 @@
 module RInGen.Relativization
-open Operations
+open SMTLIB2
 
 let private relative args ret = ret :: args
 let private returnSort = List.head

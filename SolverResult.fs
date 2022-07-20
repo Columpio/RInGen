@@ -1,4 +1,5 @@
 module RInGen.SolverResult
+open SMTLIB2
 open FiniteModels
 
 type Model =

@@ -2,6 +2,7 @@ module RInGen.ADTs
 open Relativization
 open SubstituteOperations
 open Rule
+open SMTLIB2
 
 module SupplementaryADTAxioms =
     let private generateSelectors adtSort constructors selectorsMap =

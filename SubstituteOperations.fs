@@ -1,8 +1,8 @@
 module RInGen.SubstituteOperations
 
-open System.Runtime.CompilerServices
-open Operations
-open RInGen
+open SMTLIB2
+open SMTLIB2.Operations
+open RInGen.Operations
 
 type private termArgumentFolding = LeftAssoc | RightAssoc
 type private atomArgumentFolding = Chainable | Pairwise

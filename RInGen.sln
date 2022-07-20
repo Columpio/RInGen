@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SMTLIB2Parser", "SMTLIB2Par
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Tests", "Tests\Tests.fsproj", "{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "SMTLIB2", "SMTLIB2\SMTLIB2.fsproj", "{5CBA8717-1614-429C-8960-6C6C55EFC197}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B3EB00BA-BE47-458E-BC9E-77F0CFAC0741}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5CBA8717-1614-429C-8960-6C6C55EFC197}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5CBA8717-1614-429C-8960-6C6C55EFC197}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5CBA8717-1614-429C-8960-6C6C55EFC197}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5CBA8717-1614-429C-8960-6C6C55EFC197}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

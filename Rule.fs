@@ -1,4 +1,5 @@
 module RInGen.Rule
+open SMTLIB2
 
 let private baseRule q fromAtoms toAtom =
     Rule(q, fromAtoms, toAtom)

@@ -1,0 +1,23 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net6.0</TargetFramework>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="IdentGenerator.fs" />
+        <Compile Include="FSharpExtensions.fs" />
+        <Compile Include="Prelude.fs" />
+        <Compile Include="Operations.fs" />
+        <Compile Include="Quantifiers.fs" />
+        <Compile Include="ADTExtensions.fs" />
+        <Compile Include="Context.fs" />
+        <Compile Include="Parser.fs" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\SMTLIB2Parser\SMTLIB2Parser.csproj" />
+    </ItemGroup>
+
+</Project>

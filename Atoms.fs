@@ -1,5 +1,6 @@
 [<AutoOpen>]
 module RInGen.Atoms
+open SMTLIB2
 
 module Atom =
     let apply op xs = AApply(op, xs)
