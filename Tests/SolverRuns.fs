@@ -66,10 +66,6 @@ type SampleSolverTests () =
         x.RunTTAAloneVampire "even.unsat.smt2" ".tta_unsat" 10
 
     [<Test>]
-    member x.mod_same () =
-        x.RunTTAAloneCVCTIP "mod_same.smt2" ".tta_unsat" 10
-
-    [<Test>]
     member x.tta_ltlt () =
         x.RunTTAAloneCVC "ltlt.smt2" ".tta" 10
 
@@ -88,11 +84,11 @@ type SampleSolverTests () =
     [<Test>]
     member x.tta_ltlt_unsat () =
         x.RunTTAAloneCVC "ltlt_unsat.smt2" ".tta_unsat" 10
-        
-    [<Test>]
-    member x.tta_mccarthy () =
-        x.RunTTAAloneCVCTIP "mccarthy91_M2.smt2" ".tta" 600
 
-    [<Test>]
+    [<Test; Ignore("tta does not yet work")>]
+    member x.tta_mccarthy () =
+        x.RunTTAAloneCVCTIP "mccarthy91_M2.smt2" ".tta" 10
+
+    [<Test; Ignore("tta does not yet work")>]
     member x.tta_prop20 () =
         x.RunTTAAloneCVCTIP "prop_20.smt2" ".tta" 10

@@ -399,18 +399,18 @@ module private DefinitionsToDeclarations =
                 let names, defs = List.map definitionToDeclaration dfs |> List.unzip
                 wereDefines.UnionWith(names)
                 defs @ List.collect (definitionToAssertion ctx) dfs
-//            | Lemma(pred, vars, lemma) ->
-//                let tes = VarEnv(ctx).WithVars(vars), Map.empty
-//                collector {
-//                    let! lemmaQs, lemmaConds, lemmaBody = exprToRule tes lemma
-//                    let lemma = exprToAtoms ctx assertsToQueries lemmaBody
-//                    let lemmaFOL = lemma |> DNF.toFOL
-//                    let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals ctx vars lemmaQs lemmaConds lemmaFOL
-//                    let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
-//                    let doubleNegatedLemma = doubleNegateLemma ctx strongLemma
-//                    let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
-//                    return LemmaCommand(pred, vars, bodyLemma, headCube)
-//                }
+            | Lemma(pred, vars, lemma) ->
+                let tes = VarEnv(ctx).WithVars(vars), Map.empty
+                collector {
+                    let! lemmaQs, lemmaConds, lemmaBody = exprToRule tes lemma
+                    let lemma = exprToAtoms ctx assertsToQueries lemmaBody
+                    let lemmaFOL = lemma |> DNF.toFOL
+                    let! lemmaQs, (lemmaConds, strongLemma) = dropWeakLiterals ctx vars lemmaQs lemmaConds lemmaFOL
+                    let bodyLemma : lemma = lemmaQs, (lemmaConds, strongLemma)
+                    let doubleNegatedLemma = doubleNegateLemma ctx strongLemma
+                    let headCube = Lemma.withFreshVariables(lemmaQs, (lemmaConds, doubleNegatedLemma))
+                    return LemmaCommand(pred, vars, bodyLemma, headCube)
+                }
             | Assert e -> expressionToDeclarations assertsToQueries ctx e
             | Command c -> [OriginalCommand c]
 
@@ -443,7 +443,7 @@ module TIPFixes =
 
     let private invertMatches = function
         | Assert e -> e |> invertMatchesInExpr |> Assert
-//        | Lemma _
+        | Lemma _
         | Command _ as c -> c
         | Definition df -> df |> invertMatchesInDefinition |> Definition
 
