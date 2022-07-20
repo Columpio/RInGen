@@ -1,0 +1,4 @@
+[submodule "SMTLIB2"]
+	path = SMTLIB2
+	url = https://github.com/Columpio/SMTLIB2.git
+	branch = lemmas

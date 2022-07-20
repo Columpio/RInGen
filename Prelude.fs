@@ -143,9 +143,6 @@ module Lemma =
     let toString ((qs, cond) : lemma) =
         Conditional.toString cond |> Quantifiers.toString qs
 
-    let toStringCommand pred vars lemma =
-        $"""(lemma {pred} ({vars |> List.map (fun (v, s) -> $"(%O{v} %O{s})") |> join " "}) %O{lemma})"""
-
 let notMapApply f z = function
     | Bot -> z Top
     | Top -> z Bot
