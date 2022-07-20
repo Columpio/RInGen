@@ -30,7 +30,10 @@ predicates
 in the environment
 
 ## Build
-`~/RInGen$ dotnet build -c Release RInGen.sln`
+```bash
+git clone --recursive https://github.com/Columpio/RInGen.git
+dotnet build -c Release RInGen.sln
+```
 ### Build standalone version (for specific platform from the [list](https://raw.githubusercontent.com/dotnet/runtime/main/src/libraries/Microsoft.NETCore.Platforms/src/runtime.json))
 `dotnet publish -c Release -r <RID> -p:PublishReadyToRun=true RInGen.sln`
 For example, to build for [CHC-COMP](https://chc-comp.github.io/) (running on [StarExec](https://www.starexec.org/vmimage/), which has [RHEL 7](https://en.wikipedia.org/wiki/Red_Hat_Enterprise_Linux#RHEL_7)) call
