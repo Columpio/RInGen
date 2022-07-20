@@ -262,3 +262,4 @@ solver.zip
 *.FreeSorts.*
 cvc
 vampire
+*.generated

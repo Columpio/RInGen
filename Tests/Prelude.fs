@@ -6,6 +6,8 @@ open System.IO
 type SetupTrace () =
     let out = System.Console.Out
 
+    static member OverwriteGoldValues = false
+
     [<OneTimeSetUp>]
     member x.StartTest () =
         System.Console.SetOut(TestContext.Progress)

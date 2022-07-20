@@ -1,5 +1,5 @@
 0
-12604
-70
+12416
+30
 SAT Saturation
-% lrs+2_1_lcm=predicate_20 on prop_32.FreeSorts
+% lrs+2_1_lcm=predicate_20 on tmpL1knMM.

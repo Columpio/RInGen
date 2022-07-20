@@ -1,5 +1,5 @@
-0
-15480
-0
+4
+17948
+100
 SAT FiniteModel
 SomeFiniteModel

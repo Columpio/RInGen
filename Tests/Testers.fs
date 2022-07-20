@@ -18,6 +18,7 @@ type FileComparator () =
     interface IComparator with
         member x.Compare truthFile candidateFile =
             if not <| File.Exists(candidateFile) then Assert.Fail($"{candidateFile} does not exist so cannot compare it with {truthFile}")
+            elif SetupTrace.OverwriteGoldValues then File.Move(candidateFile, truthFile, true)
             elif not <| File.Exists(truthFile) then
                 let content = File.ReadAllText(candidateFile)
                 Console.WriteLine("\nThe output is:")
@@ -83,6 +84,7 @@ type Tester<'filenameEntry> (c : IComparator) =
     member x.Test (fe : 'filenameEntry) config =
         let path = x.FullPath fe
         let outPath = x.OutputPath path
+        if Directory.Exists(outPath) then Directory.Delete(outPath, true)
         let runCommand = config path outPath
         print_extra_verbose $"TEST run with: ringen {runCommand}"
         Assert.Zero(ConsoleRunner.main(Regex("\s+").Split(runCommand)), "Congiguration run halted with an error")
@@ -101,11 +103,11 @@ type FileTester (fc : FileComparator, fileFolder) =
         Path.Join(testsFolder, name), postfix
     override x.OutputPath fe =
         let path, postfix = fe
-        Path.ChangeExtension(path, postfix + ".generated.smt2")
+        Path.ChangeExtension(path, postfix + ".generated")
     override x.GoldPath  fe =
         let path, postfix = fe
         Path.ChangeExtension(path, postfix + ".gold.smt2")
-    override x.RealGeneratedPath path = path
+    override x.RealGeneratedPath path = Directory.GetFiles(path).[0]
 
     member x.RunTest name postfix config =
         x.Test (name, postfix) (fun (path, _) -> config path)
