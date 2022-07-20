@@ -125,9 +125,15 @@ type FileTester (fc : FileComparator, fileFolder) =
         let ps = PortfolioSolver(configs config)
         x.RunSolver name postfix timelimit ps
 
-    member x.RunTTAAlone name postfix timelimit =
+    member x.RunTTAAloneCVC name postfix timelimit =
+        x.RunTTAAloneWith name postfix timelimit (CVCFiniteSolver() :> SolverProgramRunner)
+
+    member x.RunTTAAloneVampire name postfix timelimit =
+        x.RunTTAAloneWith name postfix timelimit (VampireSolver() :> SolverProgramRunner)
+
+    member x.RunTTAAloneWith name postfix timelimit solver =
         let transformations config = [
-            TTATransformerProgram(config) :> TransformerProgram, CVCFiniteSolver() :> SolverProgramRunner
+            TTATransformerProgram(config) :> TransformerProgram, solver
         ]
         x.RunTTAPortfolioWithConfigs name postfix timelimit transformations
 

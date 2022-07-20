@@ -173,7 +173,7 @@ type VeriMAPiddtSolver () =
 
 type private refutationSource = Axiom | Inference of string * string list
 
-type VampireSolver (options : transformOptions option) =
+type VampireSolver () =
     inherit SolverProgramRunner ()
 
     let mode = "--mode chccomp"

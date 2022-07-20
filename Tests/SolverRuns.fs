@@ -58,28 +58,24 @@ type SampleSolverTests () =
 
     [<Test>]
     member x.evenTtaTest () =
-        let config origPath outPath = $"-o {outPath} --timelimit 30 solve --solver cvc_fmf --path {origPath} -t --tta-transform"
-        x.RunTest "even.smt2" ".tta" config
+        x.RunTTAAloneCVC "even.smt2" ".tta" 30
 
     [<Test>]
     member x.evenSatTtaVampireTest () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver vampire --path {origPath} -t --tta-transform"
-        x.RunTest "even.smt2" ".tta_sat" config
+        x.RunTTAAloneVampire "even.smt2" ".tta_sat" 10
 
     [<Test>]
     member x.evenUnsatTtaVampireTest () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver vampire --path {origPath} -t --tta-transform"
-        x.RunTest "even.unsat.smt2" ".tta_unsat" config
+        x.RunTTAAloneVampire "even.unsat.smt2" ".tta_unsat" 10
 
     [<Test>]
     member x.mod_same () =
         let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tip --tta-transform"
-        x.RunTest "mod_same.smt2" ".tta_unsat" config
+        x.RunTTAAloneCVC "mod_same.smt2" ".tta_unsat"
 
     [<Test>]
     member x.tta_ltlt () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tta-transform"
-        x.RunTest "ltlt.smt2" ".tta" config
+        x.RunTTAAloneCVC "ltlt.smt2" ".tta" 10
 
     [<Test>]
     member x.fmf_with_tta_ltlt () =
@@ -87,23 +83,22 @@ type SampleSolverTests () =
 
     [<Test>]
     member x.only_tta_ltlt () =
-        x.RunTTAAlone "ltlt.smt2" ".only_tta" 3
+        x.RunTTAAloneCVC "ltlt.smt2" ".only_tta" 3
 
     [<Test>]
     member x.only_tta_sublist () =
-        x.RunTTAAlone "sublist.smt2" ".only_tta" 3
+        x.RunTTAAloneCVC "sublist.smt2" ".only_tta" 3
 
     [<Test>]
     member x.tta_ltlt_unsat () =
-        let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --no-isolation --tta-transform"
-        x.RunTest "ltlt_unsat.smt2" ".tta_unsat" config
+        x.RunTTAAloneCVC "ltlt_unsat.smt2" ".tta_unsat" 10
         
     [<Test>]
     member x.tta_mccarthy () =
         let config origPath outPath = $"-o {outPath} --timelimit 600 solve --solver cvc_fmf --path {origPath} -t --tip --no-isolation --tta-transform"
-        x.RunTest "mccarthy91_M2.smt2" ".tta" config
+        x.RunTTAAloneCVC "mccarthy91_M2.smt2" ".tta" 600
 
     [<Test>]
     member x.tta_prop20 () =
         let config origPath outPath = $"-o {outPath} --timelimit 10 solve --solver cvc_fmf --path {origPath} -t --tip --no-isolation --tta-transform"
-        x.RunTest "prop_20.smt2" ".tta" config
+        x.RunTTAAloneCVC "prop_20.smt2" ".tta" 10
