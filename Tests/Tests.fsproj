@@ -27,7 +27,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <Compile Include="Prelude.fs" />
       <Compile Include="Testers.fs" />
       <Compile Include="Transformations.fs" />
       <Compile Include="SolverRuns.fs" />

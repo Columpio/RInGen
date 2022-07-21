@@ -3,28 +3,6 @@ module RInGen.Prelude
 open SMTLIB2
 open System.IO
 
-type path = string
-
-let private walk_through (srcDir : path) targetDir gotoFile gotoDirectory transform =
-    let rec walk sourceFolder destFolder =
-        for file in Directory.GetFiles(sourceFolder) do
-            let name = Path.GetFileName(file)
-            let dest = gotoFile destFolder name
-            transform file dest
-        for folder in Directory.GetDirectories(sourceFolder) do
-            let name = Path.GetFileName(folder)
-            let dest = gotoDirectory destFolder name
-            walk folder dest
-    walk srcDir targetDir
-
-let walk_through_copy srcDir targetDir transform =
-    let gotoFile folder name = Path.Combine(folder, name)
-    let gotoDirectory folder name =
-            let dest = Path.Combine(folder, name)
-            Directory.CreateDirectory(dest) |> ignore
-            dest
-    walk_through srcDir targetDir gotoFile gotoDirectory transform
-
 let walk_through_relative srcDir transform =
     let gotoInside folder name = Path.Combine(folder, name)
     walk_through srcDir "" gotoInside gotoInside (fun _ -> transform)

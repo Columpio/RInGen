@@ -1,30 +1,7 @@
 [<AutoOpen>]
 module Tests.Testers
-open System
-open NUnit.Framework
-open System.IO
+open SMTLIB2
 open System.Text.RegularExpressions
-open RInGen
-open RInGen.Solvers
-open RInGen.Transformers
-
-type IComparator =
-    abstract member Compare : path -> path -> unit
-
-[<AbstractClass>]
-type FileComparator () =
-    abstract member CompareContents : path -> path -> unit
-
-    interface IComparator with
-        member x.Compare truthFile candidateFile =
-            if not <| File.Exists(candidateFile) then Assert.Fail($"{candidateFile} does not exist so cannot compare it with {truthFile}")
-            elif SetupTrace.OverwriteGoldValues then File.Move(candidateFile, truthFile, true)
-            elif not <| File.Exists(truthFile) then
-                let content = File.ReadAllText(candidateFile)
-                Console.WriteLine("\nThe output is:")
-                Console.Write(content)
-                Assert.Fail($"{truthFile} does not exist so cannot compare it with {candidateFile}")
-            else x.CompareContents truthFile candidateFile
 
 type FileTransformationComparator () =
     inherit FileComparator ()
@@ -58,13 +35,6 @@ type FileSolverComparator () =
             Assert.AreEqual(truthStatus.solverRunTime, candidateStatus.solverRunTime, delta,
                             $"For {candidateFile} has same status but time {candidateStatus.solverRunTime} diverge from gold time {truthStatus.solverRunTime}")
         | _ -> Assert.Fail($"{candidateFile} and {truthStatus} diverge!")
-
-type DirectoryComparator (fc : FileComparator) =
-    let c = fc :> IComparator
-
-    interface IComparator with
-        member x.Compare truthPath candidatePath =
-            walk_through_copy truthPath candidatePath c.Compare
 
 type DirectoryTransformationComparator () =
     inherit DirectoryComparator(FileTransformationComparator ())
