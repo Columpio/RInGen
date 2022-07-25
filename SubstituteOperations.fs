@@ -104,10 +104,10 @@ type FormulaMapper () =
         Rule(qs, premises, conclusion)
 
     member x.TraverseCommand = function
-        | DeclareFun(name, argSorts, retSort) ->
+        | command.DeclareFun(name, q, argSorts, retSort) ->
             let argSorts = x.TraverseSorts argSorts
             let retSort = x.TraverseReturnSort retSort
-            DeclareFun(name, argSorts, retSort)
+            command.DeclareFun(name, q, argSorts, retSort)
         | DeclareDatatype(name, constrs) ->
             let (name, constrs) = x.TraverseDatatype (name, constrs)
             command.DeclareDatatype(name, constrs)

@@ -163,7 +163,7 @@ type private POBDB (adts) =
 
     member x.UnarifyDeclarations commands =
         let unarifyDeclaration = function
-            | DeclareFun(name, argSorts, retSort) -> DeclareFun(name, [x.CombSort argSorts], retSort)
+            | command.DeclareFun(name, q, argSorts, retSort) -> command.DeclareFun(name, q, [x.CombSort argSorts], retSort)
             | c -> c
         // map declare-fun sorts with sorts map
         List.map unarifyDeclaration commands

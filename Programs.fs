@@ -91,7 +91,7 @@ type ProgramRunner () =
         p.BeginErrorReadLine()                      // error is read asynchronously: if we read both stream synchronously, deadlock is possible
                                                     // see: https://docs.microsoft.com/en-us/dotnet/api/system.diagnostics.processstartinfo.redirectstandardoutput?view=net-5.0#code-try-4
 
-        if p.HasExited then raise(Exception($"err: {x.ErrorReceived().Trim()}; out: {x.OutputReceived().Trim()}"))
+//        if p.HasExited then raise(Exception($"err: {x.ErrorReceived().Trim()}; out: {x.OutputReceived().Trim()}"))
         let st = p.StartTime
         let isChildProcess (pr : Process) =
             try
