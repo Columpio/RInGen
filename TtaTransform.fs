@@ -227,6 +227,8 @@ module private State =
                 SVar freshName
         mapAutomatonApplies helper s, (vars2states, states2vars)
 
+    let collectAutomatonApplies = foldAutomatonApplies (fun states name pat -> Set.add (AutomatonApply(name, pat)) states) Set.empty
+
 module private Invariant =
     let fromConstructorsAndStates freeConstrs states =
         Invariant(freeConstrs, states)
@@ -258,6 +260,15 @@ module private Invariant =
             | DeltaApply(name, constrs, states) -> DeltaApply(name, constrs, List.map rewrite states)
             | _ -> __notImplemented__()
         rewrite state
+
+    let collectAutomatonApplies (Invariant(_, states)) = states |> List.map State.collectAutomatonApplies |> Set.unionMany
+    
+    let difference inv state =
+        // {b1, .., bk} \subseteq {a1, .., al} <=> (b1 = a1 /\ ... /\ b1 = al) \/ ... \/ (bk = a1 /\ ... /\ bk = al)
+        let callsLeft = State.collectAutomatonApplies state
+        let callsRight = collectAutomatonApplies inv
+        let callsDiff = Set.difference callsRight callsLeft
+        callsDiff
 
 module private PatternAutomatonGenerator =
     let private mkApplyNary N prefix sort init = TApply(MetaConstructor.generate prefix sort, List.init N init)
@@ -421,15 +432,17 @@ type ToTTATraverser(m : int) =
         let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant A B
         let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.IsBottom x.BottomizeTerms m B invariantA
         let delta = PatternAutomatonGenerator.inductionSchema leftSide rightSide
-        let patAxioms = x.patternDeltaAndFinals baseAutomaton.Record patternRec delta finalStates
         let deltaFromInitAxiom = x.deltaFromInitAxiom patternRec (List.map snd patternSorts)
-//        let equalityAutomaton = buildEqualityAutomaton newVars
-//        let intersectionAutomaton = intersect equalityAutomaton patAutomaton
-//        let prAutomaton = proj newVars intersectionAutomaton //TODO: do we really need it?
-//        intersectionAutomaton
-        Automaton(patternRec, deltaFromInitAxiom :: patAxioms)
+        let patAxioms = x.patternDeltaAndFinals baseAutomaton.Record patternRec delta finalStates
+        if Option.isNone patAxioms then None
+        else
+            let patAxioms = Option.get patAxioms
+            Some(Automaton(patternRec, deltaFromInitAxiom :: patAxioms))
 
     member private x.patternDeltaAndFinals (baseAutomaton : AutomatonRecord) (patternRec : AutomatonRecord) (deltaLeft, deltaRight) (finalConstrs, finalIdents, finalState) =
+        let callsDiff = Invariant.difference deltaRight deltaLeft
+        if Set.isEmpty callsDiff then None
+        else
         let constrsToTerms = List.map MetaConstructor.toTerm
         let rec constrStatesToTerm constrs states =
             x.Delay (constrsToTerms constrs) (List.map State_toTerm states) patternRec
@@ -460,13 +473,13 @@ type ToTTATraverser(m : int) =
             let l = patternRec.IsFinal(x.Delay (constrsToTerms finalConstrs) finalTerms patternRec)
             clAEquivalence [l] r
         let decls = initDecls :: deltaDecls :: finalDecls :: []
-        decls
+        Some(decls)
 
     member private x.GetOrAddPatternAutomaton baseAutomaton (Pattern pattern) =
         let vars = Terms.collectFreeVars pattern |> List.sortWith SortedVar.compare
         let renameMap = List.mapi (fun i (_, s as v) -> (v, TIdent ($"x_{i}", s))) vars |> Map.ofList
         let pattern = List.map (Term.substituteWith renameMap) pattern
-        Dictionary.getOrInitWith (baseAutomaton, pattern) patternAutomata (fun () -> x.GeneratePatternAutomaton baseAutomaton (Pattern pattern))
+        Dictionary.getOrInitWith (baseAutomaton, pattern) patternAutomata (fun () -> Option.get (x.GeneratePatternAutomaton baseAutomaton (Pattern pattern)))
 
     member private x.Delay constrs states patRec =
         assert(List.forall (fun t -> Term.typeOf t = stateSort) states)
