@@ -330,7 +330,6 @@ type ToTTATraverser(m : int) =
     let applicationNames = Dictionary<_, _>()
 
     let equalities = Dictionary<_, _>()
-    let disequalities = Dictionary<_, _>()
     let applications = Dictionary<_, _>()
 
     let dumpOpDictionary opDict =
@@ -343,9 +342,6 @@ type ToTTATraverser(m : int) =
 
     member private x.getEqRelName s arity =
         Dictionary.getOrInitWith (s, arity) equalityNames (fun () -> IdentGenerator.gensymp $"eq_{s}_{arity}")
-
-    member private x.getDiseqRelName s = //TODO: no need after diseq transform
-        "diseq" + s.ToString()
 
     member private x.GenerateEqualityAutomaton s arity =
         let eqRelName = x.getEqRelName s arity
@@ -370,35 +366,11 @@ type ToTTATraverser(m : int) =
             clAEquivalence l r
         Automaton(eqRec, [initAxiom; deltaAxiom])
 
-    member private x.GenerateDisqualityAutomaton s =
-        __notImplemented__()
-//        let n = 2
-//        let eqAutomaton = Dictionary.getOrInitWith (s, n) equalities (fun () -> x.GenerateEqualityAutomaton s n)
-//        let diseqRelName = x.getDiseqRelName s
-//        let diseqRec = Automaton.fromSorts m stateSort diseqRelName (List.replicate n s)
-//        let initAxiom = clAFact(equalStates diseqRec.Init eqAutomaton.Init)
-//        let deltaAxiom =
-//            let qTerms = Terms.generateNVariablesOfSort (pown m n) stateSort
-//            let constrs = Terms.generateNVariablesOfSort n s
-//            let args = constrs @ qTerms
-//            clAFact (equalStates (diseqRec.Delta args) (eqAutomaton.Delta args))
-//        let isFinalAxiom =
-//            let q = Term.generateVariable stateSort
-//            let l = [diseqRec.IsFinal q]
-//            let r = eqAutomaton.IsFinal q
-//            clAxor l r
-//        Automaton(diseqRec, [initAxiom; deltaAxiom; isFinalAxiom])
-
     member private x.GetOrAddEqualityAutomaton ts =
         let s = List.head ts |> Term.typeOf |> adtToConstrSort
         let n = List.length ts
         let baseAutomaton = Dictionary.getOrInitWith (s, n) equalities (fun () -> x.GenerateEqualityAutomaton s n)
         x.GetOrAddPatternAutomaton baseAutomaton (Pattern ts)
-
-    member private x.GetOrAddDisequalityAutomaton y z =
-        let s = adtToConstrSort (Term.typeOf y)
-        let baseAutomaton = Dictionary.getOrInitWith s disequalities (fun () -> x.GenerateDisqualityAutomaton s)
-        x.GetOrAddPatternAutomaton baseAutomaton (Pattern [y; z])
 
     member x.GetOrAddApplicationAutomaton op xs =
         let baseAutomaton = x.GetOrAddOperationAutomaton op
@@ -532,8 +504,8 @@ type ToTTATraverser(m : int) =
         match a with
         | Top | Bot -> None
         | Equal(y, z) -> Some(a, x.GetOrAddEqualityAutomaton [y; z])
-        | Distinct(y, z) -> Some(a, x.GetOrAddDisequalityAutomaton y z)
         | AApply(op, xs) -> Some(a, x.GetOrAddApplicationAutomaton op xs)
+        | Distinct(y, z) -> __unreachable__()
 
     member private x.TraverseRule (rule.Rule(_, body, head)) =
         let pairHeadAndBody = List.cons
@@ -635,8 +607,6 @@ type ToTTATraverser(m : int) =
 
     member private x.GenerateEqDeclarations () =
         equalities |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
-    member private x.GenerateDiseqDeclarations () =
-        disequalities |> Dictionary.toList |> List.collect (fun (_, a) -> a.Declarations)
 
     member private x.TraverseCommand = function
         | DeclareFun(_, _, BoolSort) -> []
@@ -658,7 +628,7 @@ type ToTTATraverser(m : int) =
         let prodDecls = x.GenerateProductDeclarations ()
         let delayDecls = x.GenerateDelayDeclarations ()
         let patDecls = x.GeneratePatternDeclarations ()
-        let eqDecls = x.GenerateEqDeclarations () @ x.GenerateDiseqDeclarations ()
+        let eqDecls = x.GenerateEqDeclarations ()
         let all = header @ botDecls @ funDecls @ eqDecls @ patDecls @ prodDecls @ delayDecls @ commands'
         let sortDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareSort _) as s -> Choice1Of2 s | c -> Choice2Of2 c) all
         let funDecls, rest = List.choose2 (function FOLOriginalCommand(DeclareFun _ | DeclareConst _) as s -> Choice1Of2 s | c -> Choice2Of2 c) rest
