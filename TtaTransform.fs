@@ -337,8 +337,6 @@ type ToTTATraverser(m : int) =
     let delays = Dictionary<_, _>()
 
     let equalityNames = Dictionary<_, _>()
-    let disequalityNames = Dictionary<_, _>()
-    let applicationNames = Dictionary<_, _>()
 
     let equalities = Dictionary<_, _>()
     let applications = Dictionary<_, _>()
@@ -633,8 +631,33 @@ type ToTTATraverser(m : int) =
 //        | TransformedCommand rule -> rule |> Rule.normalize |> Rule.linearize |> x.TraverseRule
         | LemmaCommand _ -> __unreachable__()
 
+    member private x.collectPatterns command =
+        let helper a =
+            match a with
+            | Top | Bot -> None
+            | Equal (t1, t2) ->
+                let eqOp = Operations.equal_op (Term.typeOf t1)
+                Some(eqOp, Pattern([t1; t2]))
+            | AApply(op, ts) ->
+                Some(op, Pattern(ts))
+            | Distinct _ -> __unreachable__()
+        match command with
+        | OriginalCommand _ -> []
+        | TransformedCommand rule -> rule |> Rule.linearize |> Rule.fold (fun s a -> (helper a)::s) List.empty
+        | LemmaCommand _ -> __unreachable__()
+    
+    member private x.GeneratePatternAutomatons (op, patterns) =
+        let strategy = []
+        let baseAut = Automaton(Automaton.fromOperation m stateSort op, [])
+        patterns |> List.map snd |> List.map (x.GeneratePatternAutomaton baseAut)
+        
     member x.TraverseCommands commands =
         let header = List.map (DeclareSort >> FOLOriginalCommand) [stateSortName; adtConstructorSortName]
+        let pats = commands |> List.collect x.collectPatterns
+                            |> List.unique
+                            |> List.choose id
+                            |> List.groupBy fst
+                            |> List.map x.GeneratePatternAutomatons
         let commands' = List.collect x.TraverseTransformedCommand commands
         let botDecls = x.GenerateBotDeclarations ()
         let funDecls = x.GenerateFunDeclarations ()
