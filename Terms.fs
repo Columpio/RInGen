@@ -123,7 +123,7 @@ module Terms =
     let map = List.map
 
     let collectFreeVars = List.collect Term.collectFreeVars >> List.unique
-
+    let numVars ts = collectFreeVars ts |> List.length
     let generateVariablesFromVars vars = List.map Term.generateVariableWithPrefix vars
     let generateVariablesFromOperation = Operation.argumentTypes >> List.map Term.generateVariable
 
