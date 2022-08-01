@@ -19,7 +19,7 @@ type AutomatonRecord(name : ident, init : operation, isFinal : operation, delta 
     member r.Name = name
     member r.Init = Term.apply0 init
     member r.IsFinal = Atom.apply1 isFinal
-    member r.Delta = Term.apply delta
+    member r.Delta = delta
     member r.Reach = Atom.apply1 reach
     member r.Declarations = List.map (Command.declareOp >> FOLOriginalCommand) [init; isFinal; delta; reach]
     member r.isEmpty =
@@ -77,14 +77,14 @@ type private state =
     | SInit
     | SVar of ident
     | CombinedState of operation list * state list // ``Delay'' states
-    | AutomatonApply of AutomatonRecord * pattern
-    | DeltaApply of AutomatonRecord * operation list * state list
+    | AutomatonApply of operation * pattern // Operation is automaton delta
+    | DeltaApply of operation * operation list * state list // Operation is automaton delta
 
     override x.ToString() =
         match x with
         | SInit -> "init"
         | SVar i -> i
-        | AutomatonApply(a, pat) -> $"%s{a.Name}[{pat}]"
+        | AutomatonApply(a, pat) -> $"{a}[{pat}]"
         | CombinedState(constrs, states) ->
             let cs = constrs |> List.map toString |> join ", "
             let ss = states |> List.map toString |> join ", "
@@ -92,7 +92,7 @@ type private state =
         | DeltaApply(a, constrs, states) ->
             let cs = constrs |> List.map toString |> join ", "
             let ss = states |> List.map toString |> join ", "
-            $"""delta%s{a.Name}(%s{cs}, %s{ss})"""
+            $"""delta_{a}(%s{cs}, %s{ss})"""
 
 type private invariant =
     | Invariant of operation list * state list
@@ -352,7 +352,7 @@ type ToTTATraverser(m : int) =
         let deltaAxiom =
             let qTerms = Terms.generateNVariablesOfSort (pown m arity) stateSort
             let constrTerms = List.init arity (fun _ -> Term.generateVariable s)
-            let r = eqRec.IsFinal(eqRec.Delta(constrTerms @ qTerms))
+            let r = eqRec.IsFinal(Term.apply eqRec.Delta (constrTerms @ qTerms))
             let l =
                 let constrEqs =
                     let eqOp = Operations.equal_op s
@@ -404,19 +404,19 @@ type ToTTATraverser(m : int) =
         let n = List.length sortList
         let inits = List.init (pown m n) (fun _ -> aRecord.Init)
         let botLists = List.map (adtToConstrSort >> x.getBottom) sortList
-        let l = aRecord.Delta (botLists @ inits)
+        let l = Term.apply aRecord.Delta (botLists @ inits)
         clAFact(Equal(l, aRecord.Init))
 
     member private x.GeneratePatternAutomaton (baseAutomaton : Automaton) pattern =
         let linearizedPattern, equalVars = Pattern.linearizeVariables pattern
         let newVars = List.concat equalVars |> List.unique
         let instantiator = PatternAutomatonGenerator.linearInstantiator m linearizedPattern
-        let A = AutomatonApply(baseAutomaton.Record, linearizedPattern)
+        let A = AutomatonApply(baseAutomaton.Delta, linearizedPattern)
         let patternSorts = linearizedPattern |> Pattern.collectFreeVars |> SortedVars.sort
         let patternRec, B =
             let pattern' = patternSorts |> List.map TIdent |> Pattern
             let record = Automaton.fromPattern m stateSort pattern'
-            record, AutomatonApply(record, pattern')
+            record, AutomatonApply(record.Delta, pattern')
         let A, B = PatternAutomatonGenerator.instantiate x.IsBottom x.BottomizeTerms instantiator A B
         let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant A B
         let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.IsBottom x.BottomizeTerms m B invariantA
@@ -436,10 +436,10 @@ type ToTTATraverser(m : int) =
         and State_toTerm = function
             | SInit -> baseAutomaton.Init
             | SVar name -> TIdent(name, stateSort)
-            | DeltaApply(record, constrs, states) ->
+            | DeltaApply(deltaOp, constrs, states) ->
                 let terms = List.map State_toTerm states
                 let constrs = constrsToTerms constrs
-                record.Delta(constrs @ terms)
+                Term.apply deltaOp (constrs @ terms)
             | CombinedState(constrs, states) -> constrStatesToTerm constrs states
             | AutomatonApply _ -> __unreachable__()
         let Invariant_toTerm (Invariant(constrs, states)) = constrStatesToTerm constrs states
@@ -451,8 +451,8 @@ type ToTTATraverser(m : int) =
                 let t = State_toTerm deltaLeft
                 match Term.tryCut t with
                 | Some(_, ts) ->
-                    if List.isEmpty ts then patternRec.Delta([r]) else patternRec.Delta(ts)
-                | None -> patternRec.Delta([t])
+                    if List.isEmpty ts then Term.apply patternRec.Delta [r] else Term.apply patternRec.Delta ts
+                | None -> Term.apply patternRec.Delta [t]
             clAFact(Equal(l, r))
         let finalDecls = // """Fb(freeConstrs, abstrVars) <=> Fa(abstrState)"""
             let r = baseAutomaton.IsFinal(State_toTerm finalState)
@@ -532,7 +532,7 @@ type ToTTATraverser(m : int) =
             let deltaFromInitAxiom = x.deltaFromInitAxiom cRecord (List.map snd clauseVars)
             let stateTerms = List.map (fun vars -> (Terms.generateNVariablesOfSort (pown m (List.length vars)) stateSort)) atomsVars
             let atomsTerms = List.map (List.map TIdent) atomsVars
-            let rs = List.map3 (fun (r : Automaton) vs s -> r.Delta(vs @ s)) patAutomata atomsTerms stateTerms
+            let rs = List.map3 (fun (r : Automaton) vs s -> Term.apply r.Delta (vs @ s)) patAutomata atomsTerms stateTerms
             let r = x.Product rs
             let l =
                 // helper functions
@@ -556,7 +556,7 @@ type ToTTATraverser(m : int) =
                 let statePositions = List.map (fun c -> List.map (applyMask c) posMasks) combinations
                 let stateTerms = statePositions |> List.map (fun positions -> List.map2 List.item positions stateTerms)
                 let lStates = List.map x.Product stateTerms
-                cRecord.Delta(clauseVarsTerms @ lStates)
+                Term.apply cRecord.Delta (clauseVarsTerms @ lStates)
             [deltaFromInitAxiom; clAFact (equalStates l r)]
         let finalAxiom =
             let stateTerms = Terms.generateNVariablesOfSort (List.length patAutomata) stateSort
@@ -578,7 +578,7 @@ type ToTTATraverser(m : int) =
         let reachDelta =
             let qTerms = Terms.generateNVariablesOfSort (pown m (List.length clauseVarsTerms)) stateSort
             let l = List.map cRecord.Reach qTerms
-            let r = cRecord.Reach(cRecord.Delta(clauseVarsTerms @ qTerms))
+            let r = cRecord.Reach(Term.apply cRecord.Delta (clauseVarsTerms @ qTerms))
             clARule l r
         let condition = // negation of the clause: each reachable is not final
             let qTerm = Term.generateVariable stateSort
