@@ -45,8 +45,9 @@ type StrategyBuilder(width, vars) =
         let totalSize = List.length xss
         let modulo = pown width (vars - totalSize)
         strategy
-        |> List.indexed
-        |> List.choose (fun (i, x) -> if i % modulo = 0 then Some x else None)
+//        |> List.indexed
+        |> List.take modulo
+//        |> List.choose (fun (i, x) -> if i % modulo = 0 then Some x else None)
         |> List.map (List.choose (fun (i, j) -> if i < totalSize then Some(xss.[i].[j]) else None))
 
     member x.Build() =
@@ -60,7 +61,7 @@ type StrategyBuilder(width, vars) =
     member x.ImproveCurrentStrategy() =
         droppedElementPointer.Increment()
         droppedElementPointer.SetAtCurrent(mask, false)
-        printf $"Trying to drop {droppedElementPointer}"
+//        printf $"Trying to drop {droppedElementPointer}"
 
     member x.BacktrackStrategy() =
         droppedElementPointer.SetAtCurrent(mask, true)
@@ -160,6 +161,7 @@ type private invariant =
 
 module private Pattern =
     let isEmpty (Pattern pat) = (pat = [])
+    let length (Pattern pat) = Terms.length pat 
     let isBottoms tester (Pattern pat) = List.forall tester pat
     let collectFreeVars (Pattern pat) = Terms.collectFreeVars pat
     let collectFreeVarsCounter (Pattern pat) = Terms.collectFreeVarsCounter pat
@@ -286,6 +288,13 @@ module private State =
 
     let collectAutomatonApplies = foldAutomatonApplies (fun states name pat -> Set.add (AutomatonApply(name, pat)) states) Set.empty
 
+    let isVarSubset left right =
+        // left \subseteq right <=> left \ right = \emptyset
+        let callsLeft = freeVars left
+        let callsRight = freeVars right
+        let callsDiff = Set.difference callsLeft callsRight
+        Set.isEmpty callsDiff
+
 module private Invariant =
     let fromConstructorsAndStates freeConstrs states =
         Invariant(freeConstrs, states)
@@ -344,10 +353,14 @@ module private PatternAutomatonGenerator =
     let instantiate isBottom bottomize strategy instantiator A B =
         let A' = State.instantiate instantiator A
         let B' = State.instantiate instantiator B
+        // check strategy is not empty
+        let unfoldedA = State.unfoldAutomatonApplyOnce isBottom bottomize strategy A'
+        if not <| State.isVarSubset A' unfoldedA then None
+        else
         let A'' = State.unfoldAutomatonApplyRec isBottom bottomize strategy A'
-        A'', B'
+        Some(A'', B')
 
-    let finalStatesAndInvariant A B =
+    let finalStatesAndInvariant A =
         // returns $"""Fb := {{ (({freeConstrsStr}), ({abstrVars |> List.map toString |> join ", "})) |{"\n\t"}{abstrState} \in Fa }}"""
         let abstrState, (abstrVarsMap, _) = State.abstractAutomatonApplies A
         let abstrVars = abstrVarsMap |> Dictionary.toList |> List.map fst
@@ -483,8 +496,11 @@ type ToTTATraverser(m : int) =
             let pattern' = patternSorts |> List.map TIdent |> Pattern
             let record = Automaton.fromPattern m stateSort pattern'
             record, AutomatonApply(record.Delta, pattern')
-        let A, B = PatternAutomatonGenerator.instantiate x.IsBottom x.BottomizeTerms strategy instantiator A B
-        let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant A B
+        let ABpair = PatternAutomatonGenerator.instantiate x.IsBottom x.BottomizeTerms strategy instantiator A B
+        if Option.isNone ABpair then None
+        else
+        let A, B = Option.get ABpair
+        let finalStates, invariantA = PatternAutomatonGenerator.finalStatesAndInvariant A
         let leftSide, rightSide = PatternAutomatonGenerator.inductiveUnfoldings x.IsBottom x.BottomizeTerms strategy m B invariantA
         let delta = PatternAutomatonGenerator.inductionSchema leftSide rightSide
         let deltaFromInitAxiom = x.deltaFromInitAxiom patternRec (List.map snd patternSorts)
@@ -534,7 +550,8 @@ type ToTTATraverser(m : int) =
         let vars = Terms.collectFreeVars pattern |> List.sortWith SortedVar.compare
         let renameMap = List.mapi (fun i (_, s as v) -> (v, TIdent ($"x_{i}", s))) vars |> Map.ofList
         let pattern = List.map (Term.substituteWith renameMap) pattern
-        let strategyBuilder = StrategyBuilder(m, Terms.numVars pattern)
+        let maxArity = List.max [Terms.numVars pattern; Terms.length pattern]
+        let strategyBuilder = StrategyBuilder(m, maxArity)
         let fcStrategy = strategyBuilder.Build()
         Dictionary.getOrInitWith (baseAutomaton, pattern) patternAutomata (fun () -> Option.get (x.GeneratePatternAutomaton fcStrategy baseAutomaton (Pattern pattern)))
 
@@ -704,22 +721,35 @@ type ToTTATraverser(m : int) =
         | OriginalCommand _ -> []
         | TransformedCommand rule -> rule |> Rule.linearize |> Rule.fold (fun s a -> (helper a)::s) List.empty
         | LemmaCommand _ -> __unreachable__()
-    
-    member private x.GeneratePatternAutomatons (op, patterns) =
-        let patterns = List.map snd patterns
-        let maxVars = patterns |> List.map Pattern.numVars |> List.max
+            
+    member x.GeneratePatternAutomatons op patterns =
+        let maxVars =
+            let patVars = patterns |> List.map Terms.numVars
+            let patLengths = patterns |> List.map Terms.length
+            List.max (patVars @ patLengths) 
         let strategyBuilder = StrategyBuilder(m, maxVars)
-        let strategy = strategyBuilder.Build()  // full convolution at this point
         let baseAut = Automaton(Automaton.fromOperation m stateSort op, [])
-        List.map (x.GeneratePatternAutomaton strategy baseAut) patterns
         
+        let patterns = List.map Pattern patterns
+        let mutable ok = true
+        while ok do
+            let strategy = strategyBuilder.Build()
+            let res = List.map (x.GeneratePatternAutomaton strategy baseAut) patterns
+            if List.exists Option.isNone res then
+                strategyBuilder.BacktrackStrategy()
+            if strategyBuilder.IsReducible() then
+                strategyBuilder.ImproveCurrentStrategy()
+            else
+                ok <- false
+                
+
     member x.TraverseCommands commands =
         let header = List.map (DeclareSort >> FOLOriginalCommand) [stateSortName; adtConstructorSortName]
-        let pats = commands |> List.collect x.collectPatterns
-                            |> List.unique
-                            |> List.choose id
-                            |> List.groupBy fst
-                            |> List.map x.GeneratePatternAutomatons
+//        let pats = commands |> List.collect x.collectPatterns
+//                            |> List.unique
+//                            |> List.choose id
+//                            |> List.groupBy fst
+//                            |> List.map x.GeneratePatternAutomatons
         let commands' = List.collect x.TraverseTransformedCommand commands
         let botDecls = x.GenerateBotDeclarations ()
         let funDecls = x.GenerateFunDeclarations ()

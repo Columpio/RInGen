@@ -77,8 +77,8 @@ type TTATests () =
     [<Test>]
     member x.ltZSPattern () =
         let ttaTraverser = TtaTransform.ToTTATraverser(1)
-        let pred = predicate "isEven" [nat]
-        let xs = [Z; S (S nNat)]
+        let pred = predicate "lt" [nat; nat]
+        let xs = [Z; S nNat]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
@@ -116,4 +116,16 @@ type TTATests () =
         let xs = [leaf; leaf]
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
+        ()
+
+    [<Test>]
+    member x.strategiesTest () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(2)
+        let pred = predicate "pred" [tree; tree]
+        let patterns = [
+            [leaf; node xTree yTree]
+            [node xTree yTree; node vTree wTree]
+//            [xTree; yTree]
+        ]
+        let auts = ttaTraverser.GeneratePatternAutomatons pred patterns
         ()
