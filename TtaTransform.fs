@@ -496,7 +496,7 @@ type ToTTATraverser(m : int) =
 
     member private x.patternDeltaAndFinals (baseAutomaton : AutomatonRecord) (patternRec : AutomatonRecord) (deltaLeft, deltaRight) (finalConstrs, finalIdents, finalState) =
         let callsDiff = Invariant.difference deltaRight deltaLeft
-        if Set.isEmpty callsDiff then None
+        if not <| Set.isEmpty callsDiff then None
         else
         let constrsToTerms = List.map MetaConstructor.toTerm
         let rec constrStatesToTerm constrs states =
