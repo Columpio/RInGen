@@ -120,13 +120,33 @@ type TTATests () =
         ()
 
     [<Test>]
-    member x.strategiesTest () =
+    member x.strategiesTest1 () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
         let pred = predicate "pred" [tree; tree]
         let patterns = [
-            [leaf; node xTree yTree]
-            [node xTree yTree; node vTree wTree]
-            [xTree; yTree]
+            TtaTransform.Pattern([leaf; node xTree yTree])
+            TtaTransform.Pattern([node xTree yTree; node vTree wTree])
+            TtaTransform.Pattern([xTree; yTree])
         ]
-        let auts = ttaTraverser.GeneratePatternAutomatons pred patterns
+        let auts = ttaTraverser.GeneratePatternAutomata true pred patterns
+        ()
+
+    [<Test>]
+    member x.strategiesTest2 () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(2)
+        let pred = predicate "pred" [tree; tree]
+        let patterns = [
+            TtaTransform.Pattern([xTree; yTree])
+        ]
+        let auts = ttaTraverser.GeneratePatternAutomata true pred patterns
+        ()
+        
+    [<Test>]
+    member x.strategiesTest3 () =
+        let ttaTraverser = TtaTransform.ToTTATraverser(2)
+        let pred = predicate "pred" [tree; tree]
+        let patterns = [
+            TtaTransform.Pattern([node xTree yTree; node vTree wTree])
+        ]
+        let auts = ttaTraverser.GeneratePatternAutomata true pred patterns
         ()
