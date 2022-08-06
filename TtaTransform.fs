@@ -1,6 +1,7 @@
 module RInGen.TtaTransform
 
 open System.Collections.Generic
+open System.Diagnostics
 open SMTLIB2
 open FOLCommand
 
@@ -43,11 +44,13 @@ type StrategyBuilder(width, vars) =
         // Result: [[A; C]; [A; D]; [B; C]; [B; D]]
         // Ex: xss = [[A; B]] -> [[A]; [B]], but we have [[A]; [A]]
         let totalSize = List.length xss
-        let modulo = pown width (vars - totalSize)
+        let strategy =
+            if totalSize < vars then
+                let modulo = pown width (vars - totalSize)
+                strategy |> List.take modulo
+            else
+                strategy
         strategy
-//        |> List.indexed
-        |> List.take modulo
-//        |> List.choose (fun (i, x) -> if i % modulo = 0 then Some x else None)
         |> List.map (List.choose (fun (i, j) -> if i < totalSize then Some(xss.[i].[j]) else None))
 
     member x.Build() =
@@ -61,7 +64,7 @@ type StrategyBuilder(width, vars) =
     member x.ImproveCurrentStrategy() =
         droppedElementPointer.Increment()
         droppedElementPointer.SetAtCurrent(mask, false)
-//        printf $"Trying to drop {droppedElementPointer}"
+        printf $"Trying to drop {droppedElementPointer}"
 
     member x.BacktrackStrategy() =
         droppedElementPointer.SetAtCurrent(mask, true)
@@ -256,6 +259,7 @@ module private State =
             match Pattern.cutHeads isBottom pattern with
             | Some(heads, bodies) ->
                 let bodies = List.map2 bottomize heads bodies
+//                let states = strategy bodies |> List.map (fun pat -> AutomatonApply(name, Pattern pat))
                 let states = strategy bodies |> List.choose (fun pat -> if pat = [] then None else Some <| AutomatonApply(name, Pattern pat))
                 let states = List.map mapChild states
                 DeltaApply(name, heads, states)
@@ -736,12 +740,13 @@ type ToTTATraverser(m : int) =
             let strategy = strategyBuilder.Build()
             let res = List.map (x.GeneratePatternAutomaton strategy baseAut) patterns
             if List.exists Option.isNone res then
+                printfn ": stays"
                 strategyBuilder.BacktrackStrategy()
             if strategyBuilder.IsReducible() then
+                printfn ""
                 strategyBuilder.ImproveCurrentStrategy()
             else
                 ok <- false
-                
 
     member x.TraverseCommands commands =
         let header = List.map (DeclareSort >> FOLOriginalCommand) [stateSortName; adtConstructorSortName]

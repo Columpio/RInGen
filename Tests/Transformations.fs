@@ -100,6 +100,7 @@ type TTATests () =
         let automaton = ttaTraverser.GetOrAddApplicationAutomaton pred xs
         let decls = List.map toString automaton.Declarations
         ()
+
     [<Test>]
     member x.patternLeafNode () =
         let ttaTraverser = TtaTransform.ToTTATraverser(2)
@@ -125,7 +126,7 @@ type TTATests () =
         let patterns = [
             [leaf; node xTree yTree]
             [node xTree yTree; node vTree wTree]
-//            [xTree; yTree]
+            [xTree; yTree]
         ]
         let auts = ttaTraverser.GeneratePatternAutomatons pred patterns
         ()
