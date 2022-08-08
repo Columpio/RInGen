@@ -122,8 +122,9 @@ module Terms =
     let mapFold = List.mapFold
     let map = List.map
 
+    let length = List.length
     let collectFreeVars = List.collect Term.collectFreeVars >> List.unique
-
+    let numVars ts = collectFreeVars ts |> List.length
     let generateVariablesFromVars vars = List.map Term.generateVariableWithPrefix vars
     let generateVariablesFromOperation = Operation.argumentTypes >> List.map Term.generateVariable
 

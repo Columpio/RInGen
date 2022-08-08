@@ -76,3 +76,6 @@ let normalize(rule.Rule(_, body, head)) =
     let eqs = List.concat eqs
     
     clARule (atoms @ eqs) head
+
+let fold f z (Rule(_, body, head)) = 
+    List.fold f z (head::body) 
