@@ -108,6 +108,8 @@ module Automaton =
         let deltaName = IdentGenerator.gensymp ("delta_" + name)
         let reachName = IdentGenerator.gensymp ("reach_" + name)
         let statesVec =
+            if List.isEmpty sortList then [stateSort]
+            else
             let dummy = TConst("dummy", stateSort)
             let childDummies = List.map (fun _ -> List.replicate m dummy) sortList
             childDummies
@@ -570,9 +572,6 @@ type ToTTATraverser(m : int) =
         let vars = Terms.collectFreeVars pattern |> List.sortWith SortedVar.compare
         let renameMap = List.mapi (fun i (_, s as v) -> (v, TIdent ($"x_{i}", s))) vars |> Map.ofList
         let pattern = List.map (Term.substituteWith renameMap) pattern
-        let maxArity = List.max [Terms.numVars pattern; Terms.length pattern]
-        let strategyBuilder = StrategyBuilder(m, maxArity, false)
-        let fcStrategy = strategyBuilder.Build()
         Dictionary.getOrInitWith (baseAutomaton, pattern) patternAutomata (fun () -> Option.get (x.GeneratePatternAutomaton fcStrategy baseAutomaton (Pattern pattern)))
 
     member private x.Delay constrs states patRec =

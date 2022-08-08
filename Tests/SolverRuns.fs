@@ -89,6 +89,6 @@ type SampleSolverTests () =
     member x.tta_mccarthy () =
         x.RunTTAAloneCVCTIP "mccarthy91_M2.smt2" ".tta" 10
 
-    [<Test; Ignore("tta does not yet work")>]
+    [<Test>]
     member x.tta_prop20 () =
         x.RunTTAAloneCVCTIP "prop_20.smt2" ".tta" 10
